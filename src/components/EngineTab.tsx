@@ -1,0 +1,217 @@
+import { useMemo } from 'react';
+import type { ScanState } from '../hooks/useScanner';
+import { STRATEGIES, STRATEGY_BY_ID } from '../engine/types';
+import type { SwapLogEntry } from '../lib/storage';
+import { fmtAgo, fmtDateTime, fmtPct, tfLabel } from '../lib/format';
+import { RefreshIcon } from './Icons';
+
+interface Props {
+  state: ScanState;
+  swapLog: SwapLogEntry[];
+  leverage: number;
+  onRescan: () => void;
+  onClearLog: () => void;
+}
+
+export function EngineTab({ state, swapLog, leverage, onRescan, onClearLog }: Props) {
+  const rows = useMemo(() => {
+    return STRATEGIES.map((meta) => {
+      const cands = state.analyses
+        .flatMap((a) => a.candidates.filter((c) => c.id === meta.id).map((c) => c.stats))
+        .filter((s) => s.n > 0);
+      const allN = cands.reduce((a, s) => a + s.n, 0);
+      const allWins = cands.reduce((a, s) => a + s.wins, 0);
+      const allMove = cands.reduce((a, s) => a + s.movePct, 0);
+      const allWinRS = cands.reduce((a, s) => a + s.avgWinR * s.wins, 0);
+
+      const adopted = state.analyses.filter((a) => a.activeStrategyId === meta.id && a.activeWinRate >= 55);
+      const adoptedStats = adopted.map((a) => a.activeStats).filter((s) => s.n > 0);
+      const adoptedN = adoptedStats.reduce((a, s) => a + s.n, 0);
+      const adoptedWins = adoptedStats.reduce((a, s) => a + s.wins, 0);
+      const adoptedMove = adoptedStats.reduce((a, s) => a + s.movePct, 0);
+      const adoptedWinRS = adoptedStats.reduce((a, s) => a + s.avgWinR * s.wins, 0);
+
+      return {
+        meta,
+        markets: adopted.length,
+        adoptedN,
+        adoptedWinRate: adoptedN ? (adoptedWins / adoptedN) * 100 : 0,
+        adoptedRR: adoptedWins ? adoptedWinRS / adoptedWins : 0,
+        adoptedLevRoi: adoptedMove * leverage,
+        expectancyRoi: adoptedN ? (adoptedMove / adoptedN) * leverage : 0,
+        allN,
+        allWinRate: allN ? (allWins / allN) * 100 : 0,
+        allExpectancy: allN ? allMove / allN : 0,
+        allRR: allWins ? allWinRS / allWins : 0,
+        allLevRoi: allMove * leverage,
+      };
+    }).sort((a, b) => {
+      if (b.markets !== a.markets) return b.markets - a.markets;
+      if (b.adoptedWinRate !== a.adoptedWinRate) return b.adoptedWinRate - a.adoptedWinRate;
+      return b.adoptedN - a.adoptedN;
+    });
+  }, [state.analyses, leverage]);
+
+  const totalAdopted = rows.reduce((acc, r) => acc + r.markets, 0);
+  const leader = rows[0];
+  const recentSwaps = swapLog.slice(0, 14);
+
+  return (
+    <div className="tab engine-tab">
+      <section className="hero-engine">
+        <div className="hero-copy">
+          <span className="eyebrow">적응형 전략 엔진</span>
+          <h2>
+            최근 60봉 승률이 <em>55%</em>를 못 넘긴 전략은 즉시 교체됩니다
+          </h2>
+          <p>
+            6개 매매법을 스캔한 모든 마켓의 실제 200봉 캔들에 실시간 백테스트하고, 마켓별로 가장 우수한 전략만
+            채택합니다. 성과가 떨어지면 교체 로그를 남기고 새 전략으로 시그널을 생성합니다.
+          </p>
+          <div className="hero-stats">
+            <div>
+              <b>{state.analyses.length}</b>
+              <span>분석 마켓</span>
+            </div>
+            <div>
+              <b>{totalAdopted}</b>
+              <span>전략 채택</span>
+            </div>
+            <div>
+              <b>{swapLog.length}</b>
+              <span>교체 기록</span>
+            </div>
+            <div>
+              <b>{leader && leader.adoptedN ? `${leader.adoptedWinRate.toFixed(0)}%` : '-'}</b>
+              <span>1위 채택 승률</span>
+            </div>
+          </div>
+        </div>
+        {leader && (
+          <div className="hero-top card-dark">
+            <span className="hero-top-badge">현재 1위 전략</span>
+            <div className="hero-top-name">{leader.meta.name}</div>
+            <div className="hero-top-stars">{'★'.repeat(leader.meta.star)}</div>
+            <div className="hero-top-grid">
+              <div>
+                <span>채택 마켓</span>
+                <b>{leader.markets}</b>
+              </div>
+              <div>
+                <span>채택 승률</span>
+                <b className="up">{leader.adoptedWinRate ? `${leader.adoptedWinRate.toFixed(1)}%` : '-'}</b>
+              </div>
+              <div>
+                <span>손익비</span>
+                <b>{leader.adoptedRR ? `${leader.adoptedRR.toFixed(2)}R` : '-'}</b>
+              </div>
+              <div>
+                <span>기대 {leverage}x /건</span>
+                <b className={leader.expectancyRoi >= 0 ? 'up' : 'down'}>
+                  {leader.adoptedN ? fmtPct(leader.expectancyRoi) : '-'}
+                </b>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="panel">
+        <header className="panel-head">
+          <h3>매매법 실시간 순위</h3>
+          <button className="ghost-btn" onClick={onRescan} disabled={state.status === 'scanning'}>
+            <RefreshIcon size={15} /> 백테스트 재실행
+          </button>
+        </header>
+        <ul className="strat-list">
+          {rows.map((r, i) => (
+            <li key={r.meta.id} className={`strat-row ${r.markets === 0 ? 'dim' : ''}`}>
+              <div className="strat-rank">{i + 1}</div>
+              <div className="strat-main">
+                <div className="strat-title">
+                  <b>{r.meta.name}</b>
+                  <span className="strat-stars">{'★'.repeat(r.meta.star)}</span>
+                  <span className={`pill ${r.markets ? 'good' : ''}`}>채택 {r.markets}</span>
+                </div>
+                <div className="strat-desc">{r.meta.desc}</div>
+                <div className="strat-metrics">
+                  <span>
+                    <i>채택 승률</i>
+                    <b className={r.adoptedWinRate >= 55 ? 'up' : ''}>
+                      {r.adoptedWinRate ? `${r.adoptedWinRate.toFixed(1)}%` : '-'}
+                    </b>
+                  </span>
+                  <span>
+                    <i>표본</i>
+                    <b>{r.adoptedN || '-'}</b>
+                  </span>
+                  <span>
+                    <i>손익비</i>
+                    <b>{r.adoptedRR ? `${r.adoptedRR.toFixed(2)}R` : '-'}</b>
+                  </span>
+                  <span>
+                    <i>기대 {leverage}x</i>
+                    <b className={r.expectancyRoi >= 0 ? 'up' : 'down'}>
+                      {r.adoptedN ? fmtPct(r.expectancyRoi) : '-'}
+                    </b>
+                  </span>
+                  <span>
+                    <i>전체 승률</i>
+                    <b className="muted">{r.allN ? `${r.allWinRate.toFixed(1)}%` : '-'}</b>
+                  </span>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <p className="table-note">
+          채택 승률·표본은 이 전략이 실제로 선택된 마켓들의 최근 60봉 성과 합계입니다. 기대 {leverage}x는 1건당
+          무효가까지 거리 대비 R배수를 레버리지로 환산한 값이고, 전체 승률은 스캔한 모든 마켓(채택 여부 무관)의
+          기록입니다.
+        </p>
+      </section>
+
+      <section className="panel">
+        <header className="panel-head">
+          <h3>
+            자동 교체 로그 <span className="count-badge">{swapLog.length}</span>
+          </h3>
+          {swapLog.length > 0 && (
+            <button className="ghost-btn" onClick={onClearLog}>
+              기록 지우기
+            </button>
+          )}
+        </header>
+        <ul className="swap-list">
+          {recentSwaps.map((s, i) => (
+            <li key={`${s.symbol}-${s.tf}-${s.fromId}-${s.toId}-${i}`}>
+              <div className="swap-time">
+                <b>{fmtDateTime(s.at)}</b>
+                <span>{fmtAgo(s.at)}</span>
+              </div>
+              <div className="swap-body">
+                <div className="swap-line">
+                  <span className="swap-sym">
+                    {s.base} <i>{tfLabel(s.tf)}</i>
+                  </span>
+                  <span className="swap-path">
+                    <span className="from">{STRATEGY_BY_ID[s.fromId]?.short ?? s.fromId}</span>
+                    <span className="arrow">→</span>
+                    <span className="to">{STRATEGY_BY_ID[s.toId]?.short ?? s.toId}</span>
+                  </span>
+                </div>
+                <div className="swap-reason">{s.reason}</div>
+              </div>
+              <div className="swap-metrics">
+                <span className="from">{s.fromWinRate.toFixed(0)}%</span>
+                <span className="arrow">→</span>
+                <span className="to">{s.toWinRate.toFixed(0)}%</span>
+              </div>
+            </li>
+          ))}
+          {recentSwaps.length === 0 && <li className="swap-empty">아직 교체 기록이 없습니다.</li>}
+        </ul>
+      </section>
+    </div>
+  );
+}
