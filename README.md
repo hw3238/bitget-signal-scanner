@@ -80,15 +80,13 @@ PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/pages-check.mjs
 
 ## 배포 (GitHub Pages)
 
-`scripts/deploy-gh-pages.sh`가 `dist`를 `gh-pages` 브랜치로 밀고 Pages를 활성화합니다.
+- 라이브: **https://hw3238.github.io/bitget-signal-scanner/** (브랜치 `gh-pages` / 루트, HTTP 200·실데이터 렌더링 확인)
+- 소스: https://github.com/hw3238/bitget-signal-scanner (`main`)
+- 재배포는 아래 스크립트로 `dist` 내용을 `gh-pages` 루트에 올립니다.
 
 ```bash
 ./scripts/deploy-gh-pages.sh hw3238/bitget-signal-scanner
 ```
-
-현재 Pickle의 GitHub 연결(App)에는 저장소 생성·Pages 권한이 없어
-(`Resource not accessible by integration`) 저장소 생성 단계에서 막힙니다. 저장소가 준비되어 App 설치 범위에
-추가되면 위 스크립트 한 번으로 `https://<owner>.github.io/bitget-signal-scanner/`가 게시됩니다.
 
 ## 면책
 
