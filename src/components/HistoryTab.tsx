@@ -73,7 +73,7 @@ export function HistoryTab({ history, leverage, onClear }: Props) {
           <div className="stat">
             <span className="stat-label">실현 {leverage}x 수익률</span>
             <b className={stats.realizedRoi >= 0 ? 'up' : 'down'}>{fmtPct(stats.realizedRoi, 2)}</b>
-            <span className="stat-sub">평균 {stats.avgR.toFixed(2)}R</span>
+            <span className="stat-sub">무효가 거리 가중 · 평균 {stats.avgR.toFixed(2)}R</span>
           </div>
           <div className="stat">
             <span className="stat-label">진행중 평가</span>

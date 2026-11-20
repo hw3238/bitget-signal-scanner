@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const PORT = 4173;
@@ -70,6 +70,10 @@ const run = async () => {
     const cards = [...document.querySelectorAll('.signal-card:not(.skeleton)')];
     return {
       cards: cards.length,
+      all: cards.map((c) => ({
+        sym: c.querySelector('.sym')?.textContent,
+        detail: c.textContent?.replace(/\s+/g, ' ').trim().slice(0, 190),
+      })),
       first: cards.slice(0, 4).map((c) => ({
         sym: c.querySelector('.sym')?.textContent,
         price: c.querySelector('.price')?.textContent,
@@ -183,6 +187,11 @@ const run = async () => {
   }));
 
   await browser.close();
+
+  writeFileSync(
+    '.tmp/report.json',
+    JSON.stringify({ summary, engine, market, history, desktopInfo, consoleErrors, pageErrors: errors, savedFile }, null, 1),
+  );
 
   console.log(
     JSON.stringify(

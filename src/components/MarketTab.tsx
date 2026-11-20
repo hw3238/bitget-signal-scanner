@@ -59,7 +59,12 @@ export function MarketTab({ state, onRescan }: Props) {
   const view = data[tab];
   const refreshed =
     state.tickersAt > 0
-      ? new Date(state.tickersAt).toLocaleTimeString('ko-KR', { hour12: false, timeZone: 'Asia/Seoul' })
+      ? new Date(state.tickersAt).toLocaleTimeString('ko-KR', {
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'Asia/Seoul',
+        })
       : '-';
 
   const list = (title: string, rows: typeof view.gainers, tone: 'up' | 'down' | 'flat') => (
