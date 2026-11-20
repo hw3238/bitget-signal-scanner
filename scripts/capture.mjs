@@ -26,6 +26,7 @@ function waitForServer(url, timeoutMs = 40000) {
 const server = spawn('npx', ['vite', 'preview', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], {
   stdio: ['ignore', 'pipe', 'pipe'],
   env: { ...process.env, PATH: `${process.env.HOME}/.local/node/node-v22.14.0-linux-x64/bin:${process.env.PATH}` },
+  detached: true,
 });
 
 const logs = [];
@@ -36,7 +37,7 @@ mkdirSync(OUT, { recursive: true });
 
 const run = async () => {
   await waitForServer(URL);
-  const browser = await chromium.launch({ args: ['--no-sandbox', '--font-render-hinting=none'] });
+  const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage', '--font-render-hinting=none'] });
   const errors = [];
   const consoleErrors = [];
 
@@ -89,7 +90,7 @@ const run = async () => {
   });
 
   await page.screenshot({ path: `${OUT}/01-scanner.png`, fullPage: false });
-  await page.screenshot({ path: `${OUT}/01-scanner-full.png`, fullPage: true });
+  await page.screenshot({ path: `${OUT}/01-scanner-full.png`, fullPage: true, scale: 'css' });
 
   // 다크 공유 카드
   await page.locator('.signal-card').first().click();
@@ -121,7 +122,7 @@ const run = async () => {
   await page.locator('.bottom-nav button', { hasText: '전략엔진' }).click();
   await page.waitForTimeout(900);
   await page.screenshot({ path: `${OUT}/03-strategy-engine.png`, fullPage: false });
-  await page.screenshot({ path: `${OUT}/03-strategy-engine-full.png`, fullPage: true });
+  await page.screenshot({ path: `${OUT}/03-strategy-engine-full.png`, fullPage: true, scale: 'css' });
 
   const engine = await page.evaluate(() => ({
     heroTitle: document.querySelector('.hero-copy h2')?.textContent,
@@ -156,6 +157,9 @@ const run = async () => {
     stats: [...document.querySelectorAll('.stat')].map((d) => d.textContent?.replace(/\s+/g, ' ').trim()),
     rows: [...document.querySelectorAll('.history-list li')].slice(0, 4).map((li) => li.textContent?.replace(/\s+/g, ' ').trim()),
   }));
+
+  // 모바일 컨텍스트를 닫아 메모리·자동갱신 타이머를 정리한 뒤 데스크톱 촬영
+  await mobile.close();
 
   // ---------- 데스크톱 ----------
   const desktop = await browser.newContext({
@@ -220,5 +224,12 @@ run()
     process.exitCode = 1;
   })
   .finally(() => {
-    server.kill('SIGTERM');
+    try {
+      process.kill(-server.pid, 'SIGKILL');
+    } catch {
+      server.kill('SIGKILL');
+    }
+    server.stdout.destroy();
+    server.stderr.destroy();
+    setTimeout(() => process.exit(process.exitCode ?? 0), 200);
   });

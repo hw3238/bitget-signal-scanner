@@ -5,6 +5,8 @@
 API의 실제 캔들로 계산하며 더미 데이터는 쓰지 않습니다.
 
 - 스택: React 18 + TypeScript + Vite (외부 UI 라이브러리 없음, 아이콘·차트·공유카드 모두 직접 구현)
+- 테마: **다크 네온 트레이딩 터미널** — 딥 블랙/네이비 배경(`#050814`~`#0A0F24`) + 사이버 그리드 + 시안/바이올렛
+  오로라 글로우, 다크 글래스모피즘 패널, 네온 시안-에메랄드(롱)/마젠타-레드(숏)/일렉트릭 퍼플(강조)/앰버(EQ·별점)
 - 배포 경로 대응: `vite.config.ts`의 `base: './'` → `/bitget-signal-scanner/` 같은 서브패스에서도 자산 경로 유지
 
 ## 실행
@@ -69,14 +71,16 @@ npm run preview  # http://127.0.0.1:4173
 
 ```bash
 npm run build
-LD_LIBRARY_PATH=/workspace/.deps/root/usr/lib/x86_64-linux-gnu \
+LD_LIBRARY_PATH=/workspace/.deps/apt/usr/usr/lib/x86_64-linux-gnu \
 PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/capture.mjs      # 390×844 + 1280×800, 콘솔 에러 수집, PNG 저장 검증
-LD_LIBRARY_PATH=/workspace/.deps/root/usr/lib/x86_64-linux-gnu \
+LD_LIBRARY_PATH=/workspace/.deps/apt/usr/usr/lib/x86_64-linux-gnu \
 PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/pages-check.mjs    # /bitget-signal-scanner/ 서브패스 검증
+node scripts/live-check.mjs                                                        # 라이브 Pages 반영 확인
 ```
 
 결과 스크린샷은 `docs/screens/`에 저장됩니다(`01-scanner.png`, `02-dark-card.png`, `03-strategy-engine.png`,
-`04-market.png`, `05-history.png`, `06-desktop.png`, `07-pages-subpath.png`, `02-dark-card-export.png`).
+`04-market.png`, `05-history.png`, `06-desktop.png`, `07-pages-subpath.png`, `08-settings.png`,
+`09-live-pages.png`, `02-dark-card-export.png`).
 
 ## 배포 (GitHub Pages)
 

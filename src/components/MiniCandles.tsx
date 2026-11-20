@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { Candle, Signal } from '../engine/types';
 
 interface Props {
@@ -8,7 +9,10 @@ interface Props {
   dark?: boolean;
 }
 
-export function MiniCandles({ candles, signal, height = 116, dark = false }: Props) {
+export function MiniCandles({ candles, signal, height = 116, dark = true }: Props) {
+  const rawId = useId();
+  const uid = `mc${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+
   const W = 320;
   const H = height;
   const padTop = 10;
@@ -32,12 +36,20 @@ export function MiniCandles({ candles, signal, height = 116, dark = false }: Pro
   const bw = (W - padX * 2) / candles.length;
   const bodyW = Math.max(1.6, bw * 0.58);
 
-  const up = dark ? '#3ddc97' : '#12b886';
-  const down = dark ? '#ff5d5d' : '#f03e3e';
-  const gridLine = dark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,35,0.05)';
+  /* 네온 팔레트 */
+  const up = '#00F5A0';
+  const down = '#FF2E63';
+  const gridLine = dark ? 'rgba(0, 229, 255, 0.075)' : 'rgba(15,23,35,0.05)';
+  const gridVert = dark ? 'rgba(122, 158, 255, 0.05)' : 'rgba(15,23,35,0.03)';
+  const targetColor = dark ? '#00F5A0' : '#12b886cc';
+  const stopColor = dark ? '#FF2E63' : '#f03e3e';
+  const eqColor = dark ? '#FFD166' : 'rgba(214,138,0,0.75)';
+  const entryColor = dark ? 'rgba(200, 220, 255, 0.38)' : 'rgba(15,23,35,0.28)';
 
-  const highlightX = padX + bw * signal.detectedIdx;
+  const highlightX = padX + bw * Math.min(signal.detectedIdx, candles.length - 1);
+  const highlightW = Math.max(bw * 1.6, 6);
   const last = candles[candles.length - 1];
+  const lastX = padX + bw * (candles.length - 1) + bw / 2;
 
   return (
     <svg
@@ -47,16 +59,64 @@ export function MiniCandles({ candles, signal, height = 116, dark = false }: Pro
       role="img"
       aria-label="캔들 차트"
     >
-      {[0.25, 0.5, 0.75].map((r) => (
-        <line key={r} x1={0} x2={W} y1={H * r} y2={H * r} stroke={gridLine} strokeWidth={1} />
+      <defs>
+        <filter
+          id={`${uid}-glow`}
+          filterUnits="userSpaceOnUse"
+          x={-8}
+          y={-8}
+          width={W + 16}
+          height={H + 16}
+        >
+          <feGaussianBlur stdDeviation="2.2" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <filter
+          id={`${uid}-soft`}
+          filterUnits="userSpaceOnUse"
+          x={-8}
+          y={-8}
+          width={W + 16}
+          height={H + 16}
+        >
+          <feGaussianBlur stdDeviation="3.6" />
+        </filter>
+        <linearGradient id={`${uid}-band`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="rgba(157, 78, 221, 0.05)" />
+          <stop offset="48%" stopColor="rgba(157, 78, 221, 0.28)" />
+          <stop offset="100%" stopColor="rgba(0, 229, 255, 0.1)" />
+        </linearGradient>
+      </defs>
+
+      {/* 다크 캔버스 */}
+      <rect x={0} y={0} width={W} height={H} fill={dark ? '#060A17' : 'transparent'} />
+
+      {/* 은은한 사이버 그리드 */}
+      {[0.2, 0.4, 0.6, 0.8].map((r) => (
+        <line key={`h${r}`} x1={0} x2={W} y1={H * r} y2={H * r} stroke={gridLine} strokeWidth={1} />
       ))}
+      {[0.2, 0.4, 0.6, 0.8].map((r) => (
+        <line key={`v${r}`} x1={W * r} x2={W * r} y1={0} y2={H} stroke={gridVert} strokeWidth={1} />
+      ))}
+
+      {/* 시그널 발생봉 네온 하이라이트 */}
+      <rect x={highlightX - highlightW / 2} y={0} width={highlightW} height={H} fill={`url(#${uid}-band)`} />
       <rect
-        x={Math.max(0, highlightX - bodyW)}
-        y={0}
-        width={Math.max(bw * 5.5, 26)}
-        height={H}
-        fill={dark ? 'rgba(124,92,255,0.16)' : 'rgba(91,91,214,0.08)'}
+        x={highlightX - highlightW / 2}
+        y={0.5}
+        width={highlightW}
+        height={H - 1}
+        fill="none"
+        stroke="rgba(157, 78, 221, 0.75)"
+        strokeWidth={1}
+        rx={3}
+        filter={`url(#${uid}-glow)`}
       />
+
+      {/* 캔들 */}
       {candles.map((c, i) => {
         const isUp = c.c >= c.o;
         const color = isUp ? up : down;
@@ -65,7 +125,7 @@ export function MiniCandles({ candles, signal, height = 116, dark = false }: Pro
         const bodyBottom = y(Math.min(c.o, c.c));
         return (
           <g key={c.t}>
-            <line x1={x} x2={x} y1={y(c.h)} y2={y(c.l)} stroke={color} strokeWidth={1} />
+            <line x1={x} x2={x} y1={y(c.h)} y2={y(c.l)} stroke={color} strokeWidth={1} opacity={0.9} />
             <rect
               x={x - bodyW / 2}
               y={bodyTop}
@@ -78,33 +138,36 @@ export function MiniCandles({ candles, signal, height = 116, dark = false }: Pro
         );
       })}
 
-      {/* 목표선 */}
+      {/* 목표선 — 네온 그린 */}
       <line
         x1={0}
         x2={W}
         y1={y(signal.target)}
         y2={y(signal.target)}
-        stroke={dark ? '#3ddc97' : '#12b886cc'}
-        strokeWidth={1.6}
+        stroke={targetColor}
+        strokeWidth={1.7}
+        filter={dark ? `url(#${uid}-glow)` : undefined}
       />
-      {/* 무효선 */}
+      {/* 무효선 — 네온 레드 */}
       <line
         x1={0}
         x2={W}
         y1={y(signal.stop)}
         y2={y(signal.stop)}
-        stroke={dark ? '#ff5d5d' : '#f03e3e'}
-        strokeWidth={1.6}
+        stroke={stopColor}
+        strokeWidth={1.7}
+        filter={dark ? `url(#${uid}-glow)` : undefined}
       />
-      {/* EQ 점선 */}
+      {/* EQ 점선 — 네온 골드 */}
       <line
         x1={0}
         x2={W}
         y1={y(signal.eq)}
         y2={y(signal.eq)}
-        stroke={dark ? 'rgba(240,180,41,0.85)' : 'rgba(214,138,0,0.75)'}
-        strokeWidth={1.2}
+        stroke={eqColor}
+        strokeWidth={1.3}
         strokeDasharray="5 4"
+        filter={dark ? `url(#${uid}-glow)` : undefined}
       />
       {/* 진입 점선 */}
       <line
@@ -112,16 +175,19 @@ export function MiniCandles({ candles, signal, height = 116, dark = false }: Pro
         x2={W}
         y1={y(signal.entry)}
         y2={y(signal.entry)}
-        stroke={dark ? 'rgba(255,255,255,0.35)' : 'rgba(15,23,35,0.28)'}
+        stroke={entryColor}
         strokeWidth={1}
         strokeDasharray="2 4"
       />
+
+      {/* 현재가 점 — 발광 */}
+      {dark && <circle cx={lastX} cy={y(last.c)} r={6} fill={signal.side === 'long' ? up : down} opacity={0.35} filter={`url(#${uid}-soft)`} />}
       <circle
-        cx={padX + bw * (candles.length - 1) + bw / 2}
+        cx={lastX}
         cy={y(last.c)}
         r={3.2}
         fill={signal.side === 'long' ? up : down}
-        stroke={dark ? '#0a0b0d' : '#fff'}
+        stroke={dark ? '#04060F' : '#fff'}
         strokeWidth={1.4}
       />
     </svg>
