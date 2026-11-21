@@ -163,6 +163,31 @@ const run = async () => {
     );
     check('라이브 FX 카드/배지', fx.cards > 0 && fx.badges.every((b) => b === 'FX·금'), `${fx.cards}장 ${fx.syms.join(',')}`);
 
+    // 랏(Lot) 표시 — 배수(x) 대신 랏·달러 손익
+    const lot = await page.evaluate(() => {
+      const cards = [...document.querySelectorAll('.fx-tab .signal-card:not(.skeleton)')];
+      const first = cards[0];
+      return {
+        buttons: [...document.querySelectorAll('.fx-tab .lot-select button')].map((b) => b.textContent?.trim()),
+        on: document.querySelector('.fx-tab .lot-select button.on')?.textContent?.trim(),
+        cap: first?.querySelector('.roi-cap')?.textContent?.trim(),
+        pnl: first?.querySelector('.roi-value')?.textContent?.trim(),
+        target: first?.querySelectorAll('.lvl')[0]?.querySelector('.lvl-usd')?.textContent?.trim(),
+        stop: first?.querySelectorAll('.lvl')[3]?.querySelector('.lvl-usd')?.textContent?.trim(),
+        multiplier: /\b\d+x\b|레버리지/.test(document.querySelector('.fx-tab')?.innerText || ''),
+      };
+    });
+    check('라이브 FX 랏 선택기 6개(기본 0.10)', lot.buttons.length === 6 && lot.on === '0.10', `${lot.buttons.join(' ')} (선택 ${lot.on})`);
+    check(
+      '라이브 FX 카드 랏·달러 손익',
+      /^0\.10 Lot 수익$/.test(lot.cap || '') && /^[+-]?\$/.test(lot.pnl || '') && /^[+-]\$/.test(lot.target || '') && /^-\$/.test(lot.stop || ''),
+      `${lot.cap} ${lot.pnl} · 목표 ${lot.target} · 무효 ${lot.stop}`,
+    );
+    check('라이브 FX 탭에 배수(x)·레버리지 없음', !lot.multiplier, lot.multiplier ? '배수 표현 발견' : '없음');
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: 'docs/screens/14-live-fx-lot.png' });
+
     // 오프셋 입력이 카드 가격에 반영되는지 (금 카드가 있으면 금, 없으면 첫 카드)
     const target = (fx.syms || []).find((s) => (s || '').startsWith('XAUUSD')) || fx.syms?.[0];
     if (target) {
