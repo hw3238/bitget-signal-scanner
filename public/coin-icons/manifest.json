@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-11-21T08:57:29.292Z",
- "count": 143,
+ "generatedAt": "2026-11-21T09:25:51.751Z",
+ "count": 144,
  "sources": {
-  "okx": 1,
+  "okx": 0,
   "binance": 1,
   "coincap": 0
  },
@@ -24,6 +24,7 @@
   "BANK": "BANK.png",
   "BARD": "BARD.png",
   "BCH": "BCH.png",
+  "BEAM": "BEAM.png",
   "BEAT": "BEAT.png",
   "BGB": "BGB.png",
   "BILL": "BILL.png",

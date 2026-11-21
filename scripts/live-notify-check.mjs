@@ -86,7 +86,7 @@ check(
   info.targets?.join(' / '),
 );
 check(info.ntfy === 'bgss-hw3238-9f4k2m', 'ntfy 기본 전용 토픽', info.ntfy);
-check(/앱 v1\.2\.0/.test(info.version || ''), '앱 버전 표기', info.version);
+check(/앱 v1\.3\.0/.test(info.version || ''), '앱 버전 표기 v1.3.0', info.version);
 check((info.update ?? '').includes('최신 버전입니다 (v1.3.0)'), '업데이트 확인 = 최신 v1.3.0', info.update);
 
 await page.evaluate(() => {
