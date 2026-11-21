@@ -17,7 +17,9 @@ import { buildFxRows, roundTo } from './FxOffsetBar';
 import { isNativeApp, nativeAppInfo, openExternalUrl } from '../lib/native';
 import {
   APP_VERSION,
+  APK_DOWNLOAD_URL,
   checkForUpdate,
+  compareVersions,
   hardReload,
   PAGES_URL,
   RELEASES_PAGE,
@@ -212,6 +214,17 @@ export function SettingsTab({
             ? '새 시그널이 감지되면 안드로이드 상단 알림바에 소리·진동과 함께 표시됩니다. 알림을 누르면 앱이 열립니다.'
             : '앱(APK)에서 설치하면 안드로이드 상단 알림바로 옵니다. 웹에서는 브라우저 알림으로 표시됩니다.'}
         </p>
+        {native && apkVersion && compareVersions(APP_VERSION, apkVersion) > 0 && (
+          <div className="update-banner">
+            <div className="update-banner-text">
+              <b>핸드폰 알림은 APK v{APP_VERSION}부터</b>
+              <span>설치된 앱 v{apkVersion} — 새 APK를 설치하면 알림이 동작합니다.</span>
+            </div>
+            <button className="update-banner-btn" onClick={() => void openExternalUrl(APK_DOWNLOAD_URL)}>
+              APK 받기
+            </button>
+          </div>
+        )}
         <div className="setting-row">
           <div>
             <div className="setting-name">시그널 알림</div>

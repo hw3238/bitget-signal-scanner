@@ -4,6 +4,8 @@ export const APP_VERSION = '1.1.0';
 export const REPO = 'hw3238/bitget-signal-scanner';
 export const PAGES_URL = 'https://hw3238.github.io/bitget-signal-scanner/';
 export const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
+/** 최신 릴리즈 APK 직접 다운로드 (항상 releases/latest 를 가리킨다) */
+export const APK_DOWNLOAD_URL = `https://github.com/${REPO}/releases/latest/download/bitget-crt-scanner.apk`;
 const RELEASES_API = `https://api.github.com/repos/${REPO}/releases/latest`;
 
 export interface ReleaseInfo {
