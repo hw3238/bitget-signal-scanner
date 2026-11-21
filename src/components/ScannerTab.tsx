@@ -5,7 +5,6 @@ import { favoriteKey, type FavoriteEntry } from '../lib/favorites';
 import { fmtPct, tfLabel } from '../lib/format';
 import { offsetFor } from '../lib/offset';
 import type { Settings } from '../lib/storage';
-import { FxOffsetBar } from './FxOffsetBar';
 import { SignalCard } from './SignalCard';
 import { CloseIcon, RefreshIcon, SearchIcon, StarIcon } from './Icons';
 
@@ -20,13 +19,11 @@ interface Props {
   onRescan: () => void;
 }
 
-type AssetFilter = 'all' | 'crypto' | 'stock' | 'fx';
+type AssetFilter = 'all' | 'crypto' | 'stock';
 
-/** 주력 3종목 원클릭 퀵 필터 */
+/** 주력 종목 원클릭 퀵 필터 (FX·금은 FX 탭에서) */
 const QUICK_FILTERS: { key: string; label: string; query: string; asset: AssetFilter; hint: string }[] = [
-  { key: 'gold', label: '🥇 금', query: 'XAU', asset: 'fx', hint: 'XAUUSD+ · 금 현물' },
-  { key: 'euro', label: '💶 유로', query: 'EURUSD', asset: 'fx', hint: 'EURUSD+ · 유로/달러' },
-  { key: 'btc', label: '₿ 비트', query: 'BTC', asset: 'crypto', hint: 'BTCUSDT · 비트겐' },
+  { key: 'btc', label: '₿ 비트', query: 'BTC', asset: 'crypto', hint: 'BTCUSDT · 비트겟' },
 ];
 
 const PAGE_SIZE = 12;
@@ -63,7 +60,10 @@ export function ScannerTab({
     setVisible(PAGE_SIZE);
   }, [query, asset, tf, onlyOpen, favOnly, settings.minRR]);
 
-  const openSignals = state.signals.filter((s) => s.state === 'open');
+  const openSignals = state.signals.filter((s) => s.state === 'open' && s.asset !== 'fx');
+  /** 스캐너 탭은 코인·주식선물 전용 — FX·금·원자재·지수는 FX 탭에서 본다. */
+  const baseSignals = useMemo(() => state.signals.filter((s) => s.asset !== 'fx'), [state.signals]);
+  const fxFavorites = useMemo(() => favorites.filter((f) => f.signal.asset !== 'fx'), [favorites]);
   const counts = useMemo(
     () => ({
       long: openSignals.filter((s) => s.side === 'long').length,
@@ -72,7 +72,6 @@ export function ScannerTab({
       h4: openSignals.filter((s) => s.tf === '4H').length,
       stock: openSignals.filter((s) => s.asset === 'stock').length,
       crypto: openSignals.filter((s) => s.asset === 'crypto').length,
-      fx: openSignals.filter((s) => s.asset === 'fx').length,
     }),
     [openSignals],
   );
@@ -85,7 +84,7 @@ export function ScannerTab({
   }, [state.signals]);
 
   const favoriteSignals = useMemo(() => {
-    return favorites
+    return fxFavorites
       .filter((f) => matchesQuery(liveByKey.get(f.key) ?? f.signal, terms))
       .map((f) => ({ entry: f, signal: liveByKey.get(f.key) ?? null }))
       .map(({ entry, signal }) => ({ signal: signal ?? entry.signal, stale: !signal }))
@@ -94,14 +93,14 @@ export function ScannerTab({
         if (rank(a) !== rank(b)) return rank(a) - rank(b);
         return b.signal.detectedAt - a.signal.detectedAt;
       });
-  }, [favorites, liveByKey, terms]);
+  }, [fxFavorites, liveByKey, terms]);
 
   const favoriteLiveCount = favoriteSignals.filter((f) => !f.stale).length;
 
   const filtered = useMemo(() => {
     // 즐겨찾기 모드: 자산·타임프레임·진행중·최소 손익비와 무관하게 찜한 시그널을 모두 보여준다.
     if (favOnly) return favoriteSignals;
-    return state.signals
+    return baseSignals
       .filter((s) => (onlyOpen ? s.state === 'open' : true))
       .filter((s) => (asset === 'all' ? true : s.asset === asset))
       .filter((s) => (tf === 'all' ? true : s.tf === tf))
@@ -113,14 +112,14 @@ export function ScannerTab({
         return b.detectedAt - a.detectedAt;
       })
       .map((signal) => ({ signal, stale: false }));
-  }, [state.signals, onlyOpen, asset, tf, settings.minRR, favOnly, favoriteSignals, terms]);
+  }, [baseSignals, onlyOpen, asset, tf, settings.minRR, favOnly, favoriteSignals, terms]);
 
   const shown = filtered.slice(0, visible);
   const remaining = filtered.length - shown.length;
   const activeQuick = QUICK_FILTERS.find((q) => q.query.toLowerCase() === query.trim().toLowerCase());
 
   const qualified = state.analyses.filter(
-    (a) => a.activeWinRate >= 55 && a.activeRR >= 1.5 && a.activeN >= 2,
+    (a) => a.asset !== 'fx' && a.activeWinRate >= 55 && a.activeRR >= 1.5 && a.activeN >= 2,
   ).length;
   const scanning = state.status === 'scanning';
   const pct = state.progress.total ? Math.round((state.progress.done / state.progress.total) * 100) : 0;
@@ -138,7 +137,8 @@ export function ScannerTab({
               TS 발생 종목 <span className="dot-live" /> <b>{openSignals.length}</b>
             </div>
             <div className="summary-sub">
-              비트겟 USDT-M · {state.analyses.length}개 마켓 · {qualified}개 마켓 고승률 전략 채택
+              비트겟 USDT-M 코인·주식선물 · {state.analyses.filter((a) => a.asset !== 'fx').length}개 마켓 ·{' '}
+              {qualified}개 마켓 고승률 전략 채택
             </div>
           </div>
           <button className={`rescan ${scanning ? 'busy' : ''}`} onClick={onRescan} disabled={scanning}>
@@ -150,9 +150,12 @@ export function ScannerTab({
         <div className="counter-row">
           <span className="counter long">롱 {counts.long}</span>
           <span className="counter short">숏 {counts.short}</span>
-          <span className="counter">{tfLabel('1H')} {counts.h1}</span>
-          <span className="counter">{tfLabel('4H')} {counts.h4}</span>
-          <span className="counter fx">FX·금 {counts.fx}</span>
+          <span className="counter">
+            {tfLabel('1H')} {counts.h1}
+          </span>
+          <span className="counter">
+            {tfLabel('4H')} {counts.h4}
+          </span>
           <span className="counter alt">평균 {fmtPct(avgRoi)}</span>
         </div>
 
@@ -219,7 +222,6 @@ export function ScannerTab({
                 ['all', '전체'],
                 ['crypto', '코인'],
                 ['stock', '주식선물'],
-                ['fx', 'FX·금'],
               ] as [AssetFilter, string][]
             ).map(([key, label]) => (
               <button key={key} className={asset === key ? 'on' : ''} onClick={() => setAsset(key)}>
@@ -274,7 +276,7 @@ export function ScannerTab({
           >
             <StarIcon size={14} filled={favOnly} />
             즐겨찾기
-            <b>{favorites.length}</b>
+            <b>{fxFavorites.length}</b>
           </button>
         </div>
 
@@ -292,21 +294,6 @@ export function ScannerTab({
         </div>
       )}
 
-      {asset === 'fx' && (
-        <FxOffsetBar
-          state={state}
-          offsets={settings.fxOffsets}
-          twelveDataKey={settings.twelveDataKey}
-          onChange={(label, value) => {
-            const next = { ...settings.fxOffsets };
-            if (value) next[label] = value;
-            else delete next[label];
-            onSettings({ fxOffsets: next });
-          }}
-          onReset={() => onSettings({ fxOffsets: {} })}
-        />
-      )}
-
       <div className="list-head">
         {favOnly ? (
           <span>
@@ -320,10 +307,8 @@ export function ScannerTab({
         )}
         <span className="muted">
           {favOnly
-            ? '찜한 시그널은 진행중/종료·필터와 무관하게 모두 표시됩니다'
-            : asset === 'fx'
-              ? `Vantage 호가 기준 표기 · 승률 55%·손익비 ${settings.minRR.toFixed(1)}R 이상 전략만 시그널 생성`
-              : `승률 55%·손익비 ${settings.minRR.toFixed(1)}R 이상 전략만 시그널 생성`}
+            ? '찜한 시그널은 진행중/종료·필터와 무관하게 모두 표시됩니다 (FX·금은 FX 탭)'
+            : `승률 55%·손익비 ${settings.minRR.toFixed(1)}R 이상 전략만 시그널 생성 · FX·금은 FX 탭`}
         </span>
       </div>
 
@@ -403,7 +388,7 @@ export function ScannerTab({
           <div className="empty">
             <div className="empty-title">조건을 통과한 TS가 없습니다</div>
             <p>
-              현재 {state.analyses.length}개 마켓을 200봉 기준으로 다시 계산했지만, 고승률 기준(승률 55% ·
+              현재 {state.analyses.filter((a) => a.asset !== 'fx').length}개 마켓을 200봉 기준으로 다시 계산했지만, 고승률 기준(승률 55% ·
               손익비 {settings.minRR.toFixed(1)}R)을 만족하는 진행중 시그널이 없습니다.
             </p>
             <div className="empty-actions">

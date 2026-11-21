@@ -4,6 +4,7 @@ import { MIN_RR, MIN_WINRATE } from '../engine/backtest';
 import type { ScanState } from '../hooks/useScanner';
 import { fmtPrice } from '../lib/format';
 import { fmtOffset, offsetFor, type OffsetMap } from '../lib/offset';
+import { LOT_PRESETS, normalizeLot } from '../utils/lot';
 import { buildFxRows, roundTo } from './FxOffsetBar';
 import { isNativeApp, nativeAppInfo, openExternalUrl } from '../lib/native';
 import {
@@ -139,12 +140,35 @@ export function SettingsTab({
         <div className="setting-row">
           <div>
             <div className="setting-name">레버리지 배율</div>
-            <div className="setting-desc">모든 시그널 카드와 백테스트 수익률에 반영됩니다.</div>
+            <div className="setting-desc">
+              코인·주식선물 시그널 카드와 백테스트 수익률에 반영됩니다. FX 탭은 배수 대신 랏(Lot) 기준 달러
+              손익으로 표시합니다.
+            </div>
           </div>
           <div className="segmented">
             {[5, 10, 20, 50].map((l) => (
               <button key={l} className={settings.leverage === l ? 'on' : ''} onClick={() => onChange({ leverage: l })}>
                 {l}x
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="setting-row">
+          <div>
+            <div className="setting-name">FX 탭 랏(Lot)</div>
+            <div className="setting-desc">
+              FX·금·원자재·지수 카드와 공유 카드의 달러 손익을 선택한 랏 × 표준 계약 크기로 계산합니다.
+            </div>
+          </div>
+          <div className="segmented lot-select">
+            {LOT_PRESETS.map((p) => (
+              <button
+                key={p}
+                className={Math.abs(normalizeLot(settings.fxLot) - p) < 1e-9 ? 'on' : ''}
+                onClick={() => onChange({ fxLot: p })}
+              >
+                {p.toFixed(2)}
               </button>
             ))}
           </div>

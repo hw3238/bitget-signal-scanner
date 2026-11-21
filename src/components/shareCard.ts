@@ -2,6 +2,7 @@ import type { Signal } from '../engine/types';
 import { symbolLogo } from '../lib/asset';
 import { fmtPct, fmtPrice, tfLabel } from '../lib/format';
 import { fmtOffset, shiftSignal } from '../lib/offset';
+import { fmtLot, fmtUsd, lotCalcForSignal } from '../utils/lot';
 
 const FONT = '"Noto Sans KR","Noto Sans CJK KR",system-ui,sans-serif';
 
@@ -54,9 +55,17 @@ function neon(
   ctx.restore();
 }
 
-export function drawShareCard(canvas: HTMLCanvasElement, signalInput: Signal, leverage: number, offset = 0) {
+export function drawShareCard(
+  canvas: HTMLCanvasElement,
+  signalInput: Signal,
+  leverage: number,
+  offset = 0,
+  /** FX 시그널이면 배수(x) 대신 이 랏(Lot) 기준 달러 손익으로 그린다. */
+  lot?: number,
+) {
   // 벤티지 호가 보정 — 모든 가격을 같은 값동안 평행 이동(비율·손익비는 그대로)
   const signal = offset ? shiftSignal(signalInput, offset) : signalInput;
+  const lc = lot != null ? lotCalcForSignal(signal, lot) : null;
   const dpr = 2;
   canvas.width = W * dpr;
   canvas.height = H * dpr;
@@ -240,11 +249,31 @@ export function drawShareCard(canvas: HTMLCanvasElement, signalInput: Signal, le
   ctx.stroke();
   label(ctx, signal.asset === 'stock' ? '주식선물' : signal.asset === 'fx' ? 'FX·금' : '코인', bx + 135, 214, `700 13px ${FONT}`, '#DCE8FF', 'center');
 
-  /* 우측 R/ROI — 형광 */
+  /* 랏(Lot) 배지 — FX 시그널은 배수 대신 계약 크기 기준 랏을 명시한다 */
+  if (lc) {
+    ctx.save();
+    ctx.shadowColor = 'rgba(255, 209, 102, 0.7)';
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = 'rgba(255, 209, 102, 0.14)';
+    ctx.strokeStyle = 'rgba(255, 209, 102, 0.8)';
+    ctx.lineWidth = 1.4;
+    rr(ctx, bx + 182, 195, 96, 28, 14);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    label(ctx, `${fmtLot(lc.lot)} Lot`, bx + 230, 214, `900 13px ${FONT}`, amber, 'center');
+  }
+
+  /* 우측 R/수익 — 형광 */
   const rText = `${signal.currentR >= 0 ? '+' : '−'}${Math.abs(signal.currentR).toFixed(1)}R`;
   neon(ctx, rText, W - 40, 182, `900 50px ${FONT}`, accent, 'right', 26);
-  neon(ctx, `레버리지 ${leverage}x ${fmtPct(roi)}`, W - 40, 210, `800 16px ${FONT}`, accent, 'right', 12);
-  label(ctx, `목표 ${signal.rr.toFixed(1)}R`, W - 40, 232, `700 14px ${FONT}`, '#A8B8D6', 'right');
+  if (lc) {
+    neon(ctx, `${fmtLot(lc.lot)} Lot ${fmtUsd(lc.pnl)}`, W - 40, 212, `900 19px ${FONT}`, accent, 'right', 12);
+    label(ctx, `목표 ${fmtUsd(lc.targetUsd)}`, W - 40, 234, `700 14px ${FONT}`, green, 'right');
+  } else {
+    neon(ctx, `레버리지 ${leverage}x ${fmtPct(roi)}`, W - 40, 210, `800 16px ${FONT}`, accent, 'right', 12);
+    label(ctx, `목표 ${signal.rr.toFixed(1)}R`, W - 40, 232, `700 14px ${FONT}`, '#A8B8D6', 'right');
+  }
 
   /* 별점 + 전략 */
   const stars = '★'.repeat(signal.star) + '☆'.repeat(5 - signal.star);
@@ -391,10 +420,38 @@ export function drawShareCard(canvas: HTMLCanvasElement, signalInput: Signal, le
 
   /* ---------- 4칸 박스 ---------- */
   const boxes = [
-    { label: '목표', value: fmtPrice(signal.target, signal.decimals), color: green, border: 'rgba(0, 245, 160, 0.5)', glow: 'rgba(0, 245, 160, 0.75)' },
-    { label: '반익 EQ', value: fmtPrice(signal.eq, signal.decimals), color: amber, border: 'rgba(255, 209, 102, 0.45)', glow: 'rgba(255, 209, 102, 0.7)' },
-    { label: '진입가 추천', value: fmtPrice(signal.entry, signal.decimals), color: ink, border: 'rgba(0, 229, 255, 0.35)', glow: 'rgba(0, 229, 255, 0.6)' },
-    { label: '무효', value: fmtPrice(signal.stop, signal.decimals), color: red, border: 'rgba(255, 46, 99, 0.5)', glow: 'rgba(255, 46, 99, 0.75)' },
+    {
+      label: '목표',
+      value: fmtPrice(signal.target, signal.decimals),
+      usd: lc ? fmtUsd(lc.targetUsd) : undefined,
+      color: green,
+      border: 'rgba(0, 245, 160, 0.5)',
+      glow: 'rgba(0, 245, 160, 0.75)',
+    },
+    {
+      label: '반익 EQ',
+      value: fmtPrice(signal.eq, signal.decimals),
+      usd: lc ? fmtUsd(lc.eqUsd) : undefined,
+      color: amber,
+      border: 'rgba(255, 209, 102, 0.45)',
+      glow: 'rgba(255, 209, 102, 0.7)',
+    },
+    {
+      label: '진입가 추천',
+      value: fmtPrice(signal.entry, signal.decimals),
+      usd: lc ? `${fmtLot(lc.lot)} Lot` : undefined,
+      color: ink,
+      border: 'rgba(0, 229, 255, 0.35)',
+      glow: 'rgba(0, 229, 255, 0.6)',
+    },
+    {
+      label: '무효',
+      value: fmtPrice(signal.stop, signal.decimals),
+      usd: lc ? fmtUsd(lc.stopUsd) : undefined,
+      color: red,
+      border: 'rgba(255, 46, 99, 0.5)',
+      glow: 'rgba(255, 46, 99, 0.75)',
+    },
   ];
   const boxW = (pw - 16) / 2;
   const boxH = 78;
@@ -419,6 +476,9 @@ export function drawShareCard(canvas: HTMLCanvasElement, signalInput: Signal, le
     ctx.restore();
     label(ctx, b.label, bx2 + 18, by2 + 28, `700 14px ${FONT}`, '#93A5C4');
     neon(ctx, b.value, bx2 + 18, by2 + 59, `900 25px ${FONT}`, b.color, 'left', 14);
+    if (b.usd) {
+      label(ctx, b.usd, bx2 + boxW - 16, by2 + 58, `900 14px ${FONT}`, b.color, 'right');
+    }
   });
 
   /* ---------- 진행 게이지 ---------- */
@@ -466,7 +526,7 @@ export function drawShareCard(canvas: HTMLCanvasElement, signalInput: Signal, le
     ctx,
     `${signal.symbol} · Bitget USDT-M · ${tfLabel(signal.tf)}봉 200개 실데이터${
       offset ? ` · Vantage 호가 ${fmtOffset(offset, signal.decimals ?? 2)}` : ''
-    }`,
+    }${lc ? ` · ${lc.spec.label}` : ''}`,
     px,
     924,
     `500 14px ${FONT}`,

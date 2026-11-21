@@ -116,36 +116,23 @@ const run = async () => {
   await page.locator('.search-clear').click();
   await page.waitForTimeout(300);
 
-  // 주력 종목(금) 퀵 필터
-  await page.locator('.quick-chip', { hasText: '금' }).first().click();
-  await page.waitForTimeout(800);
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.waitForTimeout(300);
-  await page.screenshot({ path: `${OUT}/13-fx-quick-gold.png` });
-  await page.locator('.quick-chip', { hasText: '금' }).first().click();
-  await page.waitForTimeout(300);
-
-  // FX·금 탭 + 벤티지 호가 보정
-  await page.locator('.segmented[aria-label="자산 구분"] button', { hasText: 'FX·금' }).click();
-  await page.waitForTimeout(900);
+  // FX 탭 — 코인·주식선물 스캐너와 분리된 FX·금 전용 화면
+  await page.locator('.bottom-nav button[data-tab="fx"]').click();
+  await page.waitForTimeout(1000);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${OUT}/13-fx-scanner-top.png` });
-  await page.evaluate(() => {
-    const bar = document.querySelector('.fx-offset-bar');
-    if (bar) window.scrollTo(0, bar.getBoundingClientRect().top + window.scrollY - 70);
-  });
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: `${OUT}/13-fx-scanner.png` });
-  await page.screenshot({ path: `${OUT}/13-fx-scanner-full.png`, fullPage: true, scale: 'css' });
 
   const fxScreen = await page.evaluate(() => {
-    const cards = [...document.querySelectorAll('.signal-card:not(.skeleton)')];
+    const cards = [...document.querySelectorAll('.fx-tab .signal-card:not(.skeleton)')];
     return {
       cards: cards.length,
       syms: cards.map((c) => c.querySelector('.sym')?.textContent),
       prices: cards.slice(0, 5).map((c) => c.querySelector('.price')?.textContent),
+      caps: cards.slice(0, 5).map((c) => c.querySelector('.roi-cap')?.textContent),
+      pnls: cards.slice(0, 5).map((c) => c.querySelector('.roi-value')?.textContent),
       levels: cards.slice(0, 2).map((c) => [...c.querySelectorAll('.lvl-value')].map((v) => v.textContent)),
+      lotOn: document.querySelector('.lot-select button.on')?.textContent,
       chips: [...document.querySelectorAll('.fx-chip')].map((c) =>
         c.querySelector('.fx-chip-label')?.textContent?.replace('★', '').trim(),
       ),
@@ -153,25 +140,54 @@ const run = async () => {
     };
   });
 
+  // 카드 영역까지 스크롤 — 랏(Lot) 달러 손익이 보이는 화면
+  await page.evaluate(() => {
+    const grid = document.querySelector('.fx-tab .card-grid');
+    if (grid) window.scrollTo(0, grid.getBoundingClientRect().top + window.scrollY - 96);
+  });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${OUT}/13-fx-scanner.png` });
+  await page.screenshot({ path: `${OUT}/13-fx-scanner-full.png`, fullPage: true, scale: 'css' });
+
   // 호가 오프셋 입력 → 카드 가격 이동 확인
-  await page.locator('.fx-chip.priority .fx-offset-input').first().fill('0.5');
+  await page.evaluate(() => {
+    const bar = document.querySelector('.fx-offset-bar');
+    if (bar) window.scrollTo(0, bar.getBoundingClientRect().top + window.scrollY - 70);
+  });
+  await page.waitForTimeout(300);
+  await page.locator('.fx-tab .fx-chip.priority .fx-offset-input').first().fill('0.5');
   await page.waitForTimeout(600);
   await page.screenshot({ path: `${OUT}/13-fx-offset.png` });
   const offsetApplied = await page.evaluate(() => {
-    const card = [...document.querySelectorAll('.signal-card:not(.skeleton)')].find((c) =>
+    const card = [...document.querySelectorAll('.fx-tab .signal-card:not(.skeleton)')].find((c) =>
       (c.querySelector('.sym')?.textContent || '').startsWith('XAUUSD'),
     );
     return {
       price: card?.querySelector('.price')?.textContent,
+      pnl: card?.querySelector('.roi-value')?.textContent,
       sub: card?.querySelector('.sym-sub')?.textContent?.replace(/\s+/g, ' ').trim(),
       stored: JSON.parse(localStorage.getItem('bgss.settings.v1') || '{}').fxOffsets,
     };
   });
-  await page.locator('.fx-offset-reset').click();
+  await page.locator('.fx-tab .fx-offset-reset').click();
   await page.waitForTimeout(300);
 
-  // FX 공유 카드
-  const fxCard = page.locator('.signal-card:not(.skeleton)').first();
+  // 주력 금 퀵 필터
+  await page.locator('.fx-tab .quick-chip', { hasText: '금' }).first().click();
+  await page.waitForTimeout(800);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${OUT}/13-fx-quick-gold.png` });
+  await page.locator('.fx-tab .quick-chip', { hasText: '금' }).first().click();
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    const grid = document.querySelector('.fx-tab .card-grid');
+    if (grid) window.scrollTo(0, grid.getBoundingClientRect().top + window.scrollY - 96);
+  });
+  await page.waitForTimeout(300);
+
+  // FX 공유 카드 (배수 대신 랏·달러)
+  const fxCard = page.locator('.fx-tab .signal-card:not(.skeleton)').first();
   if (await fxCard.count()) {
     await fxCard.click();
     await page.waitForSelector('.share-canvas.in', { timeout: 20000 });
@@ -181,8 +197,10 @@ const run = async () => {
     await page.waitForTimeout(400);
   }
 
-  await page.locator('.segmented[aria-label="자산 구분"] button', { hasText: '전체' }).click();
-  await page.waitForTimeout(400);
+  await page.locator('.bottom-nav button[data-tab="scanner"]').click();
+  await page.waitForTimeout(500);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(300);
 
   // 다크 공유 카드
   await page.locator('.signal-card').first().click();
@@ -276,6 +294,11 @@ const run = async () => {
   );
   await dpage.waitForTimeout(1200);
   await dpage.screenshot({ path: `${OUT}/06-desktop.png`, fullPage: false });
+  await dpage.locator('.top-nav button[data-tab="fx"]').click();
+  await dpage.waitForTimeout(900);
+  await dpage.evaluate(() => window.scrollTo(0, 0));
+  await dpage.waitForTimeout(300);
+  await dpage.screenshot({ path: `${OUT}/13-fx-desktop.png`, fullPage: false });
   const desktopInfo = await dpage.evaluate(() => ({
     cards: document.querySelectorAll('.signal-card:not(.skeleton)').length,
     cols: getComputedStyle(document.querySelector('.card-grid')).gridTemplateColumns,

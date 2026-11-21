@@ -2,12 +2,15 @@ import type { Signal } from '../engine/types';
 import { assetClass, assetLabel, symbolLogo } from '../lib/asset';
 import { fmtPct, fmtPrice, fmtTime, tfLabel } from '../lib/format';
 import { fmtOffset } from '../lib/offset';
+import { fmtLot, fmtPips, fmtUsd, lotCalc, lotSpec } from '../utils/lot';
 import { MiniCandles } from './MiniCandles';
 import { BoltIcon, StarIcon } from './Icons';
 
 interface Props {
   signal: Signal;
   leverage: number;
+  /** FX 탭: 배수(x) 대신 이 랏(Lot) 기준 달러 손익으로 표시한다. */
+  lot?: number;
   onOpen: (signal: Signal) => void;
   isFavorite: boolean;
   onToggleFavorite: (signal: Signal) => void;
@@ -20,6 +23,7 @@ interface Props {
 export function SignalCard({
   signal,
   leverage,
+  lot,
   onOpen,
   isFavorite,
   onToggleFavorite,
@@ -33,6 +37,11 @@ export function SignalCard({
   const eq = signal.eq + offset;
   const changePct = ((price - entry) / (entry || 1)) * 100 * (signal.side === 'long' ? 1 : -1);
   const roi = changePct * leverage;
+  // FX 카드: 랏(Lot) × 표준 계약 크기로 달러 손익을 계산한다.
+  const lc =
+    lot != null
+      ? lotCalc(lotSpec(signal.base), lot, { entry, price, target, stop, eq, side: signal.side })
+      : null;
   const sideClass = signal.side === 'long' ? 'long' : 'short';
   const stateClass = signal.state === 'open' ? 'open' : signal.state === 'win' ? 'win' : 'loss';
   const stateLabel = signal.state === 'open' ? '진행중' : signal.state === 'win' ? '적중' : '무효';
@@ -89,10 +98,17 @@ export function SignalCard({
 
       <div className="price-row">
         <div className="price">{fmtPrice(price, dec)}</div>
-        <div className="roi">
-          <span className="roi-cap">레버리지 {leverage}x 수익률</span>
-          <span className={`roi-value ${roi >= 0 ? 'up' : 'down'}`}>{fmtPct(roi)}</span>
-        </div>
+        {lc ? (
+          <div className="roi lot">
+            <span className="roi-cap">{fmtLot(lc.lot)} Lot 수익</span>
+            <span className={`roi-value ${lc.pnl >= 0 ? 'up' : 'down'}`}>{fmtUsd(lc.pnl)}</span>
+          </div>
+        ) : (
+          <div className="roi">
+            <span className="roi-cap">레버리지 {leverage}x 수익률</span>
+            <span className={`roi-value ${roi >= 0 ? 'up' : 'down'}`}>{fmtPct(roi)}</span>
+          </div>
+        )}
       </div>
 
       <div className="rr-row">
@@ -118,20 +134,35 @@ export function SignalCard({
         <div className="lvl">
           <span className="lvl-label">목표</span>
           <span className="lvl-value target">{fmtPrice(target, dec)}</span>
+          {lc && <span className="lvl-usd target">{fmtUsd(lc.targetUsd)}</span>}
         </div>
         <div className="lvl">
           <span className="lvl-label">진입</span>
           <span className="lvl-value entry">{fmtPrice(entry, dec)}</span>
+          {lc && <span className="lvl-usd muted">기준가</span>}
         </div>
         <div className="lvl">
           <span className="lvl-label">EQ</span>
           <span className="lvl-value eq">{fmtPrice(eq, dec)}</span>
+          {lc && <span className="lvl-usd eq">{fmtUsd(lc.eqUsd)}</span>}
         </div>
         <div className="lvl">
           <span className="lvl-label">무효</span>
           <span className="lvl-value stop">{fmtPrice(stop, dec)}</span>
+          {lc && <span className="lvl-usd stop">{fmtUsd(lc.stopUsd)}</span>}
         </div>
       </div>
+
+      {lc && (
+        <div className="lot-strip">
+          <b>{fmtLot(lc.lot)} Lot</b>
+          <span>1{lc.spec.pipUnit} ${lc.pipUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          <span>
+            목표 {fmtPips(lc.targetPips)} {lc.spec.pipUnit} · 손절 {fmtPips(lc.stopPips)} {lc.spec.pipUnit}
+          </span>
+          <span className="lot-spec">{lc.spec.label}</span>
+        </div>
+      )}
 
       <div className="progress-row">
         <div className="progress-track">

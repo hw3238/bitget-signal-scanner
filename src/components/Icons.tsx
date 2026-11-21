@@ -21,6 +21,13 @@ export const ScannerIcon = ({ size = 22, className }: IconProps) => (
   </svg>
 );
 
+export const FxIcon = ({ size = 22, className }: IconProps) => (
+  <svg {...base(size)} className={className}>
+    <path d="M3 8.2h13.2M13.2 4.6l3.6 3.6-3.6 3.6" />
+    <path d="M21 15.8H7.8M10.8 12.2 7.2 15.8l3.6 3.6" />
+  </svg>
+);
+
 export const MarketIcon = ({ size = 22, className }: IconProps) => (
   <svg {...base(size)} className={className}>
     <path d="M4 16.5 9 11l3.2 3.2L20 6" />

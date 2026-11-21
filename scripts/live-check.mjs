@@ -141,7 +141,7 @@ const run = async () => {
 
   // FX·금 탭 + 벤티지 호가 보정 반영 확인
   if (scan.cards) {
-    await page.locator('.segmented[aria-label="자산 구분"] button', { hasText: 'FX·금' }).click();
+    await page.locator('.bottom-nav button[data-tab="fx"]').click();
     await page.waitForTimeout(900);
     const fx = await page.evaluate(() => {
       const cards = [...document.querySelectorAll('.signal-card:not(.skeleton)')];

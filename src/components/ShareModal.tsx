@@ -7,6 +7,8 @@ import { isNativeApp, saveImageToDevice, shareImageFromDevice } from '../lib/nat
 interface Props {
   signal: Signal;
   leverage: number;
+  /** FX 시그널이면 배수(x) 대신 이 랏(Lot) 기준 달러 손익으로 그린다. */
+  lot?: number;
   isFavorite: boolean;
   onToggleFavorite: (signal: Signal) => void;
   onClose: () => void;
@@ -14,7 +16,7 @@ interface Props {
   offset?: number;
 }
 
-export function ShareModal({ signal, leverage, isFavorite, onToggleFavorite, onClose, offset = 0 }: Props) {
+export function ShareModal({ signal, leverage, lot, isFavorite, onToggleFavorite, onClose, offset = 0 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [ready, setReady] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -24,7 +26,7 @@ export function ShareModal({ signal, leverage, isFavorite, onToggleFavorite, onC
     let cancelled = false;
     const draw = () => {
       if (cancelled || !canvasRef.current) return;
-      drawShareCard(canvasRef.current, signal, leverage, offset);
+      drawShareCard(canvasRef.current, signal, leverage, offset, lot);
       setReady(true);
     };
     if (document.fonts?.ready) {
@@ -35,7 +37,7 @@ export function ShareModal({ signal, leverage, isFavorite, onToggleFavorite, onC
     return () => {
       cancelled = true;
     };
-  }, [signal, leverage, offset]);
+  }, [signal, leverage, offset, lot]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

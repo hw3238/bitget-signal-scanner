@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BottomNav, NAV_TABS, type TabKey } from './components/BottomNav';
 import { EngineTab } from './components/EngineTab';
+import { FxTab } from './components/FxTab';
 import { HistoryTab } from './components/HistoryTab';
 import { MarketTab } from './components/MarketTab';
 import { ScannerTab } from './components/ScannerTab';
 import { SettingsTab } from './components/SettingsTab';
 import { ShareModal } from './components/ShareModal';
-import { EngineIcon, HistoryIcon, MarketIcon, RefreshIcon, ScannerIcon, SettingsIcon } from './components/Icons';
+import { RefreshIcon } from './components/Icons';
 import type { Signal } from './engine/types';
 import { useFavorites } from './hooks/useFavorites';
 import { useScanner } from './hooks/useScanner';
@@ -14,16 +16,9 @@ import { offsetFor } from './lib/offset';
 import { openExternalUrl } from './lib/native';
 import { checkForUpdate, RELEASES_PAGE } from './lib/update';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from './lib/storage';
+import { normalizeLot } from './utils/lot';
 
-type Tab = 'scanner' | 'market' | 'engine' | 'history' | 'settings';
-
-const TABS: { key: Tab; label: string; icon: (p: { size?: number }) => JSX.Element }[] = [
-  { key: 'scanner', label: '스캐너', icon: ScannerIcon },
-  { key: 'market', label: '시황', icon: MarketIcon },
-  { key: 'engine', label: '전략엔진', icon: EngineIcon },
-  { key: 'history', label: '기록', icon: HistoryIcon },
-  { key: 'settings', label: '설정', icon: SettingsIcon },
-];
+type Tab = TabKey;
 
 export default function App() {
   const [settings, setSettings] = useState<Settings>(() => ({ ...DEFAULT_SETTINGS, ...loadSettings() }));
@@ -110,7 +105,9 @@ export default function App() {
     return '대기';
   }, [state]);
 
-  const openCount = state.signals.filter((s) => s.state === 'open').length;
+  const openCount = state.signals.filter((s) => s.state === 'open' && s.asset !== 'fx').length;
+  const openFxCount = state.signals.filter((s) => s.state === 'open' && s.asset === 'fx').length;
+  const lot = normalizeLot(settings.fxLot);
 
   return (
     <div className="app">
@@ -125,8 +122,14 @@ export default function App() {
           </div>
 
           <nav className="top-nav">
-            {TABS.map((t) => (
-              <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>
+            {NAV_TABS.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                data-tab={t.key}
+                className={tab === t.key ? 'on' : ''}
+                onClick={() => setTab(t.key)}
+              >
                 {t.label}
               </button>
             ))}
@@ -177,6 +180,18 @@ export default function App() {
             onRescan={() => void scan()}
           />
         )}
+        {tab === 'fx' && (
+          <FxTab
+            state={state}
+            settings={settings}
+            favorites={favorites.entries}
+            isFavorite={favorites.isFavorite}
+            onToggleFavorite={favorites.toggle}
+            onSettings={patchSettings}
+            onOpen={setShareSignal}
+            onRescan={() => void scan()}
+          />
+        )}
         {tab === 'market' && (
           <MarketTab state={state} offsets={settings.fxOffsets} onRescan={() => void scan()} />
         )}
@@ -210,25 +225,13 @@ export default function App() {
         )}
       </main>
 
-      <nav className="bottom-nav">
-        {TABS.map((t) => {
-          const Icon = t.icon;
-          return (
-            <button key={t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>
-              <span className="nav-icon">
-                <Icon size={22} />
-                {t.key === 'scanner' && openCount > 0 && <i className="nav-badge">{openCount}</i>}
-              </span>
-              <span>{t.label}</span>
-            </button>
-          );
-        })}
-      </nav>
+      <BottomNav tab={tab} onChange={setTab} badges={{ scanner: openCount, fx: openFxCount }} />
 
       {shareSignal && (
         <ShareModal
           signal={shareSignal}
           leverage={settings.leverage}
+          lot={shareSignal.asset === 'fx' ? lot : undefined}
           offset={offsetFor(shareSignal.base, settings.fxOffsets)}
           isFavorite={favorites.isFavorite(shareSignal)}
           onToggleFavorite={favorites.toggle}

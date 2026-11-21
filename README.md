@@ -57,13 +57,17 @@ npm run preview  # http://127.0.0.1:4173
 
 ## 화면
 
+하단 내비게이션 6탭: **스캐너 | FX | 시황 | 전략엔진 | 기록 | 설정** (390px 폭에서도 겹침·줄바꿈 없이 한 줄).
+스캐너·FX 탭 아이콘에는 현재 활성(진행중) 시그널 수 배지가 붙습니다.
+
 | 탭 | 내용 |
 | --- | --- |
-| 스캐너 | TS 발생 종목 카운터(롱/숏/1시간/4시간/**FX·금**), **🥇 금 · 💶 유로 · ₿ 비트 주력 퀵 필터**, **종목·심볼·전략 검색**, 전체·코인·주식선물·**FX·금** 필터, 레버리지(5/10/20/50x), 최소 손익비(1.2~2.5R), 진행중/종료, **⭐ 즐겨찾기 모아보기**, 12건씩 펼치는 **이전 시그널 더보기**, **Vantage 호가 보정 미니 바**, 시그널 카드(⭐ 즐겨찾기·미니 캔들 차트·목표/EQ/진입/무효·진행 게이지·전략 승률) |
+| 스캐너 | 코인·주식선물 전용 — TS 발생 종목 카운터(롱/숏/1시간/4시간), **₿ 비트 퀵 필터**, **종목·심볼·전략 검색**, 전체·코인·주식선물 필터, 레버리지(5/10/20/50x), 최소 손익비(1.2~2.5R), 진행중/종료, **⭐ 즐겨찾기 모아보기**, 12건씩 펼치는 **이전 시그널 더보기**, 시그널 카드(⭐ 즐겨찾기·미니 캔들 차트·목표/EQ/진입/무효·진행 게이지·전략 승률) |
+| FX | FX·금·원자재·지수 전용 — 발송 시그널 수·롱/숏/1H/4H·**선택 랏 합계 손익**, 검색, **🥇 금 · 💶 유로 퀵 필터**, 타임프레임(전체/1H/4H), **랏(Lot) 선택기(0.01~1.00)**, 최소 손익비, 진행중/종료, ⭐ 즐겨찾기, **Vantage 호가 보정 미니 바**, 카드에 `0.10 Lot 수익 +$…`·목표 `+$…`·무효 `-$…`·`1핍 $…` 표시 |
 | 시황 | 코인/주식선물/**FX·금** 상승·하락 TOP, 거래대금 TOP, 펀딩비 극단, 상승·하락 종목 수·평균 펀딩비·24h 거래대금 |
 | 전략엔진 | 6개 매매법 실시간 순위(채택 마켓·채택 승률·표본·손익비·기대 수익), 자동 교체 로그, 백테스트 재실행 |
 | 기록 | 탐지된 시그널의 적중/무효/진행 추적(최대 400건 보관), **종목·전략 검색**, 15건씩 펼치는 **이전 기록 더보기**, 실현·미실현 레버리지 수익률 |
-| 설정 | 레버리지·최소 손익비·자동 갱신 주기(30/60/120초·꺼짐)·알림음, **FX·금 종목별 벤티지 호가 보정 표**, **Twelve Data API 키(선택)**, 엔진 기준, 데이터 초기화, **앱 버전·업데이트 확인·캐시 갱신** |
+| 설정 | 레버리지·**FX 탭 랏(Lot)**·최소 손익비·자동 갱신 주기(30/60/120초·꺼짐)·알림음, **FX·금 종목별 벤티지 호가 보정 표**, **Twelve Data API 키(선택)**, 엔진 기준, 데이터 초기화, **앱 버전·업데이트 확인·캐시 갱신** |
 
 시그널 카드를 탭하면 **다크 네온 공유 카드**(캔버스 렌더링)가 열리고 PNG로 저장하거나 Web Share로 보낼 수
 있습니다.
@@ -113,14 +117,37 @@ npm run preview  # http://127.0.0.1:4173
 | `DXYUSDT` | `DXY+` | 달러 인덱스 |
 | `NDX100` · `SP500` · `JP225` · `HSI` · `KR200` | `NAS100+` · `US500+` · `JP225+` · `HK50+` · `KR200+` | 지수 |
 
-- 자산 필터 **FX·금** 탭에서만 이 카테고리를 모아 봅니다(배지 `FX·금`). FX 카드는 `pricePlace` 기준 고정 소수점
+- **FX 탭**에서만 이 카테고리를 모아 봅니다(스캐너 탭은 코인·주식선물 전용). FX 카드는 `pricePlace` 기준 고정 소수점
   (EURUSD 4자리, USDJPY·XAUUSD 2자리, 지수 0~2자리)으로 표기합니다.
-- **주력 퀵 필터**: 🥇 금(`XAU`) · 💶 유로(`EURUSD`) · ₿ 비트(`BTC`) 칩을 누르면 해당 자산 탭 + 검색어가 한 번에
+- **주력 퀵 필터**: FX 탭의 🥇 금(`XAU`) · 💶 유로(`EURUSD`), 스캐너 탭의 ₿ 비트(`BTC`). 누르면 검색어·필터가 한 번에
   적용되고(진행중 시그널이 없으면 종료 셋업까지 표시) 다시 누르면 해제됩니다.
+
+### 랏(Lot) 손익 — FX 탭은 배수(x) 대신 계약 크기 기준 달러
+
+FX 탭의 카드·공유 카드에는 `레버리지 10x` 같은 배수 표현이 나오지 않고, 선택한 랏과 **MT5·Vantage 표준 계약
+크기(Contract Size)** 로 계산한 달러 손익이 표시됩니다. 랏 프리셋은 `0.01 / 0.05 / 0.10(기본) / 0.20 / 0.50 / 1.00`
+이며 `localStorage`(`bgss.settings.v1.fxLot`)에 저장됩니다.
+
+| 종목군 | 1 Lot 계약 크기 | 달러 손익식 |
+| --- | --- | --- |
+| `XAUUSD+` `XAUT+` `PAXG+` `XPTUSD+` `XPDUSD+` | 100 oz | 가격차 × 100 × lot |
+| `XAGUSD+` | 5,000 oz | 가격차 × 5,000 × lot |
+| `COPPER+` | 25,000 lbs | 가격차 × 25,000 × lot |
+| `USOIL+` `UKOIL+` | 1,000 배럴 | 가격차 × 1,000 × lot |
+| `NATGAS+` | 10,000 MMBtu | 가격차 × 10,000 × lot |
+| `EURUSD+` `GBPUSD+` (USD 견적) | 100,000 | 가격차 × 100,000 × lot |
+| `USDJPY+` `USDBRL+` (USD가 기초) · `EURJPY+` `GBPJPY+` (JPY 견적) | 100,000 | (가격차 ÷ 청산가) × 100,000 × lot |
+| `NAS100+` `US500+` `JP225+` `HK50+` `KR200+` `DXY+` | 1 계약 | 가격차(포인트) × 1 × lot (1p = $1) |
+
+- 계산은 `src/utils/lot.ts`의 `lotSpec()`/`lotCalc()` 하나로 카드·공유 카드가 함께 씁니다.
+- 카드 우측 상단 `0.10 Lot 수익 +$125.00`, 목표/무효 아래 `+$…`/`-$…`, 하단 `0.10 Lot · 1포인트 $0.10 · 목표 250
+  포인트 · 손절 85 포인트 · 1 Lot = 100 oz` 스트립으로 계약 크기와 핍 가치를 함께 보여줍니다.
+- 다크 공유 카드(`ShareCardModal` → `drawShareCard(..., lot)`)도 FX 시그널이면 상단 `0.10 Lot` 배지, `0.10 Lot
+  +$125.00`, 목표/반익 EQ/무효 박스의 달러 손익, 푸터 계약 크기로 렌더링합니다.
 
 ### 벤티지 호가 보정(오프셋)
 
-- FX·금 탭 상단 미니 바 또는 **설정 → FX·금 · 벤티지 호가 보정**에서 종목별 오프셋을 입력합니다.
+- FX 탭 상단 미니 바 또는 **설정 → FX·금 · 벤티지 호가 보정**에서 종목별 오프셋을 입력합니다.
   목록 맨 위는 주력 3종목(`XAUUSD+`, `EURUSD+`, `BTCUSDT`)으로 고정되어 있습니다.
 - 입력 즉시 카드와 다크 공유 카드의 **현재가·진입가·목표가·EQ·무효가**가 같은 값만큼 이동합니다. 가격 차이의
   비율인 **손익비·R배수는 그대로**이고, 수익률(%)만 보정된 진입가 기준으로 다시 계산됩니다.
@@ -153,16 +180,18 @@ npm run preview  # http://127.0.0.1:4173
 - 워크포워드: 과거 구간(최근 60봉 이전) 1위 전략을 최근 60봉에서 다시 채점 → 승률 55%·손익비 1.5R·표본
   2건을 못 넘으면 **현재 최고 성과 전략으로 즉시 교체**하고 교체 로그(시각·마켓·이전/신규 전략·사유)를 남깁니다.
 - 시그널은 채택 전략이 최근 10봉 안에 낸 셋업만 노출하며, 진입 손익비가 사용자가 정한 최소 손익비 미만이면 제외합니다.
-- 레버리지 수익률 = (가격 변동 ÷ 진입가) × 배율. 기록 탭의 누적 수익률은 무효가까지 거리(%)를 가중해 합산합니다.
+- 코인·주식선물 카드의 레버리지 수익률 = (가격 변동 ÷ 진입가) × 배율. FX 카드는 배수 대신 랏(Lot) 달러 손익. 기록
+  탭의 누적 수익률은 무효가까지 거리(%)를 가중해 합산합니다.
 
 ## 검증
 
 ```bash
 npm run build
+node scripts/lot-check.mjs    # 랏 계약 크기·핍 가치·비례 단위 검증(esbuild로 src/utils/lot.ts 번들 후 21종목 케이스)
 LD_LIBRARY_PATH=/workspace/.local/sysroot/root/usr/lib/x86_64-linux-gnu \
 PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/capture.mjs      # 390×844 + 1280×800, 콘솔 에러 수집, PNG 저장 검증
 LD_LIBRARY_PATH=/workspace/.local/sysroot/root/usr/lib/x86_64-linux-gnu \
-PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/fx-check.mjs     # FX·금 탭·소수점·호가 보정·퀵 필터·회귀 검증
+PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/fx-lot-check.mjs  # 6탭 레이아웃·FX 탭 랏 표시·0.01↔0.10↔1.00 비례·공유 카드·소수점/호가 보정/시황/설정 회귀
 LD_LIBRARY_PATH=/workspace/.local/sysroot/root/usr/lib/x86_64-linux-gnu \
 PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/pages-check.mjs    # /bitget-signal-scanner/ 서브패스 검증
 node scripts/favorites-check.mjs                                                  # ⭐ 즐겨찾기·검색·더보기·새로고침 유지·보관 스냅샷 검증
@@ -171,9 +200,9 @@ node scripts/live-check.mjs                                                     
 
 결과 스크린샷은 `docs/screens/`에 저장됩니다(`01-scanner.png`, `02-dark-card.png`, `03-strategy-engine.png`,
 `04-market.png`, `05-history.png`, `06-desktop.png`, `07-pages-subpath.png`, `08-settings.png`,
-`09-live-pages.png`, `02-dark-card-export.png`). FX 관련 화면은 `13-fx-scanner.png`(FX·금 탭), `13-fx-offset.png`
-(호가 보정 적용), `13-fx-quick-gold.png`(금 퀵 필터), `13-fx-share.png`(FX 공유 카드), `13-settings-fx.png`
-(종목별 보정 표), `13-fx-desktop.png`(데스크톱)입니다.
+`09-live-pages.png`, `02-dark-card-export.png`). FX 탭·랏 화면은 `14-fx-tab-lot.png`(FX 탭 + 랏 선택기),
+`14-fx-card-lot.png`(카드의 `0.10 Lot 수익`·`+$` 손익), `14-fx-share-lot.png`(FX 공유 카드 랏 표시),
+`14-fx-tab-lot-desktop.png`(데스크톱), `13-settings-fx.png`(종목별 보정 표)입니다.
 
 ## 배포 (GitHub Pages)
 

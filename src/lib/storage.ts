@@ -1,5 +1,7 @@
 export interface Settings {
   leverage: number;
+  /** FX 탭 랏(Lot) — 1 Lot 계약 크기 기준 달러 손익 계산 */
+  fxLot: number;
   minRR: number;
   refreshSec: number;
   scanPairs: boolean;
@@ -12,6 +14,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   leverage: 10,
+  fxLot: 0.1,
   minRR: 1.5,
   refreshSec: 60,
   scanPairs: true,
