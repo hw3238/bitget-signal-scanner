@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Signal } from '../engine/types';
 import type { ScanState } from '../hooks/useScanner';
 import { favoriteKey, type FavoriteEntry } from '../lib/favorites';
+import { fxTabSignals, isFxCryptoSymbol, isFxFavorite, toFxView } from '../lib/fxview';
 import { tfLabel } from '../lib/format';
 import { offsetFor, shiftSignal } from '../lib/offset';
 import type { Settings } from '../lib/storage';
@@ -21,10 +22,11 @@ interface Props {
   onRescan: () => void;
 }
 
-/** 주력 2종목 원클릭 퀵 필터 */
+/** 주력 3종목 원클릭 퀵 필터 — 금 · 유로 · 비트 */
 const QUICK_FILTERS: { key: string; label: string; query: string; hint: string }[] = [
   { key: 'gold', label: '🥇 금', query: 'XAU', hint: 'XAUUSD+ · 금 현물' },
   { key: 'euro', label: '💶 유로', query: 'EURUSD', hint: 'EURUSD+ · 유로/달러' },
+  { key: 'btc', label: '₿ 비트', query: 'BTCUSD', hint: 'BTCUSD+ · 비트코인 (1 Lot = 1 BTC)' },
 ];
 
 const PAGE_SIZE = 12;
@@ -61,7 +63,7 @@ export function FxTab({
     setVisible(PAGE_SIZE);
   }, [query, tf, onlyOpen, favOnly, settings.minRR, lot]);
 
-  const fxSignals = useMemo(() => state.signals.filter((s) => s.asset === 'fx'), [state.signals]);
+  const fxSignals = useMemo(() => fxTabSignals(state.signals), [state.signals]);
   const openFx = useMemo(() => fxSignals.filter((s) => s.state === 'open'), [fxSignals]);
 
   const counts = useMemo(
@@ -92,13 +94,16 @@ export function FxTab({
     return map;
   }, [state.signals]);
 
-  const fxFavorites = useMemo(() => favorites.filter((f) => f.signal.asset === 'fx'), [favorites]);
+  const fxFavorites = useMemo(() => favorites.filter((f) => isFxFavorite(f.signal)), [favorites]);
 
   const favoriteSignals = useMemo(() => {
     return fxFavorites
       .filter((f) => matchesQuery(liveByKey.get(f.key) ?? f.signal, terms))
-      .map((f) => ({ entry: f, signal: liveByKey.get(f.key) ?? null }))
-      .map(({ entry, signal }) => ({ signal: signal ?? entry.signal, stale: !signal }))
+      .map((f) => {
+        const live = liveByKey.get(f.key);
+        // 코인으로 찜한 BTC도 FX 탭에서는 BTCUSD+ 카드로 보여준다.
+        return { signal: toFxView(live ?? f.signal), stale: !live };
+      })
       .sort((a, b) => {
         const rank = (x: { signal: Signal }) => (x.signal.state === 'open' ? 0 : 1);
         if (rank(a) !== rank(b)) return rank(a) - rank(b);
@@ -128,10 +133,12 @@ export function FxTab({
   const remaining = filtered.length - shown.length;
   const activeQuick = QUICK_FILTERS.find((q) => q.query.toLowerCase() === query.trim().toLowerCase());
 
-  const qualified = state.analyses.filter(
-    (a) => a.asset === 'fx' && a.activeWinRate >= 55 && a.activeRR >= 1.5 && a.activeN >= 2,
+  // FX·금 + BTCUSD+(비트겟 BTCUSDT 분석 재사용) — 마켓 수·고승률 전략 수
+  const fxAnalyses = state.analyses.filter((a) => a.asset === 'fx' || isFxCryptoSymbol(a.symbol));
+  const qualified = fxAnalyses.filter(
+    (a) => a.activeWinRate >= 55 && a.activeRR >= 1.5 && a.activeN >= 2,
   ).length;
-  const fxMarkets = state.analyses.filter((a) => a.asset === 'fx').length;
+  const fxMarkets = fxAnalyses.length;
   const scanning = state.status === 'scanning';
   const pct = state.progress.total ? Math.round((state.progress.done / state.progress.total) * 100) : 0;
 
@@ -141,7 +148,7 @@ export function FxTab({
         <div className="summary-top">
           <div>
             <div className="summary-title">
-              FX·금 발송 시그널 <span className="dot-live" /> <b>{counts.open}</b>
+              FX·금·비트 발송 시그널 <span className="dot-live" /> <b>{counts.open}</b>
             </div>
             <div className="summary-sub">
               Vantage 호가 기준 · 랏(Lot) 달러 손익 · {fxMarkets}개 마켓 중 {qualified}개 고승률 전략 채택
@@ -154,7 +161,7 @@ export function FxTab({
         </div>
 
         <div className="counter-row">
-          <span className="counter fx">FX·금 {counts.open}</span>
+          <span className="counter fx">FX·금·비트 {counts.open}</span>
           <span className="counter long">롱 {counts.long}</span>
           <span className="counter short">숏 {counts.short}</span>
           <span className="counter">
@@ -175,7 +182,7 @@ export function FxTab({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="FX·금 종목·심볼·전략 검색 (예: XAUUSD, EURUSD, EMA)"
+              placeholder="FX·금·비트 종목·심볼·전략 검색 (예: XAUUSD, EURUSD, BTCUSD)"
               aria-label="FX 종목·심볼·전략 검색"
               enterKeyHint="search"
             />
@@ -276,7 +283,8 @@ export function FxTab({
             })}
           </div>
           <span className="lot-hint">
-            선택한 랏 {fmtLot(lot)} Lot · 금 1 Lot = 100 oz · FX 1 Lot = 100,000 · 지수 1p = $1
+            선택한 랏 {fmtLot(lot)} Lot · 금 1 Lot = 100 oz · FX 1 Lot = 100,000 · 비트 1 Lot = 1 BTC · 지수
+            1p = $1
           </span>
         </div>
 
@@ -405,7 +413,7 @@ export function FxTab({
           <div className="empty">
             <div className="empty-title">조건을 통과한 FX 시그널이 없습니다</div>
             <p>
-              현재 FX·금·원자재·지수 {fxMarkets}개 마켓을 200봉 기준으로 다시 계산했지만, 고승률 기준(승률 55% ·
+              현재 FX·금·원자재·지수·비트 {fxMarkets}개 마켓을 200봉 기준으로 다시 계산했지만, 고승률 기준(승률 55% ·
               손익비 {settings.minRR.toFixed(1)}R)을 만족하는 진행중 시그널이 없습니다.
             </p>
             <div className="empty-actions">

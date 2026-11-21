@@ -10,6 +10,7 @@ import type { Signal } from '../engine/types';
  *   · FX: 1 Lot = 100,000 (USD 견적은 가격차 × 100,000 × lot,
  *     USD/XXX·XXX/JPY는 (가격차 ÷ 청산가) × 100,000 × lot 로 달러 환산)
  *   · 지수(DXY 포함): 1 Lot = 1 계약 = 1포인트당 $1
+ *   · 비트코인(BTCUSD+): 1 Lot = 1 BTC (가격차 × 1 × lot — $1,000 이동 × 0.10 Lot = $100.00)
  */
 
 export const LOT_PRESETS = [0.01, 0.05, 0.1, 0.2, 0.5, 1] as const;
@@ -29,7 +30,11 @@ export interface LotSpec {
 
 const gold: LotSpec = { size: 100, mode: 'quote', pip: 0.01, pipUnit: '포인트', label: '1 Lot = 100 oz' };
 
+/** 벤티지 MT5 BTCUSD+ — 1 Lot = 1 BTC, 1포인트(=$1)당 lot 달러 */
+const bitcoin: LotSpec = { size: 1, mode: 'quote', pip: 1, pipUnit: '포인트', label: '1 Lot = 1 BTC' };
+
 const FIXED: Record<string, LotSpec> = {
+  BTC: bitcoin,
   XAU: gold,
   XAUT: { ...gold, label: '1 Lot = 100 oz' },
   PAXG: { ...gold, label: '1 Lot = 100 oz' },
@@ -72,6 +77,8 @@ export function lotSpec(base: string): LotSpec {
   const key = base.replace(/\+$/, '').toUpperCase();
   const fixed = FIXED[key];
   if (fixed) return fixed;
+  // BTCUSD+ · BTCUSD — 비트겟 BTCUSDT 캔들을 그대로 쓰는 벤티지 비트코인 CFD
+  if (key === 'BTCUSD') return bitcoin;
   // XAUUSD+ · XAGUSD+ · XPTUSD+ · XPDUSD+ · XAUT+ · PAXG+ — 견적통화가 붙어 있어도 금속 계약
   if (METAL_100.some((m) => key.startsWith(m))) return FIXED.XAU;
   if (key.startsWith('XAG')) return FIXED.XAG;

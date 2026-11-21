@@ -12,6 +12,7 @@ import type { Signal } from './engine/types';
 import { useFavorites } from './hooks/useFavorites';
 import { useScanner } from './hooks/useScanner';
 import { fmtTime } from './lib/format';
+import { fxTabSignals } from './lib/fxview';
 import { offsetFor } from './lib/offset';
 import { openExternalUrl } from './lib/native';
 import { checkForUpdate, RELEASES_PAGE } from './lib/update';
@@ -106,7 +107,8 @@ export default function App() {
   }, [state]);
 
   const openCount = state.signals.filter((s) => s.state === 'open' && s.asset !== 'fx').length;
-  const openFxCount = state.signals.filter((s) => s.state === 'open' && s.asset === 'fx').length;
+  // FX 탭 배지 — FX·금 시그널 + BTCUSD+(비트겟 BTCUSDT 재사용) 진행중 시그널
+  const openFxCount = fxTabSignals(state.signals).filter((s) => s.state === 'open').length;
   const lot = normalizeLot(settings.fxLot);
 
   return (

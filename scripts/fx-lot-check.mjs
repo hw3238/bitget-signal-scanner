@@ -2,6 +2,7 @@
 //   - 하단 6탭(스캐너 | FX | 시황 | 전략엔진 | 기록 | 설정) 오버플로/줄바꿈 0건
 //   - FX 탭 카드에 배수(x) 없이 `0.10 Lot 수익`·달러($) 손익 표시
 //   - 랏 0.01 ↔ 0.10 ↔ 1.00 변경 시 카드·공유 카드 달러 손익이 정확히 비례
+//   - FX 탭 ₿ 비트 퀵 필터 → BTCUSD+ 카드가 `1 Lot = 1 BTC` 랏 기준으로 표시, 랏·호가 보정 연동
 //   - 코인/주식선물 스캐너·즐겨찾기·더보기·검색·호가 보정·다른 탭 회귀 및 콘솔/페이지 에러 0건
 //   실행: node scripts/fx-lot-check.mjs
 import { spawn } from 'node:child_process';
@@ -172,15 +173,26 @@ const run = async () => {
       listHead: clean(tab.querySelector('.list-head')?.textContent),
     };
   });
-  check('FX 탭 요약 카드', /FX·금 발송 시그널/.test(fxTop.title), fxTop.title);
+  check('FX 탭 요약 카드', /FX·금·비트 발송 시그널/.test(fxTop.title), fxTop.title);
   check('FX 탭 롱/숏/1H/4H 카운터', fxTop.counters.length >= 5, fxTop.counters.join(' / '));
   check('랏 프리셋 6개 · 기본 0.10', fxTop.lotButtons.length === 6 && fxTop.lotButtons[2].on, fxTop.lotButtons.map((b) => (b.on ? `[${b.label}]` : b.label)).join(' '));
-  check('퀵 버튼 금·유로', fxTop.quick.length === 2, fxTop.quick.join(' '));
+  check('퀵 버튼 금·유로·비트', fxTop.quick.length === 3 && fxTop.quick.join('').includes('비트'), fxTop.quick.join(' '));
   check('타임프레임 전체/1H/4H', fxTop.tf.join('|') === '전체|1H|4H', fxTop.tf.join('|'));
   check('진행중만·즐겨찾기 필터', fxTop.toggles.length === 2, fxTop.toggles.join(' / '));
-  check('Vantage 호가 보정 바 + ★ XAUUSD+/EURUSD+ 고정', fxTop.hasOffsetBar && fxTop.offsetPinned.length >= 2, fxTop.offsetPinned.join(', '));
+  check('Vantage 호가 보정 바 + ★ XAUUSD+/EURUSD+/BTCUSD+ 고정', fxTop.hasOffsetBar && fxTop.offsetPinned.length >= 3 && fxTop.offsetPinned.some((t) => /BTCUSD\+/.test(t)), fxTop.offsetPinned.join(', '));
   check('FX 탭에 배수(x)·레버리지 표현 없음', !fxTop.multiplierBleed, `텍스트에 x배수/레버리지 ${fxTop.multiplierBleed ? '있음' : '없음'}`);
   check('FX 탭에 Lot 표현 있음', fxTop.lotMention);
+
+  const fxBadge = await page.evaluate(() => {
+    const b = document.querySelector('.bottom-nav button[data-tab="fx"]');
+    return { aria: b?.getAttribute('aria-label'), badge: clean(b?.querySelector('.nav-badge')?.textContent) };
+  });
+  const openTotal = Number((fxTop.counters[0].match(/(\d+)$/) || [])[1]);
+  check(
+    'FX 배지 = FX·금·비트 진행중 수(BTCUSD+ 포함)',
+    openTotal > 0 && fxBadge.badge === String(openTotal),
+    `${fxBadge.aria} · 카운터 ${fxTop.counters[0]}`,
+  );
 
   // 카드 영역
   await page.evaluate(() => {
@@ -224,6 +236,7 @@ const run = async () => {
     XAUUSD: 2, XAGUSD: 2, XAUT: 2, PAXG: 2, XPTUSD: 2, XPDUSD: 2,
     EURUSD: 4, GBPUSD: 4, USDJPY: 2, USDBRL: 4,
     USOIL: 2, UKOIL: 2, NATGAS: 2, COPPER: 2, DXY: 2,
+    BTCUSD: 1,
   };
   const decimals = cards010.map((c) => {
     const sym = (c.sym || '').replace(/\+$/, '');
@@ -329,8 +342,146 @@ const run = async () => {
     }
   });
 
-  /* ---------- 4) FX 공유 카드 ---------- */
+  /* ---------- 3b) FX 탭 비트코인(BTCUSD+) — 1 Lot = 1 BTC ---------- */
+  const num = (t) => Number(String(t ?? '').replace(/[^0-9.-]/g, ''));
+  const readBtcCards = () =>
+    page.evaluate(() => {
+      const lot = document.querySelector('.fx-tab .lot-select button.on')?.textContent?.trim();
+      return [...document.querySelectorAll('.fx-tab .signal-card:not(.skeleton)')].map((c) => {
+        const lv = [...c.querySelectorAll('.lvl')].map((l) => ({
+          label: clean(l.querySelector('.lvl-label')?.textContent),
+          value: Number(String(l.querySelector('.lvl-value')?.textContent ?? '').replace(/[^0-9.-]/g, '')),
+          usd: clean(l.querySelector('.lvl-usd')?.textContent),
+        }));
+        const priceText = clean(c.querySelector('.price')?.textContent);
+        return {
+          sym: clean(c.querySelector('.sym')?.textContent),
+          asset: clean(c.querySelector('.asset')?.textContent),
+          side: c.classList.contains('long') ? 'long' : 'short',
+          priceText,
+          price: Number(priceText.replace(/[^0-9.-]/g, '')),
+          cap: clean(c.querySelector('.roi-cap')?.textContent),
+          pnl: clean(c.querySelector('.roi-value')?.textContent),
+          target: lv[0],
+          entry: lv[1],
+          stop: lv[3],
+          strip: clean(c.querySelector('.lot-strip')?.textContent),
+          sub: clean(c.querySelector('.sym-sub')?.textContent),
+          multiplier: /\b\d+x\b|레버리지/.test(clean(c.textContent)),
+          lot,
+        };
+      });
+    });
+
+  await page.locator('.fx-tab .quick-chip', { hasText: '비트' }).click();
+  await page.waitForTimeout(900);
+  let btcCards = await readBtcCards();
+  if (!btcCards.length) {
+    // 기본 손익비(1.5R)를 통과한 비트 셋업이 없으면 기준을 낮춰 카드 자체를 확인한다.
+    await page.locator('.fx-tab .select-pill select').selectOption('1.2');
+    await page.waitForTimeout(800);
+    btcCards = await readBtcCards();
+  }
+  check(
+    '₿ 비트 퀵 필터 → FX 탭 BTCUSD+ 카드',
+    btcCards.length > 0 && btcCards.every((c) => c.sym === 'BTCUSD+' && c.asset === 'FX·금'),
+    `${btcCards.length}건 ${btcCards.slice(0, 3).map((c) => c.sym).join(',')} · ${btcCards[0]?.cap}`,
+  );
+  check(
+    'BTCUSD+ 카드 `1 Lot = 1 BTC` 계약 크기 표기',
+    btcCards.length > 0 && btcCards.every((c) => /1 Lot = 1 BTC/.test(c.strip)),
+    btcCards[0]?.strip,
+  );
+  check('BTCUSD+ 카드 배수(x)·레버리지 없음', btcCards.length > 0 && btcCards.every((c) => !c.multiplier), btcCards[0]?.cap);
+
+  const btcLotMath = btcCards
+    .filter((c) => Number.isFinite(c.target.value) && Number.isFinite(c.entry.value) && Number(c.lot) > 0)
+    .map((c) => {
+      const lot = Number(c.lot);
+      const move = c.side === 'long' ? c.target.value - c.entry.value : c.entry.value - c.target.value;
+      const expect = +(move * 1 * lot).toFixed(2);
+      const got = +Math.abs(num(c.target.usd)).toFixed(2);
+      return { sym: c.sym, side: c.side, lot, move, expect, got, diff: +Math.abs(expect - got).toFixed(2) };
+    });
+  check(
+    'BTCUSD+ 목표 달러 손익 = 가격차 × 1 × Lot',
+    btcLotMath.length > 0 &&
+      btcLotMath.every((r) => r.diff <= Math.max(0.05, Math.abs(r.expect) * 0.002)),
+    JSON.stringify(btcLotMath.slice(0, 3)),
+  );
+
+  // 호가 보정 — ★ BTCUSD+ 입력이 BTCUSD+ 카드 가격에 그대로 반영되고 달러 손익은 유지
+  const btcChip = page.locator('.fx-tab .fx-chip.priority', { hasText: 'BTCUSD+' }).first();
+  const btcBefore = (await readBtcCards())[0];
+  await btcChip.locator('.fx-offset-input').fill('500');
+  await page.waitForTimeout(700);
+  const btcAfter = (await readBtcCards())[0];
+  const btcOffsets = await page.evaluate(() => JSON.parse(localStorage.getItem('bgss.settings.v1') || '{}').fxOffsets);
+  check(
+    'BTCUSD+ 호가 보정 +500 → 카드 가격 +500, 달러 손익 유지',
+    !!btcBefore &&
+      !!btcAfter &&
+      Math.abs(btcAfter.price - btcBefore.price - 500) <= 0.25 &&
+      btcAfter.pnl === btcBefore.pnl &&
+      /벤티지/.test(btcAfter.sub),
+    `${btcBefore?.priceText} → ${btcAfter?.priceText} · ${btcBefore?.pnl} → ${btcAfter?.pnl} · ${btcAfter?.sub}`,
+  );
+  check(
+    'BTCUSD+ 오프셋 저장 키 = ★ BTC(기존 입력 그대로)',
+    Math.abs(Number(btcOffsets?.BTC ?? 0) - 500) < 1e-9,
+    JSON.stringify(btcOffsets),
+  );
+  await btcChip.locator('.fx-offset-input').fill('');
+  await page.waitForTimeout(500);
+
+  // 랏 0.10 → 1.00 이 BTCUSD+ 손익에 ×10 으로 반영
+  const btc010 = (await readBtcCards())[0];
+  await pickLot('1.00');
+  const btc100 = (await readBtcCards())[0];
+  await pickLot('0.10');
+  check(
+    'BTCUSD+ 랏 0.10 → 1.00 손익 ×10',
+    !!btc010 &&
+      !!btc100 &&
+      btc100.cap.startsWith('1.00 Lot') &&
+      Math.abs(Math.abs(num(btc100.target.usd)) - Math.abs(num(btc010.target.usd)) * 10) <=
+        Math.max(0.05, Math.abs(num(btc010.target.usd)) * 0.02),
+    `${btc010?.cap} ${btc010?.target.usd} → ${btc100?.cap} ${btc100?.target.usd}`,
+  );
+  // 카드 전체(랏 스트립 포함)가 한 장에 담기도록 촬영할 때만 세로를 늘린다(레이아웃은 390px 폭 그대로).
+  await page.setViewportSize({ width: 390, height: 1240 });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => {
+    const grid = document.querySelector('.fx-tab .filter-grid');
+    if (grid) window.scrollTo(0, grid.getBoundingClientRect().top + window.scrollY - 122);
+  });
+  await page.waitForTimeout(500);
+  const btcShot = await page.evaluate(() => {
+    const grid = document.querySelector('.fx-tab .filter-grid');
+    const card = document.querySelector('.fx-tab .signal-card:not(.skeleton)');
+    const top = Math.max(0, (grid?.getBoundingClientRect().top ?? 0) - 8);
+    const bottom = Math.min(window.innerHeight, (card?.getBoundingClientRect().bottom ?? 0) + 12);
+    return { x: 0, y: Math.round(top), width: window.innerWidth, height: Math.round(bottom - top) };
+  });
+  await page.screenshot({ path: `${OUT}/15-fx-btc-lot.png`, clip: btcShot });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(400);
+
+  // 후속 확인을 위해 필터·랏·보정을 초기 상태로 되돌린다.
+  await page.locator('.fx-tab .quick-chip', { hasText: '비트' }).click();
+  await page.waitForTimeout(400);
+  const onlyOpenLabel = await page.evaluate(() => clean(document.querySelector('.fx-tab .ghost-toggle')?.textContent));
+  if (onlyOpenLabel !== '진행중만') {
+    await page.locator('.fx-tab .ghost-toggle').click();
+    await page.waitForTimeout(400);
+  }
+  await page.locator('.fx-tab .select-pill select').selectOption('1.5');
+  await page.locator('.fx-tab .fx-offset-reset').click();
+  await page.waitForTimeout(500);
   await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(300);
+
+  /* ---------- 4) FX 공유 카드 ---------- */  await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(300);
   await page.evaluate(() => {
     window.__drawn = [];
@@ -584,6 +735,13 @@ const run = async () => {
   const report = {
     nav,
     fxTop,
+    fxBadge,
+    btc: {
+      cards: btcCards.map((c) => ({ sym: c.sym, cap: c.cap, pnl: c.pnl, price: c.priceText, strip: c.strip })),
+      lotMath: btcLotMath,
+      offset: { before: btcBefore?.priceText, after: btcAfter?.priceText, stored: btcOffsets, sub: btcAfter?.sub },
+      lotSwitch: { at010: btc010 && { cap: btc010.cap, target: btc010.target.usd }, at100: btc100 && { cap: btc100.cap, target: btc100.target.usd } },
+    },
     cards010,
     lotSwitch: { at010, at001, at100, ratioRows },
     persisted,

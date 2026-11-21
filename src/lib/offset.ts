@@ -3,9 +3,25 @@ import type { Signal } from '../engine/types';
 /** 종목 표시 이름(예: `XAUUSD+`) → 가격 오프셋 */
 export type OffsetMap = Record<string, number>;
 
+/**
+ * 호가 보정 저장 키 별칭 — `BTCUSD+` 카드는 호가 보정 표의 기존 ★ BTC 입력(비트겟 BTCUSDT 기준)을
+ * 그대로 쓴다. 이미 저장된 오프셋이 있어도 그대로 반영된다.
+ */
+const OFFSET_ALIAS: Record<string, string> = { 'BTCUSD+': 'BTC' };
+
+/** 표시 이름 → 오프셋 저장 키 */
+export function offsetKeyFor(base: string): string {
+  return OFFSET_ALIAS[base] ?? base;
+}
+
 export function offsetFor(base: string, offsets?: OffsetMap | null): number {
-  const v = offsets?.[base];
-  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+  if (!offsets) return 0;
+  const key = offsetKeyFor(base);
+  for (const k of key === base ? [base] : [key, base]) {
+    const v = offsets[k];
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+  }
+  return 0;
 }
 
 /**

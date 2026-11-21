@@ -62,6 +62,11 @@ checkCase('닛케이 JP225+ 0.10', 'JP225+', 0.1, 54800, 54812, 55000, 54700, 1.
 checkCase('항셍 HK50+ 0.10', 'HK50+', 0.1, 22050, 22061, 22200, 21950, 1.1, 0.1);
 checkCase('코스피200 KR200+ 0.10', 'KR200+', 0.1, 710, 709.1, 700, 720, -0.09, 0.1);
 checkCase('달러인덱스 DXY+ 0.10', 'DXY+', 0.1, 99, 99.2, 100, 98.5, 0.02, 0.1);
+// 비트코인 BTCUSD+ — 1 Lot = 1 BTC (벤티지 MT5 비트코인 CFD)
+checkCase('비트 BTCUSD+ 0.10 ($1,000 이동)', 'BTCUSD+', 0.1, 55000, 56000, 58000, 52000, 100, 0.1);
+checkCase('비트 BTCUSD+ 1.00', 'BTCUSD+', 1, 55000, 55100, 56500, 53000, 100, 1);
+checkCase('비트 BTCUSD 0.05', 'BTCUSD', 0.05, 55000, 55200, 56000, 54000, 10, 0.05);
+checkCase('비트 BTC 0.20', 'BTC', 0.2, 55000, 54750, 53000, 57000, -50, 0.2);
 
 // 0.01 ↔ 0.10 ↔ 1.00 비례 (같은 가격: 금 롱, 유로 숏)
 const proportion = [0.01, 0.1, 1].map((lot) => {
@@ -70,6 +75,15 @@ const proportion = [0.01, 0.1, 1].map((lot) => {
   return { lot, goldPnl: round(g.pnl), goldTargetUsd: round(g.targetUsd), eurShortPnl: round(e.pnl) };
 });
 const base = proportion[1];
+const btcProportion = [0.01, 0.1, 1].map((lot) => {
+  const b = lotCalc(lotSpec('BTCUSD+'), lot, { entry: 55000, price: 55000, target: 60000, stop: 50000, eq: 57500, side: 'long' });
+  return { lot, targetUsd: round(b.targetUsd), stopUsd: round(b.stopUsd) };
+});
+const btcProportionOk =
+  Math.abs(btcProportion[0].targetUsd - 50) < 0.005 &&
+  Math.abs(btcProportion[1].targetUsd - 500) < 0.005 &&
+  Math.abs(btcProportion[2].targetUsd - 5000) < 0.005 &&
+  Math.abs(btcProportion[1].stopUsd + 500) < 0.005;
 const proportionOk =
   Math.abs(proportion[0].goldPnl - base.goldPnl * 0.1) < 0.005 &&
   Math.abs(proportion[2].goldPnl - base.goldPnl * 10) < 0.005 &&
@@ -91,10 +105,20 @@ const formatOk =
   formatting.zero === '$0.00' &&
   formatting.normalized.join(',') === '0.2,0.05,0.1,0.1';
 
-const allOk = results.every((r) => r.ok) && proportionOk && formatOk;
+const allOk = results.every((r) => r.ok) && proportionOk && btcProportionOk && formatOk;
 console.log(
   JSON.stringify(
-    { allOk, cases: results, failures: results.filter((r) => !r.ok), proportion, proportionOk, formatting, formatOk },
+    {
+      allOk,
+      cases: results,
+      failures: results.filter((r) => !r.ok),
+      proportion,
+      proportionOk,
+      btcProportion,
+      btcProportionOk,
+      formatting,
+      formatOk,
+    },
     null,
     1,
   ),

@@ -98,11 +98,12 @@ export function buildFxRows(state: ScanState, twelveDataKey: string): FxRow[] {
     live: scanned.has(label),
   });
 
-  // 1) 주력 3종목 고정: 금(XAUUSD+) · 유로(EURUSD+) · 비트(BTC)
+  // 1) 주력 3종목 고정: 금(XAUUSD+) · 유로(EURUSD+) · 비트(BTCUSD+, 저장 키 BTC)
   const pinned: FxRow[] = [
     { ...row('XAUUSDT', 'XAUUSD+', decimalsOf('XAUUSDT', 2), '금'), priority: true },
     { ...row('EURUSDUSDT', 'EURUSD+', decimalsOf('EURUSDUSDT', 4), '유로/달러'), priority: true },
-    { ...row('BTCUSDT', 'BTC', decimalsOf('BTCUSDT', 1), '비트', 'BTCUSDT'), priority: true },
+    // 오프셋 저장 키는 기존 ★ BTC 그대로 두고, 표시만 벤티지 표기(BTCUSD+)로 맞춘다.
+    { ...row('BTCUSDT', 'BTC', decimalsOf('BTCUSDT', 1), '비트 · BTCUSDT', 'BTCUSD+'), priority: true },
   ];
   const pinnedSymbols = new Set(pinned.map((p) => p.symbol));
 

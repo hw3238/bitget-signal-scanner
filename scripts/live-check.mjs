@@ -184,6 +184,38 @@ const run = async () => {
       `${lot.cap} ${lot.pnl} · 목표 ${lot.target} · 무효 ${lot.stop}`,
     );
     check('라이브 FX 탭에 배수(x)·레버리지 없음', !lot.multiplier, lot.multiplier ? '배수 표현 발견' : '없음');
+
+    // FX 탭 비트코인(BTCUSD+) — 1 Lot = 1 BTC
+    await page.locator('.fx-tab .quick-chip', { hasText: '비트' }).click();
+    await page.waitForTimeout(900);
+    const btc = await page.evaluate(() => {
+      const cards = [...document.querySelectorAll('.fx-tab .signal-card:not(.skeleton)')];
+      const card = cards.find((c) => (c.querySelector('.sym')?.textContent || '').trim() === 'BTCUSD+');
+      return {
+        quick: [...document.querySelectorAll('.fx-tab .quick-chip')].map((b) => b.textContent?.trim()),
+        pinned: [...document.querySelectorAll('.fx-chip.priority .fx-chip-label')].map((e) => e.textContent?.replace('★', '').trim()),
+        cards: cards.length,
+        sym: card?.querySelector('.sym')?.textContent?.trim() || null,
+        cap: card?.querySelector('.roi-cap')?.textContent?.trim() || null,
+        pnl: card?.querySelector('.roi-value')?.textContent?.trim() || null,
+        strip: card?.querySelector('.lot-strip')?.textContent?.replace(/\s+/g, '') || null,
+      };
+    });
+    check(
+      '라이브 FX 탭 ₿ 비트 퀵 버튼·★ BTCUSD+ 호가 칩',
+      (btc.quick || []).some((t) => /비트/.test(t || '')) && (btc.pinned || []).some((t) => /BTCUSD\+/.test(t || '')),
+      `${(btc.quick || []).join(' ')} · ${(btc.pinned || []).join(', ')}`,
+    );
+    check(
+      '라이브 BTCUSD+ 카드 = 랏 기준(1 Lot = 1 BTC)',
+      btc.sym === 'BTCUSD+' && /Lot 수익/.test(btc.cap || '') && /(^|[^0-9])1Lot=1BTC/.test(btc.strip || ''),
+      `${btc.sym} ${btc.cap} ${btc.pnl} · ${btc.strip}`,
+    );
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: 'docs/screens/15-live-fx-btc.png' });
+    await page.locator('.fx-tab .quick-chip', { hasText: '비트' }).click();
+    await page.waitForTimeout(500);
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.waitForTimeout(300);
     await page.screenshot({ path: 'docs/screens/14-live-fx-lot.png' });
