@@ -9,6 +9,34 @@ API의 실제 캔들로 계산하며 더미 데이터는 쓰지 않습니다.
   오로라 글로우, 다크 글래스모피즘 패널, 네온 시안-에메랄드(롱)/마젠타-레드(숏)/일렉트릭 퍼플(강조)/앰버(EQ·별점)
 - 배포 경로 대응: `vite.config.ts`의 `base: './'` → `/bitget-signal-scanner/` 같은 서브패스에서도 자산 경로 유지
 
+## 📱 안드로이드 앱 (APK)
+
+| 항목 | 내용 |
+| --- | --- |
+| APK 다운로드 | <https://github.com/hw3238/bitget-signal-scanner/releases/latest/download/bitget-crt-scanner.apk> |
+| 릴리즈 페이지 | <https://github.com/hw3238/bitget-signal-scanner/releases> |
+| 패키지 | `com.hw3238.bitgetscanner` · minSdk 22 / targetSdk 34 · debug 서명 |
+
+- Capacitor Android 프로젝트(`android/`)로 웹 빌드를 감싼 앱입니다. 앱은 실행할 때 `https://hw3238.github.io/bitget-signal-scanner/`
+  최신 배포본을 불러오므로(`capacitor.config.ts`의 `server.url`), 웹/전략/UI 수정은 **Pages 재배포만으로 앱에 즉시 반영**됩니다.
+- 로딩 실패 시 `assets/public`(내장 dist)로 폴백하고 "온라인 다시 시도" 안내를 띄웁니다.
+- **설정 탭 → 앱 · 업데이트**: 현재 버전·설치된 APK 버전, `🔄 업데이트 확인`(GitHub Releases API), `새로고침(캐시 갱신)`,
+  새 버전 발견 시 APK 다운로드. 새 릴리즈가 있으면 앱 상단에도 업데이트 배너가 뜹니다.
+- PNG 저장은 WebView 제약 때문에 네이티브 플러그인(`AppShellPlugin`)으로 갤러리(`Pictures/CRT-Scanner`)에 저장하고,
+  공유는 안드로이드 공유 시트로 전달합니다. 외부 링크는 시스템 브라우저에서 엽니다.
+
+### APK 빌드(로컬)
+
+```bash
+# JDK 17 + Android SDK(platforms;android-34, build-tools;34.0.0) 필요
+export JAVA_HOME=<jdk17> ANDROID_HOME=<android-sdk>
+npm run build && npx cap sync android
+cd android && ./gradlew assembleDebug   # → app/build/outputs/apk/debug/app-debug.apk
+```
+
+> GitHub App 연결에는 `workflows` 권한이 없어 `.github/workflows/` 푸시가 거부됩니다. CI 빌드가 필요하면 저장소
+> Settings에서 Actions 권한을 켜고 워크플로를 직접 추가하세요.
+
 ## 실행
 
 ```bash
@@ -27,7 +55,7 @@ npm run preview  # http://127.0.0.1:4173
 | 시황 | 코인/주식선물 상승·하락 TOP, 거래대금 TOP, 펀딩비 극단, 상승·하락 종목 수·평균 펀딩비·24h 거래대금 |
 | 전략엔진 | 6개 매매법 실시간 순위(채택 마켓·채택 승률·표본·손익비·기대 수익), 자동 교체 로그, 백테스트 재실행 |
 | 기록 | 탐지된 시그널의 적중/무효/진행 추적(최대 400건 보관), **종목·전략 검색**, 15건씩 펼치는 **이전 기록 더보기**, 실현·미실현 레버리지 수익률 |
-| 설정 | 레버리지·최소 손익비·자동 갱신 주기(30/60/120초·꺼짐)·알림음, 엔진 기준, 데이터 초기화 |
+| 설정 | 레버리지·최소 손익비·자동 갱신 주기(30/60/120초·꺼짐)·알림음, 엔진 기준, 데이터 초기화, **앱 버전·업데이트 확인·캐시 갱신** |
 
 시그널 카드를 탭하면 **다크 네온 공유 카드**(캔버스 렌더링)가 열리고 PNG로 저장하거나 Web Share로 보낼 수
 있습니다.
