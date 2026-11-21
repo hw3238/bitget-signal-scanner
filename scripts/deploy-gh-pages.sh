@@ -24,9 +24,10 @@ npm run icons || echo "(아이콘 갱신 생략 — 기존 public/coin-icons 사
 npm run build
 
 echo "== 3/4 $BRANCH 브랜치 게시"
-STAGE=".tmp/gh-pages"
-rm -rf "$STAGE"
-mkdir -p "$STAGE"
+# 이전 게시 디렉터리를 재사용하면 NFS 잔여 파일(.nfs*) 때문에 rm 이 실패해 배포가 멈춘다.
+# 매번 새 임시 디렉터리를 써서 이전 상태와 무관하게 게시한다.
+mkdir -p .tmp
+STAGE="$(mktemp -d .tmp/gh-pages-XXXXXXXX)"
 cp -R dist/. "$STAGE"/
 touch "$STAGE/.nojekyll"
 (
