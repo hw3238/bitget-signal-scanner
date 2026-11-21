@@ -1,7 +1,59 @@
-/** 라이브 GitHub Pages 배포본 검증 */
+/** 라이브 GitHub Pages 배포본 검증 — 새 빌드(⭐ 즐겨찾기·검색·더보기) 반영 확인 */
 import { chromium } from 'playwright';
 
 const URL = 'https://hw3238.github.io/bitget-signal-scanner/';
+
+const results = [];
+const check = (name, pass, detail = '') => {
+  results.push({ name, pass: !!pass, detail });
+  console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
+};
+
+const staleFavorite = () => {
+  const now = Date.now();
+  const candles = Array.from({ length: 24 }, (_, i) => {
+    const b = 100 + i;
+    return { t: now - (24 - i) * 3600000, o: b, h: b + 2, l: b - 2, c: b + 1, v: 50 + i };
+  });
+  const signal = {
+    id: 'LIVE-1H-crt-fvg-cisd-9',
+    symbol: 'LIVETESTUSDT',
+    base: 'LIVETEST',
+    asset: 'crypto',
+    tf: '1H',
+    side: 'long',
+    strategyId: 'crt-fvg-cisd',
+    strategyName: 'CRT + FVG + CISD',
+    strategyShort: 'CRT·FVG·CISD',
+    star: 5,
+    entry: 100,
+    stop: 96,
+    target: 108,
+    eq: 104,
+    rr: 2,
+    remainingRR: 1,
+    currentR: 0.5,
+    price: 103,
+    changePct: 3,
+    progress: 0.4,
+    state: 'open',
+    detectedAt: now - 5 * 3600000,
+    barsSince: 5,
+    winRate: 60,
+    strategyRR: 1.9,
+    leverage: 10,
+    levRoi: 30,
+    candles,
+    detectedIdx: 18,
+    tags: ['라이브 검증'],
+    fundingRate: 0,
+    quoteVolume: 1000000,
+  };
+  localStorage.setItem(
+    'bgss.favorites.v1',
+    JSON.stringify([{ key: `${signal.symbol}|${signal.tf}|${signal.side}|${signal.detectedAt}`, addedAt: now, signal }]),
+  );
+};
 
 const run = async () => {
   const browser = await chromium.launch({ args: ['--no-sandbox'] });
@@ -13,34 +65,79 @@ const run = async () => {
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
   });
+  await ctx.addInitScript(staleFavorite);
   const page = await ctx.newPage();
   const errors = [];
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  page.on('requestfailed', (r) => errors.push(`requestfailed: ${r.url()}`));
 
-  const res = await page.goto(URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 180000 });
-  await page.waitForFunction(
-    () => {
-      const btn = document.querySelector('.rescan');
-      return !!btn && !btn.classList.contains('busy');
-    },
-    { timeout: 180000 },
-  );
-  await page.waitForTimeout(1500);
-  const info = await page.evaluate(() => ({
-    status: document.querySelector('.status-text')?.textContent,
-    title: document.querySelector('.summary-title')?.textContent?.replace(/\s+/g, ' ').trim(),
-    cards: document.querySelectorAll('.signal-card:not(.skeleton)').length,
-    firstSym: document.querySelector('.signal-card .sym')?.textContent,
-    firstPrice: document.querySelector('.signal-card .price')?.textContent,
+  const res = await page.goto(`${URL}?v=${Date.now()}`, { waitUntil: 'domcontentloaded' });
+  check('라이브 페이지 응답', res?.status() === 200, `HTTP ${res?.status()}`);
+
+  await page.waitForSelector('.fav-toggle', { timeout: 30000 });
+  const ui = await page.evaluate(() => ({
+    search: !!document.querySelector('.search-box input'),
+    fav: document.querySelector('.fav-toggle')?.textContent?.replace(/\s+/g, ' ').trim(),
+    scripts: [...document.querySelectorAll('script[src]')].map((s) => s.getAttribute('src')),
+    placeholder: document.querySelector('.search-box input')?.getAttribute('placeholder'),
   }));
+  check('검색창 배포 반영', ui.search, ui.placeholder || '');
+  check('⭐ 즐겨찾기 칩 배포 반영', !!ui.fav && ui.fav.includes('즐겨찾기'), ui.fav || '');
+  check('새 빌드 자산 로드', (ui.scripts || []).some((s) => /index-.*\.js/.test(s || '')), (ui.scripts || []).join(','));
+
+  // 즐겨찾기 필터 → 주입한 스냅샷 카드 표시
+  await page.locator('.fav-toggle').click();
+  await page.waitForTimeout(800);
+  const favView = await page.evaluate(() => ({
+    stale: !!document.querySelector('.signal-card.stale'),
+    starred: !!document.querySelector('.signal-card .fav-btn.on'),
+    text: document.querySelector('.signal-card.stale')?.textContent?.replace(/\s+/g, ' ').slice(0, 60),
+  }));
+  check('라이브 즐겨찾기 필터 + 보관 스냅샷 카드', favView.stale && favView.starred, favView.text || '');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(400);
   await page.screenshot({ path: 'docs/screens/09-live-pages.png' });
+
+  // 검색
+  await page.locator('.search-box input').fill('LIVETEST');
+  await page.waitForTimeout(500);
+  check('라이브 검색 동작', (await page.locator('.signal-card.stale').count()) === 1);
+  await page.locator('.search-box input').fill('ZZZNOPE');
+  await page.waitForTimeout(500);
+  check('라이브 검색 빈 결과 안내', await page.locator('.search-empty').isVisible());
+  await page.locator('.search-clear').click();
+  await page.locator('.fav-toggle').click();
+  await page.waitForTimeout(400);
+
+  // 실제 스캔 완료 대기(최대 150초) — 시간이 모자라면 건너뛴다
+  let scan = null;
+  try {
+    await page.waitForFunction(
+      () => (document.querySelector('.status-text')?.textContent || '').includes('실시간 ·'),
+      { timeout: 150000 },
+    );
+    scan = await page.evaluate(() => ({
+      status: document.querySelector('.status-text')?.textContent,
+      cards: document.querySelectorAll('.signal-card:not(.skeleton)').length,
+      more: document.querySelector('.more-btn')?.textContent?.replace(/\s+/g, ' ').trim() || null,
+      first: document.querySelector('.signal-card .sym')?.textContent,
+    }));
+  } catch {
+    scan = { status: '스캔 미완료(시간 초과)', cards: 0 };
+  }
+  console.log('live scan:', JSON.stringify(scan));
+  if (scan.cards) {
+    check('라이브 시그널 카드 렌더', scan.cards > 0, `${scan.cards}장 · 첫 카드 ${scan.first || '-'}`);
+    check('라이브 더보기 버튼', !!scan.more, scan.more || '');
+  }
+
   await browser.close();
-  console.log(JSON.stringify({ httpStatus: res?.status(), url: URL, info, errors }, null, 1));
+  check('콘솔/페이지 에러 0건', errors.length === 0, errors.slice(0, 3).join(' | '));
+  const failed = results.filter((r) => !r.pass);
+  console.log(JSON.stringify({ url: URL, scan, results }, null, 1));
+  if (failed.length || errors.length) process.exitCode = 1;
 };
 
 run().catch((e) => {

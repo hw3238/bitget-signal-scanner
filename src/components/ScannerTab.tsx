@@ -294,9 +294,11 @@ export function ScannerTab({
             </div>
           ))}
 
-        {!scanning && filtered.length === 0 && query && !favOnly && (
+        {!scanning && filtered.length === 0 && query && (
           <div className="empty search-empty">
-            <div className="empty-title">'{query.trim()}' 검색 결과가 없습니다</div>
+            <div className="empty-title">
+              {favOnly ? `즐겨찾기 안에 '${query.trim()}' 검색 결과가 없습니다` : `'${query.trim()}' 검색 결과가 없습니다`}
+            </div>
             <p>심볼 전체(BTCUSDT)나 전략명(EMA, CRT, SuperTrend) 일부로 다시 검색해 보세요. 진행중만 토글을 끄면 종료된 이전 시그널도 검색됩니다.</p>
             <div className="empty-actions">
               <button onClick={() => setQuery('')} className="primary">
