@@ -201,6 +201,8 @@ LD_LIBRARY_PATH=/workspace/.local/sysroot/root/usr/lib/x86_64-linux-gnu \
 PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/pages-check.mjs    # /bitget-signal-scanner/ 서브패스 검증
 node scripts/favorites-check.mjs                                                  # ⭐ 즐겨찾기·검색·더보기·새로고침 유지·보관 스냅샷 검증
 node scripts/live-check.mjs                                                        # 라이브 Pages 반영 확인
+LD_LIBRARY_PATH=/workspace/.local/sysroot/root/usr/lib/x86_64-linux-gnu \
+PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/live-btc-check.mjs  # 라이브 FX 탭 BTCUSD+ 랏·퀵 필터·호가 보정 칩 집중 검증
 ```
 
 결과 스크린샷은 `docs/screens/`에 저장됩니다(`01-scanner.png`, `02-dark-card.png`, `03-strategy-engine.png`,
