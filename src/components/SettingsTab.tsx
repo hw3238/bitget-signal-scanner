@@ -2,7 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import type { Settings } from '../lib/storage';
 import { MIN_RR, MIN_WINRATE } from '../engine/backtest';
 import type { ScanState } from '../hooks/useScanner';
+import type { Signal } from '../engine/types';
 import { fmtPrice } from '../lib/format';
+import {
+  NOTIFY_TARGETS,
+  notificationPermission,
+  ntfyEndpoint,
+  requestNotificationPermission,
+  type NotifyPermission,
+} from '../lib/notify';
 import { fmtOffset, offsetFor, type OffsetMap } from '../lib/offset';
 import { LOT_PRESETS, normalizeLot } from '../utils/lot';
 import { buildFxRows, roundTo } from './FxOffsetBar';
@@ -24,6 +32,12 @@ interface Props {
   onClearSwapLog: () => void;
   historyCount: number;
   swapCount: number;
+  /** 설정 화면의 알림 테스트 버튼 */
+  onTestNotification: (gold?: Signal | null) => Promise<{
+    permission: NotifyPermission;
+    shown: boolean;
+    ntfy: boolean;
+  }>;
 }
 
 export function SettingsTab({
@@ -34,12 +48,59 @@ export function SettingsTab({
   onClearSwapLog,
   historyCount,
   swapCount,
+  onTestNotification,
 }: Props) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<UpdateCheckResult | null>(null);
   const [apkVersion, setApkVersion] = useState<string | null>(null);
   const [tdDraft, setTdDraft] = useState(settings.twelveDataKey);
+  const [ntfyDraft, setNtfyDraft] = useState(settings.notifyNtfy);
+  const [permission, setPermission] = useState<NotifyPermission | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testNote, setTestNote] = useState('');
   const native = isNativeApp();
+
+  useEffect(() => {
+    void notificationPermission().then(setPermission);
+  }, []);
+
+  const grantPermission = async () => {
+    const next = await requestNotificationPermission();
+    setPermission(next);
+    return next;
+  };
+
+  const toggleNotify = () => {
+    const next = !settings.notifyEnabled;
+    onChange({ notifyEnabled: next });
+    if (next) void grantPermission();
+  };
+
+  const runNotifyTest = async () => {
+    setTesting(true);
+    setTestNote('');
+    try {
+      const gold = state.signals.find((s) => s.symbol === 'XAUUSDT' && s.state === 'open') ?? null;
+      const res = await onTestNotification(gold);
+      setPermission(res.permission);
+      const ntfyOn = settings.notifyNtfy.trim() !== '';
+      setTestNote(
+        res.shown
+          ? ntfyOn
+            ? res.ntfy
+              ? '안드로이드 상단 알림 + ntfy 푸시를 함께 보냈습니다.'
+              : '안드로이드 알림은 보냈습니다. ntfy 전송은 실패했습니다(토픽·연결 확인).'
+            : '테스트 알림을 보냈습니다. 폰 상단(알림바)을 확인하세요.'
+          : res.ntfy
+            ? 'ntfy로는 보냈지만 폰 알림은 실패했습니다. 알림 권한을 확인하세요.'
+            : res.permission === 'unsupported'
+              ? '이 환경에서는 알림을 지원하지 않습니다.'
+              : '알림을 보낼 수 없습니다. 알림 권한을 허용해 주세요.',
+      );
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const fxRows = useMemo(() => buildFxRows(state, settings.twelveDataKey), [state, settings.twelveDataKey]);
   const offsets: OffsetMap = settings.fxOffsets;
@@ -131,6 +192,127 @@ export function SettingsTab({
             <code>{RELEASES_PAGE}</code>
           </li>
         </ul>
+      </section>
+
+      <section className="panel" id="settings-notify">
+        <header className="panel-head">
+          <h3>🔔 핸드폰 알림</h3>
+          <span className="panel-note">
+            {permission === 'granted'
+              ? native
+                ? '알림 허용됨'
+                : '브라우저 알림 허용'
+              : permission === 'unsupported'
+                ? '지원 안 됨'
+                : '권한 필요'}
+          </span>
+        </header>
+        <p className="setting-desc block">
+          {native
+            ? '새 시그널이 감지되면 안드로이드 상단 알림바에 소리·진동과 함께 표시됩니다. 알림을 누르면 앱이 열립니다.'
+            : '앱(APK)에서 설치하면 안드로이드 상단 알림바로 옵니다. 웹에서는 브라우저 알림으로 표시됩니다.'}
+        </p>
+        <div className="setting-row">
+          <div>
+            <div className="setting-name">시그널 알림</div>
+            <div className="setting-desc">
+              감지된 새 시그널을 폰으로 알려줍니다. 끄면 알림이 오지 않습니다(기본 켜짐).
+            </div>
+          </div>
+          <button
+            className={`switch ${settings.notifyEnabled ? 'on' : ''}`}
+            onClick={toggleNotify}
+            aria-label="시그널 알림 켜기/끄기"
+            aria-pressed={settings.notifyEnabled}
+          >
+            <span />
+          </button>
+        </div>
+
+        <div className="setting-row">
+          <div>
+            <div className="setting-name">알림 대상</div>
+            <div className="setting-desc">
+              {NOTIFY_TARGETS.find((t) => t.key === settings.notifyTarget)?.desc ?? ''}
+            </div>
+          </div>
+          <div className="segmented notify-target">
+            {NOTIFY_TARGETS.map((t) => (
+              <button
+                key={t.key}
+                className={settings.notifyTarget === t.key ? 'on' : ''}
+                onClick={() => onChange({ notifyTarget: t.key })}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {permission !== 'granted' && permission !== 'unsupported' && (
+          <div className="setting-row compact">
+            <div>
+              <div className="setting-name">알림 권한</div>
+              <div className="setting-desc">
+                Android 13 이상은 알림 권한을 허용해야 상단 알림이 표시됩니다.
+              </div>
+            </div>
+            <button className="ghost-btn" onClick={() => void grantPermission()}>
+              권한 허용
+            </button>
+          </div>
+        )}
+
+        <div className="setting-row compact">
+          <div>
+            <div className="setting-name">알림 테스트</div>
+            <div className="setting-desc">누르면 지금 바로 테스트 알림을 보내 동작을 확인할 수 있습니다.</div>
+          </div>
+          <button className="ghost-btn" onClick={() => void runNotifyTest()} disabled={testing}>
+            {testing ? '보내는 중…' : '🔔 테스트 알림'}
+          </button>
+        </div>
+
+        <div className="setting-row compact td-key-row">
+          <div>
+            <div className="setting-name">ntfy 외부 푸시 (선택)</div>
+            <div className="setting-desc">
+              {settings.notifyNtfy
+                ? `연결됨 — ${ntfyEndpoint(settings.notifyNtfy) ?? ''}`
+                : 'ntfy 사용 안 함 — 같은 알림을 ntfy로도 보내려면 무료 토픽 이름(또는 URL)을 넣으세요.'}
+            </div>
+          </div>
+          <div className="td-key-edit">
+            <input
+              type="text"
+              className="td-key-input"
+              value={ntfyDraft}
+              placeholder="예: bgss-hw3238-9f4k2m"
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => setNtfyDraft(e.target.value)}
+            />
+            <button className="ghost-btn" onClick={() => onChange({ notifyNtfy: ntfyDraft.trim() })}>
+              저장
+            </button>
+            {settings.notifyNtfy && (
+              <button
+                className="ghost-btn"
+                onClick={() => {
+                  setNtfyDraft('');
+                  onChange({ notifyNtfy: '' });
+                }}
+              >
+                삭제
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className={`update-status ${testNote ? 'on' : ''}`}>
+          {testNote ||
+            '같은 시그널은 한 번만 알리고, 앱을 켜기 전에 떠 있던 시그널은 알리지 않습니다.'}
+        </div>
       </section>
 
       <section className="panel">

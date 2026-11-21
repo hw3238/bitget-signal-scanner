@@ -3478,3 +3478,19 @@ textarea {
     font-size: 10.5px;
   }
 }
+
+/* ---- 🔔 핸드폰 알림 (설정 탭) ---- */
+
+#settings-notify .setting-row > div:first-child {
+  flex: 1 1 190px;
+  min-width: 0;
+}
+
+#settings-notify .notify-target {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+}
+
+#settings-notify .update-status {
+  margin-top: 10px;
+}

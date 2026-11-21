@@ -38,4 +38,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 13+ (Galaxy S23+) 상단 알림 표시 권한 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 시그널 알림 진동 -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>

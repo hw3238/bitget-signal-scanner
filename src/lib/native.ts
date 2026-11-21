@@ -5,6 +5,12 @@ interface AppShellPlugin {
   shareImage(options: { base64: string; fileName: string }): Promise<void>;
   openExternal(options: { url: string }): Promise<void>;
   appInfo(): Promise<{ versionName: string; versionCode: number; packageName: string }>;
+  /** 알림 권한 현재 상태 (Android 13+ POST_NOTIFICATIONS) */
+  notificationPermission(): Promise<{ granted: boolean; supported: boolean }>;
+  /** Android 13+ 런타임 알림 권한 요청 */
+  requestNotificationPermission(): Promise<{ granted: boolean; supported: boolean }>;
+  /** 상단 알림바에 시그널 알림 표시 (탭하면 앱 열림) */
+  notifySignal(options: { title: string; body: string; id?: number }): Promise<void>;
 }
 
 const AppShell = registerPlugin<AppShellPlugin>('AppShell');
@@ -39,6 +45,31 @@ export async function openExternalUrl(url: string): Promise<void> {
     return;
   }
   window.open(url, '_blank', 'noopener');
+}
+
+/** 안드로이드 앱: 알림 권한 상태 */
+export async function nativeNotificationPermission(): Promise<{ granted: boolean; supported: boolean }> {
+  if (!isNativeApp()) return { granted: false, supported: false };
+  try {
+    return await AppShell.notificationPermission();
+  } catch {
+    return { granted: false, supported: false };
+  }
+}
+
+/** 안드로이드 앱: Android 13+ 런타임 알림 권한 요청 */
+export async function requestNativeNotificationPermission(): Promise<{ granted: boolean; supported: boolean }> {
+  if (!isNativeApp()) return { granted: false, supported: false };
+  try {
+    return await AppShell.requestNotificationPermission();
+  } catch {
+    return { granted: false, supported: false };
+  }
+}
+
+/** 안드로이드 앱: 네이티브 알림바에 시그널 알림 표시 */
+export async function showNativeNotification(title: string, body: string, id: number): Promise<void> {
+  await AppShell.notifySignal({ title, body, id });
 }
 
 /** 안드로이드 앱: 설치된 APK 버전 */

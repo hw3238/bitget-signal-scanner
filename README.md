@@ -25,6 +25,19 @@ API의 실제 캔들로 계산하며 더미 데이터는 쓰지 않습니다.
   새 버전 발견 시 APK 다운로드. 새 릴리즈가 있으면 앱 상단에도 업데이트 배너가 뜹니다.
 - PNG 저장은 WebView 제약 때문에 네이티브 플러그인(`AppShellPlugin`)으로 갤러리(`Pictures/CRT-Scanner`)에 저장하고,
   공유는 안드로이드 공유 시트로 전달합니다. 외부 링크는 시스템 브라우저에서 엽니다.
+- **🔔 핸드폰 알림**: 새 시그널이 감지되면 안드로이드 상단 알림바에 소리·진동으로 표시됩니다(아래 참고).
+
+### 🔔 시그널 핸드폰 알림 (v1.1.0)
+
+- **네이티브 알림**: `AppShellPlugin`에 알림 채널 `bitget_signals`(중요도 `IMPORTANCE_HIGH`, 기본 알림음·진동 패턴)를 만들고
+  `notifySignal({ title, body, id })` 로 알림바에 표시합니다. 알림을 누르면 `PendingIntent` 로 앱이 열립니다.
+  Android 13+ 는 `POST_NOTIFICATIONS` 런타임 권한을 앱 첫 실행(알림 켜짐) 때 요청하고, 웹은 `Notification API` 로 폴백합니다.
+- **설정 탭 → 🔔 핸드폰 알림**: 알림 ON/OFF(기본 ON, localStorage 저장), 알림 대상(`주력 3종목` 금·유로·비트 / `FX·금 전체` /
+  `전체 종목`), **알림 테스트**(즉시 `[테스트] XAUUSD+ 1시간 롱 시그널 감지` 알림), 선택형 **ntfy 외부 푸시** 토픽 칸.
+- **ntfy**: 기본 전용 토픽 `bgss-hw3238-9f4k2m`(수정·비우기 가능). 값이 있으면 같은 알림을 `https://ntfy.sh/<토픽>` 으로도
+  `fetch` POST 합니다(제목은 `?title=` 파라미터). 비우면 호출하지 않습니다. 테스트 알림도 로컬 알림과 함께 전송합니다.
+- **중복 방지**: `symbol|tf|side|detectedAt` 키를 `localStorage`(`bgss.notified.v1`)에 기록해 60초 자동 갱신마다 같은 시그널이
+  다시 울리지 않게 하고, 앱을 켠 뒤 첫 스캔에 이미 떠 있던 시그널은 알림 없이 '이미 본 것'으로 기록합니다.
 
 ### APK 빌드(로컬)
 
@@ -200,6 +213,8 @@ PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/fx-lot-check.mj
 LD_LIBRARY_PATH=/workspace/.local/sysroot/root/usr/lib/x86_64-linux-gnu \
 PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/pages-check.mjs    # /bitget-signal-scanner/ 서브패스 검증
 node scripts/favorites-check.mjs                                                  # ⭐ 즐겨찾기·검색·더보기·새로고침 유지·보관 스냅샷 검증
+LD_LIBRARY_PATH=/workspace/.deps/root/usr/lib/x86_64-linux-gnu \
+node scripts/notify-check.mjs                                                      # 🔔 알림 로직(중복 방지·대상 필터) + 설정 UI·테스트 알림·ntfy 전송·과거 시그널 미알림·새로고침 중복 0건
 node scripts/live-check.mjs                                                        # 라이브 Pages 반영 확인
 LD_LIBRARY_PATH=/workspace/.local/sysroot/root/usr/lib/x86_64-linux-gnu \
 PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/live-btc-check.mjs  # 라이브 FX 탭 BTCUSD+ 랏·퀵 필터·호가 보정 칩 집중 검증
@@ -209,7 +224,8 @@ PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/live-btc-check.
 `04-market.png`, `05-history.png`, `06-desktop.png`, `07-pages-subpath.png`, `08-settings.png`,
 `09-live-pages.png`, `02-dark-card-export.png`). FX 탭·랏 화면은 `14-fx-tab-lot.png`(FX 탭 + 랏 선택기),
 `14-fx-card-lot.png`(카드의 `0.10 Lot 수익`·`+$` 손익), `14-fx-share-lot.png`(FX 공유 카드 랏 표시),
-`14-fx-tab-lot-desktop.png`(데스크톱), `13-settings-fx.png`(종목별 보정 표), `15-fx-btc-lot.png`(FX 탭 `BTCUSD+` 카드 · `0.10 Lot 수익` · `1 Lot = 1 BTC`), `15-live-fx-btc.png`(라이브 Pages 동일 화면)입니다.
+`14-fx-tab-lot-desktop.png`(데스크톱), `13-settings-fx.png`(종목별 보정 표), `15-fx-btc-lot.png`(FX 탭 `BTCUSD+` 카드 · `0.10 Lot 수익` · `1 Lot = 1 BTC`), `15-live-fx-btc.png`(라이브 Pages 동일 화면),
+`16-settings-notify.png`(설정 탭 🔔 핸드폰 알림 — 알림 토글·대상·테스트·ntfy 토픽)입니다.
 
 ## 배포 (GitHub Pages)
 

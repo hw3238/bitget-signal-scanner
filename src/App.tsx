@@ -15,6 +15,7 @@ import { fmtTime } from './lib/format';
 import { fxTabSignals } from './lib/fxview';
 import { offsetFor } from './lib/offset';
 import { openExternalUrl } from './lib/native';
+import { useSignalNotifications } from './lib/notify';
 import { checkForUpdate, RELEASES_PAGE } from './lib/update';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from './lib/storage';
 import { normalizeLot } from './utils/lot';
@@ -34,6 +35,13 @@ export default function App() {
     twelveDataKey: settings.twelveDataKey,
   });
   const favorites = useFavorites();
+
+  // 🔔 새 시그널 → 핸드폰 알림 (첫 스캔 결과는 기준선으로만 기록)
+  const { sendTest } = useSignalNotifications({
+    signals: state.signals,
+    ready: state.passes > 0,
+    settings,
+  });
 
   // 새 APK 릴리즈가 있으면 상단 배너로 알린다.
   useEffect(() => {
@@ -223,6 +231,7 @@ export default function App() {
             onClearSwapLog={clearSwapLog}
             historyCount={history.length}
             swapCount={swapLog.length}
+            onTestNotification={sendTest}
           />
         )}
       </main>

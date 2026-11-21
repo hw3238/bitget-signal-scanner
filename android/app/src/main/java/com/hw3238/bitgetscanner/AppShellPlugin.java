@@ -1,8 +1,17 @@
 package com.hw3238.bitgetscanner;
 
+import android.Manifest;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.media.AudioAttributes;
+import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -10,6 +19,9 @@ import android.provider.MediaStore;
 import android.util.Base64;
 import android.widget.Toast;
 
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
+import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
 import com.getcapacitor.JSObject;
@@ -17,6 +29,8 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -28,9 +42,142 @@ import java.io.OutputStream;
  * - shareImage: 저장된 PNG를 안드로이드 공유 시트로 전달
  * - openExternal: APK 다운로드 같은 외부 링크를 시스템 브라우저로 열기
  * - appInfo: 설치된 APK의 버전 확인
+ * - notifySignal: 시그널을 안드로이드 상단 알림바에 표시(소리·진동, 탭하면 앱 열림)
+ * - notificationPermission / requestNotificationPermission: Android 13+ 알림권한
  */
-@CapacitorPlugin(name = "AppShell")
+@CapacitorPlugin(
+    name = "AppShell",
+    permissions = {
+        @Permission(
+            alias = "notifications",
+            strings = { Manifest.permission.POST_NOTIFICATIONS }
+        )
+    }
+)
 public class AppShellPlugin extends Plugin {
+
+    private static final String CHANNEL_ID = "bitget_signals";
+    private static final String CHANNEL_NAME = "시그널 알림";
+    private static final String CHANNEL_DESC = "비트겟 CRT 스캐너의 새 시그널 알림";
+
+    /** 알림 채널 생성 — Android 8+ 는 채널 중요도가 소리·진동·헤드업을 결정한다. */
+    private void ensureChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return;
+        }
+        NotificationManager manager = (NotificationManager) getContext()
+            .getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null || manager.getNotificationChannel(CHANNEL_ID) != null) {
+            return;
+        }
+        NotificationChannel channel = new NotificationChannel(
+            CHANNEL_ID,
+            CHANNEL_NAME,
+            NotificationManager.IMPORTANCE_HIGH
+        );
+        channel.setDescription(CHANNEL_DESC);
+        channel.enableVibration(true);
+        channel.setVibrationPattern(new long[] { 0, 260, 160, 260 });
+        channel.enableLights(true);
+        channel.setLightColor(Color.parseColor("#00F5A0"));
+        channel.setShowBadge(true);
+        AudioAttributes audio = new AudioAttributes.Builder()
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+            .build();
+        channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), audio);
+        manager.createNotificationChannel(channel);
+    }
+
+    /** android.permission.POST_NOTIFICATIONS 허용 여부 (Android 13 미만은 알림 차단 설정 여부) */
+    private boolean hasNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            int state = ContextCompat.checkSelfPermission(
+                getContext(),
+                Manifest.permission.POST_NOTIFICATIONS
+            );
+            if (state != PackageManager.PERMISSION_GRANTED) {
+                return false;
+            }
+        }
+        return NotificationManagerCompat.from(getContext()).areNotificationsEnabled();
+    }
+
+    private JSObject permissionResult(boolean granted) {
+        JSObject ret = new JSObject();
+        ret.put("supported", true);
+        ret.put("granted", granted);
+        return ret;
+    }
+
+    @PluginMethod
+    public void notificationPermission(PluginCall call) {
+        call.resolve(permissionResult(hasNotificationPermission()));
+    }
+
+    @PluginMethod
+    public void requestNotificationPermission(PluginCall call) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || hasNotificationPermission()) {
+            call.resolve(permissionResult(hasNotificationPermission()));
+            return;
+        }
+        requestPermissionForAlias("notifications", call, "notificationPermissionCallback");
+    }
+
+    @PermissionCallback
+    private void notificationPermissionCallback(PluginCall call) {
+        call.resolve(permissionResult(hasNotificationPermission()));
+    }
+
+    @PluginMethod
+    public void notifySignal(PluginCall call) {
+        String title = call.getString("title", "비트겟 CRT 시그널");
+        String body = call.getString("body", "");
+        Integer idValue = call.getInt("id");
+        int id = idValue != null ? idValue : (int) (System.currentTimeMillis() % 100000) + 1;
+        try {
+            ensureChannel();
+            post(title, body, id);
+            JSObject ret = new JSObject();
+            ret.put("shown", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("알림 표시 실패: " + e.getMessage());
+        }
+    }
+
+    /** 알림바 표시 — 탭하면 앱이 열리도록 PendingIntent 를 연결한다. */
+    private void post(String title, String body, int id) {
+        Context context = getContext();
+        Intent intent = new Intent(context, MainActivity.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        intent.putExtra("bgss.signalNotification", true);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        PendingIntent pending = PendingIntent.getActivity(context, id, intent, flags);
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_signal)
+            .setColor(Color.parseColor("#00F5A0"))
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setAutoCancel(true)
+            .setWhen(System.currentTimeMillis())
+            .setShowWhen(true)
+            .setContentIntent(pending);
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            // 채널이 없는 버전은 알림 자체에 소리·진동 기본값을 붙인다.
+            builder.setDefaults(NotificationCompat.DEFAULT_ALL);
+        }
+        NotificationManagerCompat.from(context).notify(id, builder.build());
+    }
 
     @PluginMethod
     public void saveImage(PluginCall call) {
