@@ -229,13 +229,17 @@ const run = async () => {
   await waitReady(page);
   await page.locator('.fav-toggle').click();
   await page.waitForTimeout(450);
+  // 즐겨찾기한 실제 시그널이 스캔에서 빠지면 그것도 보관 스냅샷(.stale)이 되므로,
+  // 시드한 TEST 카드를 심볼로 특정해 검사한다(카드 순서에 의존하지 않는다).
   const staleInfo = await page.evaluate(() => {
-    const card = document.querySelector('.signal-card.stale');
+    const cards = [...document.querySelectorAll('.signal-card.stale')];
+    const card = cards.find((el) => el.querySelector('.sym')?.textContent === 'TEST') ?? cards[0];
     return card
       ? {
           sym: card.querySelector('.sym')?.textContent,
           hint: card.querySelector('.stale-hint')?.textContent,
           hasStar: !!card.querySelector('.fav-btn.on'),
+          staleCount: cards.length,
           count: document.querySelectorAll('.signal-card:not(.skeleton)').length,
         }
       : null;
@@ -243,9 +247,9 @@ const run = async () => {
   check('보관 스냅샷 카드 표시(.stale)', !!staleInfo && staleInfo.sym === 'TEST', JSON.stringify(staleInfo));
   check('보관 스냅샷 카드도 ⭐ 활성', !!staleInfo?.hasStar);
   await page.screenshot({ path: `${OUT}/13-favorites-stale.png`, fullPage: false });
-  await page.locator('.signal-card.stale .fav-btn').click();
+  await page.locator('.signal-card.stale').filter({ hasText: 'TEST' }).locator('.fav-btn').first().click();
   await page.waitForTimeout(350);
-  check('보관 스냅샷 해제 → 카운트 2', (await favCount(page)) === 2, `localStorage=${await favCount(page)}`);
+  check('보관 스냅샷 해제 → TEST 스냅샷 사라짐', !(await page.locator('.signal-card.stale').filter({ hasText: 'TEST' }).count()));
 
   // ---------------- 이전 시그널 더보기 / 검색 ----------------
   await page.locator('.fav-toggle').click();
