@@ -37,6 +37,13 @@ cd android && ./gradlew assembleDebug   # → app/build/outputs/apk/debug/app-de
 > GitHub App 연결에는 `workflows` 권한이 없어 `.github/workflows/` 푸시가 거부됩니다. CI 빌드가 필요하면 저장소
 > Settings에서 Actions 권한을 켜고 워크플로를 직접 추가하세요.
 
+### 새 버전 배포 순서
+
+1. `src/lib/update.ts`의 `APP_VERSION`, `package.json`의 `version`, `android/app/build.gradle`의 `versionCode`·`versionName`을 올립니다.
+2. `npm run build` → `npx cap sync android` → `cd android && ./gradlew assembleDebug`.
+3. `dist/`를 `gh-pages` 브랜치에 게시(Pages 반영)하고 앱 APK를 새 태그 릴리즈에 첨부합니다.
+   설치된 앱의 **설정 → 앱 · 업데이트**가 GitHub Releases API로 새 버전을 감지해 다운로드 버튼을 띄웁니다.
+
 ## 실행
 
 ```bash
