@@ -19,6 +19,8 @@ if ! gh repo view "$REPO" --json nameWithOwner,visibility >/dev/null 2>&1; then
 fi
 
 echo "== 2/4 빌드"
+# 코인 로고 아이콘을 최신 유니버스로 갱신(실패해도 기존 아이콘으로 빌드)
+npm run icons || echo "(아이콘 갱신 생략 — 기존 public/coin-icons 사용)"
 npm run build
 
 echo "== 3/4 $BRANCH 브랜치 게시"

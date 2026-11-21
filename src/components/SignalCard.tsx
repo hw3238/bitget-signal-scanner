@@ -1,6 +1,8 @@
 import type { Signal } from '../engine/types';
-import { assetClass, assetLabel, symbolLogo } from '../lib/asset';
-import { fmtPct, fmtPrice, fmtRR, fmtTime, sideFullLabel, stateLabel, tfLabel } from '../lib/format';
+import { assetClass, assetLabel } from '../lib/asset';
+import { bitgetFuturesUrl } from '../lib/coinLogo';
+import { openExternalUrl } from '../lib/native';
+import { fmtPct, fmtPrice, fmtRR, fmtSendTime, sideFullLabel, stateLabel, tfLabel } from '../lib/format';
 import {
   STYLE_META,
   fmtSeed,
@@ -10,7 +12,8 @@ import {
   type Profile,
 } from '../lib/profile';
 import { MiniCandles } from './MiniCandles';
-import { StarIcon } from './Icons';
+import { CoinLogo } from './CoinLogo';
+import { ArrowUpRightIcon, StarIcon } from './Icons';
 
 interface Props {
   signal: Signal;
@@ -44,6 +47,8 @@ export function SignalCard({
   const lev = auto && rec ? rec.leverage : leverage;
   const roi = changePct * lev;
   const pnl = auto && profile ? seedPnl(signal, lev, profile.seed) : null;
+  /** 내 시드 기준 실시간 평가손익 — 현재가가 진입가에서 얼마나 움직였는지 × 레버리지 */
+  const livePnl = profile ? (profile.seed * roi) / 100 : null;
   /** 목표가·손절가까지 남은 변동률(현재가 기준, 방향 반영) */
   const toTargetPct = ((target - price) / (price || 1)) * 100 * dir;
   const toStopPct = ((stop - price) / (price || 1)) * 100 * dir;
@@ -51,6 +56,11 @@ export function SignalCard({
   const stateClass = signal.state === 'open' ? 'open' : signal.state === 'win' ? 'win' : 'loss';
   const progress = Math.max(0, Math.min(1, signal.progress));
   const dec = signal.decimals;
+
+  /** 비트겟 선물 페이지를 새 창/외부 브라우저로 연다 — 카드의 공유 모달은 열리지 않는다. */
+  const openBitget = () => {
+    void openExternalUrl(bitgetFuturesUrl(signal.symbol));
+  };
 
   return (
     <article
@@ -63,7 +73,7 @@ export function SignalCard({
       }}
     >
       <header className="card-head">
-        <div className={`sym-logo ${sideClass}`}>{symbolLogo(signal.base)}</div>
+        <CoinLogo base={signal.base} asset={signal.asset} side={signal.side} size={40} />
         <div className="sym-title">
           <div className="sym-line">
             <span className="sym">{signal.base}</span>
@@ -107,11 +117,13 @@ export function SignalCard({
         </div>
         <div className="roi">
           <span className="roi-cap">
-            {auto ? `COTA 추천 ${lev}x · 예상 수익` : `레버리지 ${lev}x 수익률`}
+            {signal.state === 'open' ? '현재 수익률' : '최종 수익률'} (진입가 기준)
           </span>
           <span className={`roi-value ${roi >= 0 ? 'up' : 'down'}`}>{fmtPct(roi)}</span>
           <span className="roi-sub">
-            {pnl ? `목표 ${fmtUsdAmount(pnl.profitUsd)}` : `현재 손익 ${fmtPct(changePct, 2)}`}
+            {livePnl != null
+              ? `${lev}x 적용 · 평가손익 ${fmtUsdAmount(livePnl)}`
+              : `${lev}x 레버리지 적용`}
           </span>
         </div>
       </div>
@@ -124,12 +136,12 @@ export function SignalCard({
           </span>
           <div className="seed-cells">
             <div className="seed-cell">
-              <span>예상 수익</span>
+              <span>목표 시 예상 수익</span>
               <b className="up">{fmtUsdAmount(pnl.profitUsd)}</b>
               <i className="up">{fmtPct(pnl.profitPct)}</i>
             </div>
             <div className="seed-cell">
-              <span>손절 시</span>
+              <span>손절 시 손실</span>
               <b className="down">{fmtUsdAmount(pnl.lossUsd)}</b>
               <i className="down">{fmtPct(pnl.lossPct)}</i>
             </div>
@@ -189,6 +201,28 @@ export function SignalCard({
         <span className="progress-pct">{Math.round(progress * 100)}%</span>
       </div>
 
+      <div className="card-actions">
+        <button
+          type="button"
+          className="bitget-link"
+          onClick={(e) => {
+            e.stopPropagation();
+            openBitget();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+          }}
+          aria-label={`${signal.base} 비트겟 선물 바로가기`}
+          title={`비트겟에서 ${signal.base} 선물 거래 열기`}
+        >
+          비트겟 바로가기
+          <ArrowUpRightIcon size={12} />
+        </button>
+        <span className={`share-hint${stale ? ' stale-hint' : ''}`}>
+          {stale ? '보관된 스냅샷 · 탭하여 공유 카드' : '탭하여 공유 카드'}
+        </span>
+      </div>
+
       <footer className="card-foot">
         <div className="tags">
           {signal.tags.slice(0, 2).map((t) => (
@@ -196,13 +230,8 @@ export function SignalCard({
               {t}
             </span>
           ))}
-          <span className="tag ghost">{fmtTime(signal.detectedAt)} KST</span>
+          <span className="tag sent">발송 {fmtSendTime(signal.detectedAt)}</span>
         </div>
-        {stale ? (
-          <span className="share-hint stale-hint">보관된 스냅샷 · 탭하여 공유 카드</span>
-        ) : (
-          <span className="share-hint">탭하여 공유 카드</span>
-        )}
       </footer>
     </article>
   );

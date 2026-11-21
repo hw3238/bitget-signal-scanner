@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Signal } from '../engine/types';
 import { drawShareCard } from './shareCard';
-import { CloseIcon, DownloadIcon, ShareIcon, StarIcon } from './Icons';
-import { isNativeApp, saveImageToDevice, shareImageFromDevice } from '../lib/native';
+import { ArrowUpRightIcon, CloseIcon, DownloadIcon, ShareIcon, StarIcon } from './Icons';
+import { isNativeApp, openExternalUrl, saveImageToDevice, shareImageFromDevice } from '../lib/native';
+import { bitgetFuturesUrl } from '../lib/coinLogo';
 import type { Profile } from '../lib/profile';
 
 interface Props {
@@ -23,15 +24,18 @@ export function ShareModal({ signal, leverage, profile = null, auto = false, isF
 
   useEffect(() => {
     let cancelled = false;
-    const draw = () => {
+    const draw = async () => {
       if (cancelled || !canvasRef.current) return;
-      drawShareCard(canvasRef.current, signal, leverage, profile, auto);
-      setReady(true);
+      try {
+        await drawShareCard(canvasRef.current, signal, leverage, profile, auto);
+      } finally {
+        if (!cancelled) setReady(true);
+      }
     };
     if (document.fonts?.ready) {
-      document.fonts.ready.then(draw).catch(draw);
+      document.fonts.ready.then(draw).catch(() => void draw());
     } else {
-      draw();
+      void draw();
     }
     return () => {
       cancelled = true;
@@ -64,7 +68,14 @@ export function ShareModal({ signal, leverage, profile = null, auto = false, isF
   const save = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const blob: Blob | null = await new Promise((res) => canvas.toBlob((b) => res(b), 'image/png'));
+    let blob: Blob | null = null;
+    try {
+      blob = await new Promise((res) => canvas.toBlob((b) => res(b), 'image/png'));
+    } catch {
+      // 캔버스가 오염된 경우(로고 CORS 거부 등)에도 화면이 멈추지 않게
+      flash('failed');
+      return;
+    }
     if (!blob) return;
     if (isNativeApp()) {
       // WebView에서는 blob 다운로드가 막히므로 네이티브 저장(갤러리)으로 처리
@@ -105,8 +116,13 @@ export function ShareModal({ signal, leverage, profile = null, auto = false, isF
         await save();
       }
     } catch {
-      /* 사용자가 공유를 취소한 경우 */
+      /* 사용자가 공유를 취소한 경우 · 캔버스 저장 실패 */
     }
+  };
+
+  /** 비트겟 선물 페이지 — 모달은 그대로 두고 외부 브라우저/앱으로 연다. */
+  const openBitget = () => {
+    void openExternalUrl(bitgetFuturesUrl(signal.symbol));
   };
 
   return (
@@ -137,6 +153,16 @@ export function ShareModal({ signal, leverage, profile = null, auto = false, isF
             <CloseIcon size={18} />
           </button>
         </div>
+        <button
+          type="button"
+          className="share-bitget"
+          onClick={openBitget}
+          aria-label={`${signal.base} 비트겟 선물 거래 열기`}
+        >
+          비트겟 거래
+          <ArrowUpRightIcon size={14} />
+          <span className="share-bitget-sym">{signal.symbol}</span>
+        </button>
       </div>
     </div>
   );

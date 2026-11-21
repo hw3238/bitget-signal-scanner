@@ -99,6 +99,13 @@ export const StarIcon = ({ size = 18, className, filled = false }: IconProps & {
   </svg>
 );
 
+export const ArrowUpRightIcon = ({ size = 13, className }: IconProps) => (
+  <svg {...base(size)} className={className}>
+    <path d="M7 17 17 7" />
+    <path d="M9.4 7H17v7.6" />
+  </svg>
+);
+
 export const BoltIcon = ({ size = 14, className }: IconProps) => (
   <svg {...base(size)} className={className}>
     <path d="M13 2 5 13h5l-1 9 8-11h-5l1-9Z" />

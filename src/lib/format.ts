@@ -66,6 +66,11 @@ export function fmtDateTime(ts: number): string {
   });
 }
 
+/** 시그널 발송(감지) 시각 — `11. 21. 09:00` */
+export function fmtSendTime(ts: number): string {
+  return fmtDateTime(ts);
+}
+
 export function fmtAgo(ts: number, now = Date.now()): string {
   const diff = Math.max(0, now - ts);
   const min = Math.floor(diff / 60000);

@@ -1,5 +1,6 @@
 import type { Signal } from '../engine/types';
-import { assetLabel } from '../lib/asset';
+import { assetLabel, symbolLogo } from '../lib/asset';
+import { coinIconUrl } from '../lib/coinLogo';
 import { fmtPct, fmtPrice, fmtRR, sideFullLabel, stateLabel, tfLabel } from '../lib/format';
 import {
   STYLE_META,
@@ -108,7 +109,70 @@ function chip(
   return w;
 }
 
-export function drawShareCard(
+/* ---------- 코인 로고 ---------- */
+
+const logoCache = new Map<string, Promise<HTMLImageElement | null>>();
+
+/** 내장 아이콘은 같은 출처라 캔버스가 오염되지 않는다. 없으면 null → 글자 아바타. */
+function loadLogo(url: string): Promise<HTMLImageElement | null> {
+  const cached = logoCache.get(url);
+  if (cached) return cached;
+  const task = new Promise<HTMLImageElement | null>((resolve) => {
+    const img = new Image();
+    let settled = false;
+    const finish = (value: HTMLImageElement | null) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = window.setTimeout(() => finish(null), 2500);
+    img.onload = () => finish(img.naturalWidth > 0 ? img : null);
+    img.onerror = () => finish(null);
+    img.src = url;
+  });
+  logoCache.set(url, task);
+  return task;
+}
+
+/** 종목 로고 배지 — 로고가 없으면 토스 스타일 둥근 글자 아바타로 그린다. */
+function drawBadge(
+  ctx: CanvasRenderingContext2D,
+  logo: HTMLImageElement | null,
+  x: number,
+  y: number,
+  size: number,
+  soft: string,
+  ink: string,
+  label: string,
+) {
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  if (logo) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    // 아이콘 원본은 캔버스 가장자리에 여백이 있어 살짝 키워 채운다.
+    const s = size * 1.12;
+    ctx.drawImage(logo, x - (s - size) / 2, y - (s - size) / 2, s, s);
+    ctx.restore();
+    return;
+  }
+  ctx.fillStyle = soft;
+  rr(ctx, x, y, size, size, size * 0.3);
+  ctx.fill();
+  ctx.font = `800 ${Math.round(size * 0.3)}px ${FONT}`;
+  ctx.fillStyle = ink;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, cx, cy + 1);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+}
+
+export async function drawShareCard(
   canvas: HTMLCanvasElement,
   signal: Signal,
   leverage: number,
@@ -127,6 +191,8 @@ export function drawShareCard(
   const lev = rec ? rec.leverage : leverage;
   const pnl = auto && profile ? seedPnl(signal, lev, profile.seed) : null;
   const roi = signal.changePct * lev;
+  /** 내 시드 기준 실시간 평가손익 (진입가 → 현재가) */
+  const livePnl = profile ? (profile.seed * roi) / 100 : null;
   const longSide = signal.side === 'long';
   const sideColor = longSide ? C.up : C.down;
   const sideSoft = longSide ? C.upSoft : C.downSoft;
@@ -134,6 +200,8 @@ export function drawShareCard(
   const toStopPct = ((signal.stop - signal.price) / (signal.price || 1)) * 100 * dir;
   const px = 40;
   const pw = W - px * 2;
+  const logoUrl = await coinIconUrl(signal.base, signal.asset);
+  const logo = logoUrl ? await loadLogo(logoUrl) : null;
 
   /* ---------- 배경 ---------- */
   ctx.fillStyle = C.bg;
@@ -161,10 +229,13 @@ export function drawShareCard(
     minute: '2-digit',
     hour12: false,
   });
-  text(ctx, `${dateStr} KST`, W - px, 60, { size: 14, weight: 600, color: C.sub, align: 'right' });
+  text(ctx, `발송 ${dateStr} KST`, W - px, 60, { size: 14, weight: 600, color: C.sub, align: 'right' });
 
   /* ---------- 종목 · 방향 ---------- */
-  fitText(ctx, signal.base, px, 128, pw - 250, { size: 46, weight: 800, color: C.ink });
+  const badgeSize = 46;
+  drawBadge(ctx, logo, px, 88, badgeSize, sideSoft, sideColor, symbolLogo(signal.base));
+  const symX = px + badgeSize + 14;
+  fitText(ctx, signal.base, symX, 128, W - px - symX - 190, { size: 46, weight: 800, color: C.ink });
 
   let chipX = px;
   chipX += chip(ctx, chipX, 148, tfLabel(signal.tf), '#FFFFFF', C.ink2, 13, 11, 26) + 6;
@@ -186,28 +257,38 @@ export function drawShareCard(
     align: 'center',
   });
 
-  /* ---------- 현재가 · 예상 수익 ---------- */
+  /* ---------- 현재가 · 실시간 수익률(진입가 기준) ---------- */
   text(ctx, '현재가', px, 216, { size: 13, weight: 600, color: C.sub });
   text(ctx, fmtPrice(signal.price, signal.decimals), px, 268, {
     size: 46,
     weight: 800,
     color: C.ink,
   });
+  text(ctx, `진입가 대비 ${fmtPct(signal.changePct, 2)}`, px, 294, {
+    size: 13,
+    weight: 600,
+    color: signal.changePct >= 0 ? C.up : C.down,
+  });
 
   const gainColor = roi >= 0 ? C.up : C.down;
-  text(ctx, '예상 수익', W - px, 216, { size: 13, weight: 600, color: C.sub, align: 'right' });
-  text(ctx, pnl ? fmtUsdAmount(pnl.profitUsd) : fmtPct(roi), W - px, 258, {
-    size: 27,
+  text(ctx, `현재 수익률 (진입가 기준) · ${lev}x`, W - px, 216, {
+    size: 13,
+    weight: 600,
+    color: C.sub,
+    align: 'right',
+  });
+  text(ctx, fmtPct(roi), W - px, 262, {
+    size: 32,
     weight: 800,
     color: gainColor,
     align: 'right',
   });
   text(
     ctx,
-    pnl ? `${fmtPct(pnl.profitPct)} · 손절 시 ${fmtUsdAmount(pnl.lossUsd)}` : `진입가 대비 ${fmtPct(signal.changePct, 2)}`,
+    livePnl != null ? `실시간 평가손익 ${fmtUsdAmount(livePnl)}` : `${lev}x 레버리지 적용`,
     W - px,
-    284,
-    { size: 13, weight: 600, color: pnl ? C.down : C.ink2, align: 'right' },
+    290,
+    { size: 13, weight: 600, color: livePnl != null ? gainColor : C.ink2, align: 'right' },
   );
 
   /* ---------- 진입가 · 목표가 · 본전 · 손절가 ---------- */
@@ -224,7 +305,7 @@ export function drawShareCard(
     {
       label: '목표가',
       value: fmtPrice(signal.target, signal.decimals),
-      note: fmtPct(toTargetPct, 2),
+      note: pnl ? `목표 시 ${fmtUsdAmount(pnl.profitUsd)}` : fmtPct(toTargetPct, 2),
       color: C.up,
       noteColor: C.up,
     },
@@ -238,7 +319,7 @@ export function drawShareCard(
     {
       label: '손절가',
       value: fmtPrice(signal.stop, signal.decimals),
-      note: fmtPct(toStopPct, 2),
+      note: pnl ? `손절 시 ${fmtUsdAmount(pnl.lossUsd)}` : fmtPct(toStopPct, 2),
       color: C.down,
       noteColor: C.down,
     },

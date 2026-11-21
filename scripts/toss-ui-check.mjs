@@ -251,6 +251,8 @@ const run = async () => {
       rec: clean(c.querySelector('.badge.rec')?.textContent),
       cap: clean(c.querySelector('.roi-cap')?.textContent),
       roi: clean(c.querySelector('.roi-value')?.textContent),
+      roiSub: clean(c.querySelector('.roi-sub')?.textContent),
+      sentTime: clean(c.querySelector('.tag.sent')?.textContent),
       labels: lvls.map((l) => clean(l.querySelector('.lvl-label')?.textContent)),
       values: lvls.map((l) => clean(l.querySelector('.lvl-value')?.textContent)),
       price: clean(c.querySelector('.price')?.textContent),
@@ -288,11 +290,11 @@ const run = async () => {
   check('COTA 추천 배지 = 보수적 2x~5x', /^COTA 추천 \d+x$/.test(card.rec) && recLev >= 2 && recLev <= 5, card.rec);
   check('시드 예상 손익 표시(내 시드 $5,000)', /내 시드 \$5,000/.test(card.seedCap) && card.seedCells.length === 2, card.seedCap);
   check(
-    '예상 수익·손절 손실 금액/비율',
-    /^예상 수익$/.test(card.seedCells[0]?.label) &&
+    '목표 시 예상 수익·손절 시 손실 금액/비율',
+    /^목표 시 예상 수익$/.test(card.seedCells[0]?.label) &&
       /^\+\$/.test(card.seedCells[0]?.usd) &&
       /^\+[\d.]+%$/.test(card.seedCells[0]?.pct) &&
-      /^손절 시$/.test(card.seedCells[1]?.label) &&
+      /^손절 시 손실$/.test(card.seedCells[1]?.label) &&
       /^-\$/.test(card.seedCells[1]?.usd) &&
       /^-[\d.]+%$/.test(card.seedCells[1]?.pct),
     JSON.stringify(card.seedCells),
@@ -307,7 +309,54 @@ const run = async () => {
     Math.abs(expectProfit - gotProfit) <= Math.max(0.6, expectProfit * 0.005),
     `${expectProfit.toFixed(2)} vs ${gotProfit}`,
   );
-  check('COTA 추천 캡션', /^COTA 추천 \d+x · 예상 수익$/.test(card.cap), card.cap);
+  check(
+    '현재 수익률·발송 시각 표기',
+    /^(현재|최종) 수익률 \(진입가 기준\)$/.test(card.cap) &&
+      /^\d+x 적용 · 평가손익 [+-]\$/.test(card.roiSub) &&
+      /^발송 \d{2}\. \d{2}\. \d{2}:\d{2}$/.test(card.sentTime),
+    `${card.cap} · ${card.roiSub} · ${card.sentTime}`,
+  );
+
+  // 진입가 기준 실시간 수익률이 롱/숏 방향과 레버리지에 맞게 표시되는지 전 카드 검증
+  const live = await page.evaluate(() => {
+    const num = (t) => Number(String(t ?? '').replace(/[,$%\s]/g, ''));
+    const rows = [...document.querySelectorAll('.scanner-tab .signal-card:not(.skeleton)')].map((c) => {
+      const side = c.querySelector('.badge.long') ? 'long' : 'short';
+      const price = num(c.querySelector('.price')?.textContent);
+      const entry = num(c.querySelectorAll('.lvl-value')[1]?.textContent);
+      const roiText = c.querySelector('.roi-value')?.textContent?.trim() ?? '';
+      const roi = num(roiText);
+      const sub = c.querySelector('.roi-sub')?.textContent ?? '';
+      const lev = Number((sub.match(/(\d+(?:\.\d+)?)x/) || [])[1] || 0);
+      const pnlText = (sub.match(/평가손익 ([+-]?\$[\d,.]+)/) || [])[1] ?? null;
+      const raw = ((price - entry) / entry) * 100 * (side === 'long' ? 1 : -1);
+      return { side, price, entry, roi, lev, raw, expect: raw * lev, pnlText, roiText };
+    });
+    const off = rows.filter((r) => !r.entry || !r.lev || Math.abs(r.expect - r.roi) > 0.2);
+    const seedPnlOff = rows.filter((r) => {
+      if (!r.pnlText) return false;
+      const shown = num(r.pnlText);
+      return Math.abs(shown - (5000 * r.roi) / 100) > 40;
+    });
+    return {
+      total: rows.length,
+      longs: rows.filter((r) => r.side === 'long').length,
+      shorts: rows.filter((r) => r.side === 'short').length,
+      off: off.map((r) => `${r.side}:${r.roiText} vs ${r.expect.toFixed(2)}`),
+      seedPnlOff: seedPnlOff.map((r) => r.pnlText),
+      sample: rows.slice(0, 3).map((r) => `${r.side} ${r.price}→${r.entry} ${r.roiText} (${r.lev}x)`),
+    };
+  });
+  check(
+    '실시간 수익률 = (현재가-진입가)/진입가×레버리지 · 롱/숏 부호',
+    live.total > 0 && live.off.length === 0,
+    `${live.total}건 · 롱 ${live.longs}/숏 ${live.shorts} · ${live.sample.join(' | ')}`,
+  );
+  check(
+    '시드 평가손익 = 시드 × 실시간 수익률',
+    live.seedPnlOff.length === 0,
+    live.seedPnlOff.length ? live.seedPnlOff.join(' ') : '전 카드 일치',
+  );
 
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(300);
