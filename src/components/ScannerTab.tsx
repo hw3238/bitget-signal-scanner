@@ -285,6 +285,7 @@ export function ScannerTab({
 
         {scanning &&
           filtered.length === 0 &&
+          !favOnly &&
           Array.from({ length: 3 }).map((_, i) => (
             <div className="signal-card skeleton" key={`sk-${i}`}>
               <div className="sk-line w40" />
@@ -294,7 +295,7 @@ export function ScannerTab({
             </div>
           ))}
 
-        {!scanning && filtered.length === 0 && query && (
+        {filtered.length === 0 && query && (favOnly || !scanning) && (
           <div className="empty search-empty">
             <div className="empty-title">
               {favOnly ? `즐겨찾기 안에 '${query.trim()}' 검색 결과가 없습니다` : `'${query.trim()}' 검색 결과가 없습니다`}
@@ -308,7 +309,7 @@ export function ScannerTab({
           </div>
         )}
 
-        {!scanning && filtered.length === 0 && !query && favOnly && (
+        {filtered.length === 0 && !query && favOnly && (
           <div className="empty favorite-empty">
             <div className="empty-title">⭐ 즐겨찾기한 시그널이 없어요</div>
             <p>카드 우측 상단의 ⭐ 버튼을 눌러 관심 시그널을 추가해 보세요. 즐겨찾기는 이 브라우저에 저장되어 새로고침해도 그대로 남습니다.</p>
