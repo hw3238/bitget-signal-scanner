@@ -352,6 +352,8 @@ const run = async () => {
     histSearch.rows.length > 0 && histSearch.rows.every((t) => t.includes(histBase)),
     `${histSearch.rows.length}건 · 카운트=${histSearch.count}`,
   );
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(300);
   await page.screenshot({ path: `${OUT}/18-history-search.png`, fullPage: false });
   await page.locator('.search-clear').click();
   await page.waitForTimeout(350);
