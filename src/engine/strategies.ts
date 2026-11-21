@@ -1,6 +1,7 @@
-import type { Candle, Setup } from './types';
+import type { Candle, Setup, TF } from './types';
 import type { Series } from './indicators';
 import { percentileRank } from './indicators';
+import { tightenStop, validateSetup } from './risk';
 
 const atrAt = (s: Series, i: number) => {
   const a = s.atr14[i];
@@ -17,8 +18,29 @@ function rangeOf(candles: Candle[], from: number, to: number) {
   return { hi, lo };
 }
 
+/**
+ * 정밀 타점 시그널 조립
+ *  · 손절: 구조적 무효화 지점(스윙·OB·FVG·신호 캔들 극값)에 최소 버퍼만 붙여 붙인다
+ *  · 손절폭 상한/하한(타임프레임별)·목표가 양수·손익비 1.5R 를 모두 통과해야 통과
+ */
+function build(
+  tf: TF,
+  side: Setup['side'],
+  entry: number,
+  rawStop: number,
+  atr: number,
+  mkTarget: (risk: number) => number,
+  tags: string[],
+): Setup | null {
+  const t = tightenStop({ side, entry, rawStop, atr, tf });
+  if (!t) return null;
+  const target = mkTarget(t.risk);
+  if (!(target > 0)) return null;
+  return validateSetup({ side, entry, stop: t.stop, target, tags }, tf);
+}
+
 /** 1. CRT + FVG + CISD : 레인지 스윕 → FVG/구조전환 확인 진입 */
-function crtFvgCisd(candles: Candle[], s: Series, i: number): Setup | null {
+function crtFvgCisd(candles: Candle[], s: Series, i: number, tf: TF): Setup | null {
   if (i < 34) return null;
   const a = atrAt(s, i);
   if (!a) return null;
@@ -40,33 +62,22 @@ function crtFvgCisd(candles: Candle[], s: Series, i: number): Setup | null {
   if (sweptLow) {
     if (!fvgBull && !cisdUp) return null;
     if (c.c > rLo + (rHi - rLo) * 0.45) return null;
-    const entry = c.c;
-    const stop = Math.min(c.l, candles[i - 1].l) - 0.9 * a;
-    const risk = entry - stop;
-    if (risk <= 0) return null;
-    const target = Math.min(Math.max(rHi, entry + 1.4 * risk), entry + 2.2 * risk);
-    if (target <= entry) return null;
     const tags = ['레인지 스윕'];
     if (fvgBull) tags.push('FVG');
     if (cisdUp) tags.push('CISD');
-    return { side: 'long', entry, stop, target, tags };
+    // 무효화 지점 = 스윕한 저점(스윕 캔들 저가) — 그 바로 아래에서만 손절
+    return build(tf, 'long', c.c, c.l - 0.2 * a, a, (risk) => Math.min(Math.max(rHi, c.c + 1.6 * risk), c.c + 2.4 * risk), tags);
   }
   if (!fvgBear && !cisdDown) return null;
   if (c.c < rHi - (rHi - rLo) * 0.45) return null;
-  const entry = c.c;
-  const stop = Math.max(c.h, candles[i - 1].h) + 0.9 * a;
-  const risk = stop - entry;
-  if (risk <= 0) return null;
-  const target = Math.max(Math.min(rLo, entry - 1.4 * risk), entry - 2.2 * risk);
-  if (target >= entry) return null;
   const tags = ['레인지 스윕'];
   if (fvgBear) tags.push('FVG');
   if (cisdDown) tags.push('CISD');
-  return { side: 'short', entry, stop, target, tags };
+  return build(tf, 'short', c.c, c.h + 0.2 * a, a, (risk) => Math.max(Math.min(rLo, c.c - 1.6 * risk), c.c - 2.4 * risk), tags);
 }
 
 /** 2. Liquidity Sweep + Order Block : 스윕 뒤 오더블록 리테스트 */
-function sweepOrderBlock(candles: Candle[], s: Series, i: number): Setup | null {
+function sweepOrderBlock(candles: Candle[], s: Series, i: number, tf: TF): Setup | null {
   if (i < 40) return null;
   const a = atrAt(s, i);
   if (!a) return null;
@@ -89,11 +100,9 @@ function sweepOrderBlock(candles: Candle[], s: Series, i: number): Setup | null 
       }
       if (!Number.isFinite(obLow)) continue;
       const entry = c.c;
-      if (entry - obLow > 2.4 * a || entry <= obLow) continue;
-      const stop = obLow - 0.7 * a;
-      const risk = entry - stop;
-      if (risk <= 0) continue;
-      return { side: 'long', entry, stop, target: entry + 2.0 * risk, tags: ['유동성 스윕', 'OB 리테스트'] };
+      if (entry <= obLow) continue;
+      // 오더블록 저점이 무효화 지점 — 그 바로 아래로 손절
+      return build(tf, 'long', entry, obLow - 0.2 * a, a, (risk) => entry + 2.0 * risk, ['유동성 스윕', 'OB 리테스트']);
     }
     if (sweptHigh) {
       if (!(c.c < s.ema50[i])) continue;
@@ -106,18 +115,15 @@ function sweepOrderBlock(candles: Candle[], s: Series, i: number): Setup | null 
       }
       if (!Number.isFinite(obHigh)) continue;
       const entry = c.c;
-      if (obHigh - entry > 2.4 * a || entry >= obHigh) continue;
-      const stop = obHigh + 0.7 * a;
-      const risk = stop - entry;
-      if (risk <= 0) continue;
-      return { side: 'short', entry, stop, target: entry - 2.0 * risk, tags: ['유동성 스윕', 'OB 리테스트'] };
+      if (entry >= obHigh) continue;
+      return build(tf, 'short', entry, obHigh + 0.2 * a, a, (risk) => entry - 2.0 * risk, ['유동성 스윕', 'OB 리테스트']);
     }
   }
   return null;
 }
 
 /** 3. EMA 20/50 Pullback + RSI Divergence */
-function emaPullbackRsi(candles: Candle[], s: Series, i: number): Setup | null {
+function emaPullbackRsi(candles: Candle[], s: Series, i: number, tf: TF): Setup | null {
   if (i < 60) return null;
   const a = atrAt(s, i);
   const e20 = s.ema20[i];
@@ -161,36 +167,22 @@ function emaPullbackRsi(candles: Candle[], s: Series, i: number): Setup | null {
     if (p > 0 && c.h >= highP * 0.998 && r < s.rsi14[p] - 1.2) div = true;
   }
 
+  const tags = ['EMA20 눌림', div ? 'RSI 다이버전스' : 'RSI 회복'];
   if (trendUp) {
     if (c.c <= e20) return null;
     if (!div && r < 50) return null;
-    const stop = rangeOf(candles, i - 2, i).lo - 1.0 * a;
-    const risk = c.c - stop;
-    if (risk <= 0) return null;
-    return {
-      side: 'long',
-      entry: c.c,
-      stop,
-      target: c.c + 1.8 * risk,
-      tags: ['EMA20 눌림', div ? 'RSI 다이버전스' : 'RSI 회복'],
-    };
+    // 눌림 저점(최근 3봉 저가) 이탈이 무효화 지점
+    const swingLow = rangeOf(candles, i - 3, i).lo;
+    return build(tf, 'long', c.c, swingLow - 0.2 * a, a, (risk) => c.c + 1.8 * risk, tags);
   }
   if (c.c >= e20) return null;
   if (!div && r > 50) return null;
-  const stop = rangeOf(candles, i - 2, i).hi + 1.0 * a;
-  const risk = stop - c.c;
-  if (risk <= 0) return null;
-  return {
-    side: 'short',
-    entry: c.c,
-    stop,
-    target: c.c - 1.8 * risk,
-    tags: ['EMA20 눌림', div ? 'RSI 다이버전스' : 'RSI 회복'],
-  };
+  const swingHigh = rangeOf(candles, i - 3, i).hi;
+  return build(tf, 'short', c.c, swingHigh + 0.2 * a, a, (risk) => c.c - 1.8 * risk, tags);
 }
 
 /** 4. Bollinger Squeeze + Volume Breakout */
-function bbSqueezeBreak(candles: Candle[], s: Series, i: number): Setup | null {
+function bbSqueezeBreak(candles: Candle[], s: Series, i: number, tf: TF): Setup | null {
   if (i < 110) return null;
   const a = atrAt(s, i);
   const w = s.bb.width[i];
@@ -210,23 +202,18 @@ function bbSqueezeBreak(candles: Candle[], s: Series, i: number): Setup | null {
   if (candles[i].v < volMa * 1.35) return null;
 
   const c = candles[i];
+  // 돌파 캔들 극값이 무효화 지점 — 밴드 중간값까지 벌리지 않고 캔들 저/고가에 붙인다
   if (c.c > up) {
-    const stop = Math.min(mid - 0.6 * a, c.c - 1.6 * a);
-    const risk = c.c - stop;
-    if (risk <= 0) return null;
-    return { side: 'long', entry: c.c, stop, target: c.c + 2.0 * risk, tags: ['BB 스퀴즈', '거래량 돌파'] };
+    return build(tf, 'long', c.c, c.l - 0.2 * a, a, (risk) => c.c + 2.0 * risk, ['BB 스퀴즈', '거래량 돌파']);
   }
   if (c.c < lo) {
-    const stop = Math.max(mid + 0.6 * a, c.c + 1.6 * a);
-    const risk = stop - c.c;
-    if (risk <= 0) return null;
-    return { side: 'short', entry: c.c, stop, target: c.c - 2.0 * risk, tags: ['BB 스퀴즈', '거래량 돌파'] };
+    return build(tf, 'short', c.c, c.h + 0.2 * a, a, (risk) => c.c - 2.0 * risk, ['BB 스퀴즈', '거래량 돌파']);
   }
   return null;
 }
 
 /** 5. EQ Mean Reversion + Engulfing */
-function eqEngulfing(candles: Candle[], s: Series, i: number): Setup | null {
+function eqEngulfing(candles: Candle[], s: Series, i: number, tf: TF): Setup | null {
   if (i < 36) return null;
   const a = atrAt(s, i);
   if (!a) return null;
@@ -245,24 +232,16 @@ function eqEngulfing(candles: Candle[], s: Series, i: number): Setup | null {
   const bearEngulf = c.c < c.o && prev.c > prev.o && c.c <= prev.o && c.o >= prev.c;
 
   if (bullEngulf && trendUp && c.c >= eq * 0.998) {
-    const stop = Math.min(prev.l, c.l) - 0.5 * a;
-    const risk = c.c - stop;
-    if (risk <= 0) return null;
-    const target = Math.max(Math.min(hi, c.c + 2.2 * (c.c - stop)), c.c + 1.0 * (c.c - stop));
-    return { side: 'long', entry: c.c, stop, target, tags: ['EQ 지지', '상승 장악형'] };
+    return build(tf, 'long', c.c, Math.min(prev.l, c.l) - 0.2 * a, a, (risk) => Math.min(hi, c.c + 2.4 * risk), ['EQ 지지', '상승 장악형']);
   }
   if (bearEngulf && trendDown && c.c <= eq * 1.002) {
-    const stop = Math.max(prev.h, c.h) + 0.5 * a;
-    const risk = stop - c.c;
-    if (risk <= 0) return null;
-    const target = Math.min(Math.max(lo, c.c - 2.2 * (stop - c.c)), c.c - 1.0 * (stop - c.c));
-    return { side: 'short', entry: c.c, stop, target, tags: ['EQ 저항', '하락 장악형'] };
+    return build(tf, 'short', c.c, Math.max(prev.h, c.h) + 0.2 * a, a, (risk) => Math.max(lo, c.c - 2.4 * risk), ['EQ 저항', '하락 장악형']);
   }
   return null;
 }
 
 /** 6. SuperTrend / Donchian Momentum */
-function supertrendDonchian(candles: Candle[], s: Series, i: number): Setup | null {
+function supertrendDonchian(candles: Candle[], s: Series, i: number, tf: TF): Setup | null {
   if (i < 46) return null;
   const a = atrAt(s, i);
   if (!a) return null;
@@ -276,37 +255,20 @@ function supertrendDonchian(candles: Candle[], s: Series, i: number): Setup | nu
   const breakDown = Number.isFinite(loPrev) && c.c < loPrev && prev.c >= loPrev;
 
   if (flipUp || breakUp) {
-    const rawRisk = c.c - s.st.line[i];
-    const riskCap = Math.min(Math.max(Number.isFinite(rawRisk) && rawRisk > 0 ? rawRisk : 1.5 * a, 1.0 * a), 2.0 * a);
-    const stop = c.c - riskCap;
-    const risk = c.c - stop;
-    if (risk <= 0) return null;
-    return {
-      side: 'long',
-      entry: c.c,
-      stop,
-      target: c.c + 2.0 * risk,
-      tags: [flipUp ? 'ST 전환' : '돈치안 돌파'],
-    };
+    // ATR 배수(최대 2ATR) 손절 대신 돌파 캔들 저점에 붙여 손절폭을 조인다
+    const tags = [flipUp ? 'ST 전환' : '돈치안 돌파'];
+    return build(tf, 'long', c.c, Math.min(prev.l, c.l) - 0.2 * a, a, (risk) => c.c + 2.0 * risk, tags);
   }
   if (flipDown || breakDown) {
-    const rawRisk = s.st.line[i] - c.c;
-    const riskCap = Math.min(Math.max(Number.isFinite(rawRisk) && rawRisk > 0 ? rawRisk : 1.5 * a, 1.0 * a), 2.0 * a);
-    const stop = c.c + riskCap;
-    const risk = stop - c.c;
-    if (risk <= 0) return null;
-    return {
-      side: 'short',
-      entry: c.c,
-      stop,
-      target: c.c - 2.0 * risk,
-      tags: [flipDown ? 'ST 전환' : '돈치안 돌파'],
-    };
+    const tags = [flipDown ? 'ST 전환' : '돈치안 돌파'];
+    return build(tf, 'short', c.c, Math.max(prev.h, c.h) + 0.2 * a, a, (risk) => c.c - 2.0 * risk, tags);
   }
   return null;
 }
 
-export const DETECTORS: Record<string, (c: Candle[], s: Series, i: number) => Setup | null> = {
+export type Detector = (c: Candle[], s: Series, i: number, tf: TF) => Setup | null;
+
+export const DETECTORS: Record<string, Detector> = {
   'crt-fvg-cisd': crtFvgCisd,
   'sweep-ob': sweepOrderBlock,
   'ema-pullback-rsi': emaPullbackRsi,

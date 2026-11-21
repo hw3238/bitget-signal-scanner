@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Android 11+ 패키지 가시성: 비트겟 앱(com.bitget.exchange) 존재 확인·딥링크 실행에 필요 -->
+    <queries>
+        <package android:name="com.bitget.exchange" />
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

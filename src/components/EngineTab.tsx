@@ -3,6 +3,7 @@ import type { ScanState } from '../hooks/useScanner';
 import { STRATEGIES, STRATEGY_BY_ID } from '../engine/types';
 import type { SwapLogEntry } from '../lib/storage';
 import { fmtAgo, fmtDateTime, fmtPct, fmtRR, tfLabel } from '../lib/format';
+import { STOP_WIDTH } from '../engine/risk';
 import { RefreshIcon } from './Icons';
 
 interface Props {
@@ -67,6 +68,10 @@ export function EngineTab({ state, swapLog, leverage, onRescan, onClearLog }: Pr
           <p>
             6개 매매법을 스캔한 모든 마켓의 실제 200봉 캔들에 실시간 백테스트하고, 마켓별로 가장 우수한 전략만
             채택합니다. 성과가 떨어지면 교체 로그를 남기고 새 전략으로 시그널을 생성합니다.
+          </p>
+          <p className="hero-tight">
+            손절은 스윙·오더블록·FVG 경계에 붙인 정밀 타점 기준 — 손절폭이 {STOP_WIDTH['1H'].max}%(1H)·{' '}
+            {STOP_WIDTH['4H'].max}%(4H)를 넘는 시그널은 생성하지 않습니다.
           </p>
           <div className="hero-stats">
             <div>
@@ -165,7 +170,8 @@ export function EngineTab({ state, swapLog, leverage, onRescan, onClearLog }: Pr
           ))}
         </ul>
         <p className="table-note">
-          채택 승률·표본은 이 전략이 실제로 선택된 마켓들의 최근 60봉 성과 합계입니다. 기대 수익 {leverage}배는 1건당
+          손절폭 상한 {STOP_WIDTH['1H'].max}%(1H) · {STOP_WIDTH['4H'].max}%(4H) — 넓은 손절폭 셋업은 시그널·백테스트
+          집계에서 모두 제외됩니다. 채택 승률·표본은 이 전략이 실제로 선택된 마켓들의 최근 60봉 성과 합계입니다. 기대 수익 {leverage}배는 1건당
           손절가까지 거리 대비 R배수를 레버리지로 환산한 값이고, 전체 승률은 스캔한 모든 마켓(채택 여부 무관)의
           기록입니다.
         </p>

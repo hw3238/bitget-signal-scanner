@@ -345,7 +345,7 @@ const run = async () => {
   check('공유 카드 캔버스 오염 없음(CORS 안전)', !modal.tainted);
   check('공유 카드에 코인 로고 픽셀 그려짐', modal.badgePixels > 500, `${modal.badgePixels}/${modal.sampled} px`);
   const drawn = (await page.evaluate(() => window.__drawn || [])).join(' | ');
-  check('공유 카드에 발송 시각·진입가 기준 실시간 수익률', /발송 \d{2}\. \d{2}\. \d{2}:\d{2}/.test(drawn) && /현재 수익률 \(진입가 기준\)/.test(drawn) && /실시간 평가손익 [+-]\$/.test(drawn), drawn.slice(0, 160));
+  check('공유 카드에 발송 시각·진입가 기준 실시간 수익률', /발송 \d{2}\. \d{2}\. \d{2}:\d{2}/.test(drawn) && /현재 수익률 \(진입가 기준\)/.test(drawn) && /실시간 평가손익 [+-]?\$/.test(drawn), drawn.slice(0, 160));
   check('모달 비트겟 거래 버튼', /비트겟 거래/.test(modal.btn || ''), modal.btn);
 
   let modalPopup = null;

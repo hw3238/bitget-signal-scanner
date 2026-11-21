@@ -4,6 +4,8 @@ interface AppShellPlugin {
   saveImage(options: { base64: string; fileName: string }): Promise<{ uri: string }>;
   shareImage(options: { base64: string; fileName: string }): Promise<void>;
   openExternal(options: { url: string }): Promise<void>;
+  /** 비트겟 선물 화면을 비트겟 안드로이드 앱으로 바로 연다 */
+  openBitgetFutures(options: { symbol: string; url: string }): Promise<{ via: string; installed?: boolean }>;
   appInfo(): Promise<{ versionName: string; versionCode: number; packageName: string }>;
   /** 알림 권한 현재 상태 (Android 13+ POST_NOTIFICATIONS) */
   notificationPermission(): Promise<{ granted: boolean; supported: boolean }>;
@@ -45,6 +47,22 @@ export async function openExternalUrl(url: string): Promise<void> {
     return;
   }
   window.open(url, '_blank', 'noopener');
+}
+
+/** 비트겟 선물 화면 열기 — 앱(안드로이드 APK)에서는 비트겟 앱으로, 웹에서는 새 탭으로.
+ *  네이티브 경로: 앱 링크 → 커스텀 딥링크 → 비트겟 앱 실행 → (앱이 없을 때만) 브라우저 */
+export async function openBitgetFutures(symbol: string, url: string): Promise<string> {
+  if (!isNativeApp()) {
+    window.open(url, '_blank', 'noopener');
+    return 'web';
+  }
+  try {
+    const res = await AppShell.openBitgetFutures({ symbol, url });
+    return res?.via ?? 'browser';
+  } catch {
+    await AppShell.openExternal({ url });
+    return 'browser';
+  }
 }
 
 /** 안드로이드 앱: 알림 권한 상태 */

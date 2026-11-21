@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Signal } from '../engine/types';
 import { drawShareCard } from './shareCard';
 import { ArrowUpRightIcon, CloseIcon, DownloadIcon, ShareIcon, StarIcon } from './Icons';
-import { isNativeApp, openExternalUrl, saveImageToDevice, shareImageFromDevice } from '../lib/native';
+import { isNativeApp, openBitgetFutures, saveImageToDevice, shareImageFromDevice } from '../lib/native';
 import { bitgetFuturesUrl } from '../lib/coinLogo';
 import type { Profile } from '../lib/profile';
 
@@ -120,9 +120,9 @@ export function ShareModal({ signal, leverage, profile = null, auto = false, isF
     }
   };
 
-  /** 비트겟 선물 페이지 — 모달은 그대로 두고 외부 브라우저/앱으로 연다. */
+  /** 비트겟 선물 화면 — 모달은 그대로 두고 비트겟 앱(웹에서는 새 탭)으로 연다. */
   const openBitget = () => {
-    void openExternalUrl(bitgetFuturesUrl(signal.symbol));
+    void openBitgetFutures(signal.symbol, bitgetFuturesUrl(signal.symbol));
   };
 
   return (

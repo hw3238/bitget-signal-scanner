@@ -35,12 +35,14 @@ import com.getcapacitor.annotation.PermissionCallback;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStream;
+import java.util.Locale;
 
 /**
  * 앱 셸 전용 네이티브 기능.
  * - saveImage: WebView에서 막히는 blob 다운로드를 갤러리 저장으로 대체
  * - shareImage: 저장된 PNG를 안드로이드 공유 시트로 전달
  * - openExternal: APK 다운로드 같은 외부 링크를 시스템 브라우저로 열기
+ * - openBitgetFutures: 비트겟 선물 화면을 비트겟 안드로이드 앱으로 바로 열기(앱 링크 → 딥링크 → 앱 실행 → 브라우저 폴백)
  * - appInfo: 설치된 APK의 버전 확인
  * - notifySignal: 시그널을 안드로이드 상단 알림바에 표시(소리·진동, 탭하면 앱 열림)
  * - notificationPermission / requestNotificationPermission: Android 13+ 알림권한
@@ -56,6 +58,7 @@ import java.io.OutputStream;
 )
 public class AppShellPlugin extends Plugin {
 
+    private static final String BITGET_PACKAGE = "com.bitget.exchange";
     private static final String CHANNEL_ID = "bitget_signals";
     private static final String CHANNEL_NAME = "시그널 알림";
     private static final String CHANNEL_DESC = "COTA의 새 시그널 알림";
@@ -246,6 +249,104 @@ public class AppShellPlugin extends Plugin {
         } catch (Exception e) {
             call.reject("링크 열기 실패: " + e.getMessage());
         }
+    }
+
+    /**
+     * 비트겟 선물 화면을 **비트겟 안드로이드 앱**으로 연다.
+     *  1) 웹 선물 URL(https://www.bitget.com/futures/usdt/{SYMBOL}) + setPackage(비트겟) → 앱 링크(App Link)
+     *  2) 비트겟 커스텀 스킴(bitget://...) + setPackage
+     *  3) 비트겟 앱 자체 실행(getLaunchIntentForPackage)
+     *  4) 비트겟 앱이 없는 기기에서만 기본 브라우저 폴백
+     * Android 11+ 패키지 가시성 때문에 AndroidManifest 의 <queries> 에 비트겟 패키지가 필요하다.
+     */
+    @PluginMethod
+    public void openBitgetFutures(PluginCall call) {
+        Context context = getContext();
+        android.content.pm.PackageManager pm = context.getPackageManager();
+        String symbol = call.getString("symbol", "");
+        String sym = symbol == null ? "" : symbol.replace(" ", "").toUpperCase(Locale.ROOT);
+        String url = call.getString("url", "");
+        if (url == null || url.isEmpty()) {
+            url = sym.isEmpty()
+                ? "https://www.bitget.com/futures/usdt/BTCUSDT"
+                : "https://www.bitget.com/futures/usdt/" + sym;
+        }
+        boolean installed = isPackageInstalled(pm);
+
+        // 1) 앱 링크 — 웹 URI 를 비트겟 앱이 직접 받는다(비트겟 assetlinks 에 등록된 패키지).
+        if (installed && startInPackage(pm, Intent.ACTION_VIEW, Uri.parse(url))) {
+            resolveRoute(call, "app-link", true);
+            return;
+        }
+        // 2) 비트겟 커스텀 스킴 — 앱이 선언한 딥링크 후보를 순서대로 시도.
+        if (installed && !sym.isEmpty()) {
+            String[] schemes = new String[] {
+                "bitget://futures/usdt/" + sym,
+                "bitget://www.bitget.com/futures/usdt/" + sym,
+                "bitget://futures/trade?symbol=" + sym,
+            };
+            for (String scheme : schemes) {
+                if (startInPackage(pm, Intent.ACTION_VIEW, Uri.parse(scheme))) {
+                    resolveRoute(call, "deeplink", true);
+                    return;
+                }
+            }
+        }
+        // 3) 비트겟 앱은 깔려 있는데 위 인텐트를 못 받는 경우 — 앱 자체를 연다(웹사이트 대신).
+        if (installed) {
+            Intent launch = pm.getLaunchIntentForPackage(BITGET_PACKAGE);
+            if (launch != null) {
+                try {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(launch);
+                    resolveRoute(call, "app-launch", true);
+                    return;
+                } catch (Exception ignored) {
+                    /* 다음 폴백으로 */
+                }
+            }
+        }
+        // 4) 최종 폴백 — 비트겟 앱이 없거나 열 수 없을 때만 기본 브라우저.
+        try {
+            Intent browser = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            browser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(browser);
+            resolveRoute(call, "browser", installed);
+        } catch (Exception e) {
+            call.reject("비트겟 링크 열기 실패: " + e.getMessage());
+        }
+    }
+
+    private boolean isPackageInstalled(android.content.pm.PackageManager pm) {
+        try {
+            pm.getPackageInfo(BITGET_PACKAGE, 0);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** 패키지를 고정한 인텐트가 실제로 처리 가능할 때만 실행한다. */
+    private boolean startInPackage(android.content.pm.PackageManager pm, String action, Uri uri) {
+        try {
+            Intent intent = new Intent(action, uri);
+            intent.setPackage(BITGET_PACKAGE);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (intent.resolveActivity(pm) == null) {
+                return false;
+            }
+            getContext().startActivity(intent);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void resolveRoute(PluginCall call, String via, boolean installed) {
+        JSObject ret = new JSObject();
+        ret.put("via", via);
+        ret.put("installed", installed);
+        call.resolve(ret);
     }
 
     @PluginMethod

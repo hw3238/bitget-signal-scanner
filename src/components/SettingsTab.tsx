@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Settings } from '../lib/storage';
 import { MIN_RR, MIN_WINRATE } from '../engine/backtest';
+import { STOP_WIDTH } from '../engine/risk';
 import type { ScanState } from '../hooks/useScanner';
 import type { Signal } from '../engine/types';
 import {
@@ -438,6 +439,14 @@ export function SettingsTab({
           <li>
             <b>전략 풀</b> CRT+FVG+CISD, 유동성 스윕+오더블록, EMA20/50+RSI, 볼린저 스퀴즈, EQ 장악형,
             SuperTrend·돈치안 — 6개 매매법
+          </li>
+          <li>
+            <b>정밀 타점</b> 손절은 직전 스윙·오더블록·FVG 경계, 신호 캔들 극값에 최소 버퍼만 붙여 붙입니다. 진입가에서
+            멀리 떨어진 넓은 손절 셋업은 시그널에서 제외합니다
+          </li>
+          <li>
+            <b>손절폭 상한</b> {STOP_WIDTH['1H'].max}% (1H) · {STOP_WIDTH['4H'].max}% (4H), 하한{' '}
+            {STOP_WIDTH['1H'].min}% — 상한을 넘는 넓은 손절폭 시그널은 만들지 않습니다
           </li>
           <li>
             <b>채택 기준</b> 최근 60봉 검증 승률 {MIN_WINRATE}% 이상 · 손익비 {MIN_RR}R 이상 · 표본 2건 이상

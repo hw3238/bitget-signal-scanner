@@ -2,6 +2,9 @@ import type { Candle, Signal, StrategyStats, SymbolAnalysis, Trade, AssetClass, 
 import { STRATEGIES, STRATEGY_BY_ID } from './types';
 import { buildSeries } from './indicators';
 import { DETECTORS } from './strategies';
+import { validateSetup, riskPctOf, STOP_WIDTH } from './risk';
+
+export { STOP_WIDTH, riskPctOf };
 
 export const MIN_WINRATE = 55;
 export const MIN_RR = 1.5;
@@ -59,7 +62,7 @@ export function resolveTrade(candles: Candle[], entryIdx: number, side: Trade['s
   return { side, entryIdx, entry, stop, target, exitIdx: null, result: 'open', rResult: 0, bars: last - entryIdx, tags };
 }
 
-export function runBacktest(candles: Candle[], series: ReturnType<typeof buildSeries>, strategyId: string, from: number, to: number): Trade[] {
+export function runBacktest(candles: Candle[], series: ReturnType<typeof buildSeries>, strategyId: string, tf: TF, from: number, to: number): Trade[] {
   const detect = DETECTORS[strategyId];
   if (!detect) return [];
   const meta = STRATEGY_BY_ID[strategyId];
@@ -67,7 +70,10 @@ export function runBacktest(candles: Candle[], series: ReturnType<typeof buildSe
   let blockedUntil = -1;
   for (let i = Math.max(from, meta.warmup); i <= to; i++) {
     if (i <= blockedUntil) continue;
-    const setup = detect(candles, series, i);
+    const raw = detect(candles, series, i, tf);
+    if (!raw) continue;
+    // 손절폭 상한·정밀 타점 필터를 백테스트에도 동일 적용 (통과한 셋업만 집계)
+    const setup = validateSetup(raw, tf);
     if (!setup) continue;
     const trade = resolveTrade(candles, i, setup.side, setup.entry, setup.stop, setup.target, setup.tags);
     trades.push(trade);
@@ -143,7 +149,7 @@ export function analyzeSymbol(
   const isEnd = Math.max(0, last - RECENT_BARS);
 
   const perStrategy = STRATEGIES.map((meta) => {
-    const trades = runBacktest(candles, series, meta.id, 0, last);
+    const trades = runBacktest(candles, series, meta.id, tf, 0, last);
     const isTrades = trades.filter((t) => t.entryIdx <= isEnd);
     const oosTrades = trades.filter((t) => t.entryIdx > isEnd);
     return {

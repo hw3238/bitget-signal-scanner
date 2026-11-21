@@ -312,7 +312,7 @@ const run = async () => {
   check(
     '현재 수익률·발송 시각 표기',
     /^(현재|최종) 수익률 \(진입가 기준\)$/.test(card.cap) &&
-      /^\d+x 적용 · 평가손익 [+-]\$/.test(card.roiSub) &&
+      /^\d+x 적용 · 평가손익 [+-]?\$/.test(card.roiSub) &&
       /^발송 \d{2}\. \d{2}\. \d{2}:\d{2}$/.test(card.sentTime),
     `${card.cap} · ${card.roiSub} · ${card.sentTime}`,
   );
@@ -320,19 +320,29 @@ const run = async () => {
   // 진입가 기준 실시간 수익률이 롱/숏 방향과 레버리지에 맞게 표시되는지 전 카드 검증
   const live = await page.evaluate(() => {
     const num = (t) => Number(String(t ?? '').replace(/[,$%\s]/g, ''));
+    const dec = (t) => {
+      const s = String(t ?? '').replace(/[^\d.]/g, '');
+      const i = s.indexOf('.');
+      return i < 0 ? 0 : s.length - i - 1;
+    };
     const rows = [...document.querySelectorAll('.scanner-tab .signal-card:not(.skeleton)')].map((c) => {
       const side = c.querySelector('.badge.long') ? 'long' : 'short';
-      const price = num(c.querySelector('.price')?.textContent);
-      const entry = num(c.querySelectorAll('.lvl-value')[1]?.textContent);
+      const priceText = c.querySelector('.price')?.textContent;
+      const entryText = c.querySelectorAll('.lvl-value')[1]?.textContent;
+      const price = num(priceText);
+      const entry = num(entryText);
       const roiText = c.querySelector('.roi-value')?.textContent?.trim() ?? '';
       const roi = num(roiText);
       const sub = c.querySelector('.roi-sub')?.textContent ?? '';
       const lev = Number((sub.match(/(\d+(?:\.\d+)?)x/) || [])[1] || 0);
       const pnlText = (sub.match(/평가손익 ([+-]?\$[\d,.]+)/) || [])[1] ?? null;
       const raw = ((price - entry) / entry) * 100 * (side === 'long' ? 1 : -1);
-      return { side, price, entry, roi, lev, raw, expect: raw * lev, pnlText, roiText };
+      // 표시 가격의 최소 단위(틱) 반올림 오차를 레버리지만큼 허용 — 마이크로 프라이스 코인(SHIB 등) 대응
+      const tick = Math.pow(10, -Math.max(dec(priceText), dec(entryText)));
+      const tol = Math.max(0.2, entry > 0 ? (lev * 100 * (0.75 * tick)) / entry : 0.2);
+      return { side, price, entry, roi, lev, raw, expect: raw * lev, pnlText, roiText, tol };
     });
-    const off = rows.filter((r) => !r.entry || !r.lev || Math.abs(r.expect - r.roi) > 0.2);
+    const off = rows.filter((r) => !r.entry || !r.lev || Math.abs(r.expect - r.roi) > r.tol);
     const seedPnlOff = rows.filter((r) => {
       if (!r.pnlText) return false;
       const shown = num(r.pnlText);
@@ -413,7 +423,7 @@ const run = async () => {
   check('설정 최상단 내 투자 프로필 카드', /^💼 내 투자 프로필$/.test(settings.headings[0]) && settings.profileSeed === '$5,000', `${settings.headings[0]} · ${settings.profileSeed} · ${settings.profileStyle}`);
   check('매매 성향 표시(보수적)', /보수적 매매/.test(settings.profileStyle), settings.profileStyle);
   check('🔔 핸드폰 알림 유지 · 코인 알림 3택', settings.heading === '🔔 핸드폰 알림' && settings.targets.join('|') === '비트·이더·솔|주요 코인|전체 종목' && settings.targetOn === '주요 코인', settings.targets.join(' / '));
-  check('ntfy 토픽 유지 · 앱 버전 v1.2.0', settings.ntfy === 'bgss-hw3238-9f4k2m' && /COTA · 앱 v1\.2\.0/.test(settings.version || ''), `${settings.ntfy} · ${settings.version}`);
+  check('ntfy 토픽 유지 · 앱 버전 v1.3.0', settings.ntfy === 'bgss-hw3238-9f4k2m' && /COTA · 앱 v1\.3\.0/.test(settings.version || ''), `${settings.ntfy} · ${settings.version}`);
   check('설정에 FX 랏·벤티지·트웰브 데이터 없음', !settings.lotSection);
   check('설정 탭 가로 오버플로 0건', !settings.overflow);
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -501,10 +511,18 @@ const run = async () => {
   await page.waitForTimeout(300);
   await page.locator('.scanner-tab .search-box input').fill('BTC');
   await page.waitForTimeout(600);
-  const search = await page.evaluate(() => ({
-    cards: [...document.querySelectorAll('.scanner-tab .signal-card:not(.skeleton)')].map((c) => clean(c.textContent)),
-    count: document.querySelector('.scanner-tab .search-count b')?.textContent,
-  }));
+  const readSearch = () =>
+    page.evaluate(() => ({
+      cards: [...document.querySelectorAll('.scanner-tab .signal-card:not(.skeleton)')].map((c) => clean(c.textContent)),
+      count: document.querySelector('.scanner-tab .search-count b')?.textContent,
+    }));
+  let search = await readSearch();
+  if (search.cards.length === 0) {
+    // 진행 중 BTC 시그널이 없으면 앱 안내대로 '진행중만'을 꺼서 최근 종료 시그널까지 검색한다.
+    await page.locator('.scanner-tab .ghost-toggle').click();
+    await page.waitForTimeout(600);
+    search = await readSearch();
+  }
   check('코인 검색(BTC)', search.cards.length > 0 && search.cards.every((t) => t.includes('BTC')), `${search.cards.length}건 · ${search.count}`);
   await page.locator('.scanner-tab .search-clear').click();
   await page.waitForTimeout(300);

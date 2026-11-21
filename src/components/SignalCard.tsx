@@ -1,7 +1,7 @@
 import type { Signal } from '../engine/types';
 import { assetClass, assetLabel } from '../lib/asset';
 import { bitgetFuturesUrl } from '../lib/coinLogo';
-import { openExternalUrl } from '../lib/native';
+import { openBitgetFutures } from '../lib/native';
 import { fmtPct, fmtPrice, fmtRR, fmtSendTime, sideFullLabel, stateLabel, tfLabel } from '../lib/format';
 import {
   STYLE_META,
@@ -57,9 +57,9 @@ export function SignalCard({
   const progress = Math.max(0, Math.min(1, signal.progress));
   const dec = signal.decimals;
 
-  /** 비트겟 선물 페이지를 새 창/외부 브라우저로 연다 — 카드의 공유 모달은 열리지 않는다. */
+  /** 비트겟 선물 화면을 연다 — 앱에서는 비트겟 안드로이드 앱, 웹에서는 새 탭. 카드의 공유 모달은 열리지 않는다. */
   const openBitget = () => {
-    void openExternalUrl(bitgetFuturesUrl(signal.symbol));
+    void openBitgetFutures(signal.symbol, bitgetFuturesUrl(signal.symbol));
   };
 
   return (

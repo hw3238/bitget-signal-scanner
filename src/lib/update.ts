@@ -1,6 +1,6 @@
 /** 앱 버전과 업데이트 확인 (GitHub Releases 연동) */
 
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.3.0';
 export const REPO = 'hw3238/bitget-signal-scanner';
 export const PAGES_URL = 'https://hw3238.github.io/bitget-signal-scanner/';
 export const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
