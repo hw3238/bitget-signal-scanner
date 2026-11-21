@@ -43,7 +43,7 @@ public class AppShellPlugin extends Plugin {
             String uri = writeToGallery(bytes, fileName);
             JSObject ret = new JSObject();
             ret.put("uri", uri);
-            Toast.makeText(getContext(), "PNG를 갤러리에 저장했습니다", Toast.LENGTH_SHORT).show();
+            toast("PNG를 갤러리에 저장했습니다");
             call.resolve(ret);
         } catch (Exception e) {
             call.reject("저장 실패: " + e.getMessage());
@@ -118,6 +118,16 @@ public class AppShellPlugin extends Plugin {
         } catch (Exception e) {
             call.reject(e.getMessage());
         }
+    }
+
+    private void toast(final String message) {
+        if (getActivity() == null) return;
+        getActivity().runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Toast.makeText(getContext(), message, Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     private byte[] decode(PluginCall call) {
