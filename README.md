@@ -1,243 +1,88 @@
-# 📈 비트겟 CRT 시그널 스캐너 (bitget-signal-scanner)
+# COTA — 실시간 트레이딩 시그널
 
-비트겟(Bitget) USDT-M 선물의 **코인 + 주식·ETF 선물 + FX·금·원자재·지수**를 실시간으로 스캔해 CRT·FVG·CISD 등
-6개 매매법으로 시그널을 만들고, 마켓별로 최근 성과가 가장 좋은 전략만 채택하는 적응형 스캐너입니다.
-FX·금 시그널은 **벤티지(Vantage) MT5 호가 오프셋**으로 보정해 실제 주문 화면과 같은 가격으로 볼 수 있습니다. 모든 수치는 비트겟 공개
-API의 실제 캔들로 계산하며 더미 데이터는 쓰지 않습니다.
+비트겟 USDT-M **코인 선물**을 실시간으로 스캔해 고승률 셋업만 골라 주는 모바일 우선 스캐너입니다.
+토스/토스증권 스타일의 라이트 UI, 전면 한글 라벨, 종목별 가격 가독성, 내 시드 기준 COTA 추천 레버리지를 제공합니다.
 
-- 스택: React 18 + TypeScript + Vite (외부 UI 라이브러리 없음, 아이콘·차트·공유카드 모두 직접 구현)
-- 테마: **다크 네온 트레이딩 터미널** — 딥 블랙/네이비 배경(`#050814`~`#0A0F24`) + 사이버 그리드 + 시안/바이올렛
-  오로라 글로우, 다크 글래스모피즘 패널, 네온 시안-에메랄드(롱)/마젠타-레드(숏)/일렉트릭 퍼플(강조)/앰버(EQ·별점)
-- 배포 경로 대응: `vite.config.ts`의 `base: './'` → `/bitget-signal-scanner/` 같은 서브패스에서도 자산 경로 유지
-
-## 📱 안드로이드 앱 (APK)
-
-| 항목 | 내용 |
+| 구분 | 링크 |
 | --- | --- |
+| 웹 (GitHub Pages) | <https://hw3238.github.io/bitget-signal-scanner/> |
 | APK 다운로드 | <https://github.com/hw3238/bitget-signal-scanner/releases/latest/download/bitget-crt-scanner.apk> |
-| 릴리즈 페이지 | <https://github.com/hw3238/bitget-signal-scanner/releases> |
-| 패키지 | `com.hw3238.bitgetscanner` · minSdk 22 / targetSdk 34 · debug 서명 |
+| 현재 버전 | **v1.2.0** (versionCode 3) |
 
-- Capacitor Android 프로젝트(`android/`)로 웹 빌드를 감싼 앱입니다. 앱은 실행할 때 `https://hw3238.github.io/bitget-signal-scanner/`
-  최신 배포본을 불러오므로(`capacitor.config.ts`의 `server.url`), 웹/전략/UI 수정은 **Pages 재배포만으로 앱에 즉시 반영**됩니다.
-- 로딩 실패 시 `assets/public`(내장 dist)로 폴백하고 "온라인 다시 시도" 안내를 띄웁니다.
-- **설정 탭 → 앱 · 업데이트**: 현재 버전·설치된 APK 버전, `🔄 업데이트 확인`(GitHub Releases API), `새로고침(캐시 갱신)`,
-  새 버전 발견 시 APK 다운로드. 새 릴리즈가 있으면 앱 상단에도 업데이트 배너가 뜹니다.
-- PNG 저장은 WebView 제약 때문에 네이티브 플러그인(`AppShellPlugin`)으로 갤러리(`Pictures/CRT-Scanner`)에 저장하고,
-  공유는 안드로이드 공유 시트로 전달합니다. 외부 링크는 시스템 브라우저에서 엽니다.
-- **🔔 핸드폰 알림**: 새 시그널이 감지되면 안드로이드 상단 알림바에 소리·진동으로 표시됩니다(아래 참고).
+## 주요 기능
 
-### 🔔 시그널 핸드폰 알림 (v1.1.0)
+- **스캐너** — 코인 선물 시그널(기본 코인 필터, 주식선물은 필터로 선택). 승률 55%·손익비 1.5R 이상 전략만 채택.
+- **카드** — `롱 · 매수 / 숏 · 매도`, `진입가 · 목표가 · 본전(EQ) · 손절가`, `손익비 1 : n`, `최근 승률`,
+  천단위 콤마 가격, 미니 캔들 차트, 진행률.
+- **COTA 추천 레버리지** — 손절 폭·최근 승률·손익비로 시그널마다 배율을 계산합니다.
+  - 보수적 매매: **2x ~ 5x** (손절 시 시드 손실을 12% 안쪽으로 억제)
+  - 공격적 매매: **10x ~ 25x** (`floor(80 / 손절폭)` 안전 마진을 넘지 않음)
+  - 카드에 `COTA 추천 Nx` 배지 + 내 시드 기준 **예상 수익(+)·손절 손실(-)** 표시
+  - 레버리지 선택: `COTA 추천`(기본) 또는 `5x · 10x · 20x · 50x` 고정
+- **첫 실행 온보딩** — 투자 시드($100/$500/$1,000/$5,000 프리셋)와 매매 성향(보수적/공격적)을 받아
+  `localStorage('cota.profile.v1')`에 저장합니다. 설정 탭 `💼 내 투자 프로필`에서 언제든 다시 설정할 수 있습니다.
+- **시황** — 코인·주식선물 상승/하락/거래대금/펀딩비 TOP.
+- **전략엔진** — 6개 매매법 실시간 백테스트 순위, 자동 교체 로그.
+- **기록** — 탐지 이후 실제 캔들로 목표 달성/손절 종료를 검증한 추적 기록.
+- **설정** — 🔔 핸드폰 알림(비트·이더·솔 / 주요 코인 / 전체 종목), ntfy 외부 푸시(`bgss-hw3238-9f4k2m`),
+  레버리지 모드·최소 손익비·자동 갱신, 앱 버전/업데이트.
+- **공유 카드** — 라이트 COTA 카드 PNG 저장/공유(진입가·목표가·손절가·손익비·COTA 추천 배지).
 
-- **네이티브 알림**: `AppShellPlugin`에 알림 채널 `bitget_signals`(중요도 `IMPORTANCE_HIGH`, 기본 알림음·진동 패턴)를 만들고
-  `notifySignal({ title, body, id })` 로 알림바에 표시합니다. 알림을 누르면 `PendingIntent` 로 앱이 열립니다.
-  Android 13+ 는 `POST_NOTIFICATIONS` 런타임 권한을 앱 첫 실행(알림 켜짐) 때 요청하고, 웹은 `Notification API` 로 폴백합니다.
-- **설정 탭 → 🔔 핸드폰 알림**: 알림 ON/OFF(기본 ON, localStorage 저장), 알림 대상(`주력 3종목` 금·유로·비트 / `FX·금 전체` /
-  `전체 종목`), **알림 테스트**(즉시 `[테스트] XAUUSD+ 1시간 롱 시그널 감지` 알림), 선택형 **ntfy 외부 푸시** 토픽 칸.
-- **ntfy**: 기본 전용 토픽 `bgss-hw3238-9f4k2m`(수정·비우기 가능). 값이 있으면 같은 알림을 `https://ntfy.sh/<토픽>` 으로도
-  `fetch` POST 합니다(제목은 `?title=` 파라미터). 비우면 호출하지 않습니다. 테스트 알림도 로컬 알림과 함께 전송합니다.
-- **중복 방지**: `symbol|tf|side|detectedAt` 키를 `localStorage`(`bgss.notified.v1`)에 기록해 60초 자동 갱신마다 같은 시그널이
-  다시 울리지 않게 하고, 앱을 켠 뒤 첫 스캔에 이미 떠 있던 시그널은 알림 없이 '이미 본 것'으로 기록합니다.
-
-### APK 빌드(로컬)
+## 개발
 
 ```bash
-# JDK 17 + Android SDK(platforms;android-34, build-tools;34.0.0) 필요
-export JAVA_HOME=<jdk17> ANDROID_HOME=<android-sdk>
+npm install
+npm run dev        # http://127.0.0.1:5173
+npm run build      # tsc + vite build → dist/
+```
+
+### 검증 스크립트
+
+```bash
+npm run build
+node scripts/toss-ui-check.mjs      # 5탭·코인 집중·한글화·가격·온보딩·COTA 추천·공유카드 (스크린샷 18~22)
+node scripts/notify-check.mjs       # 알림 로직 + 설정 UI
+node scripts/favorites-check.mjs    # 즐겨찾기·검색·더보기·기록
+node scripts/pages-check.mjs        # /bitget-signal-scanner/ 서브패스 배포 경로
+node scripts/live-check.mjs         # 라이브 Pages 검증
+node scripts/live-notify-check.mjs  # 라이브 알림 UI 검증
+```
+
+### APK 빌드 (로컬)
+
+```bash
+# JDK 17 + Android SDK(platforms;android-34, build-tools;34.0.0)
 npm run build && npx cap sync android
 cd android && ./gradlew assembleDebug   # → app/build/outputs/apk/debug/app-debug.apk
 ```
 
-> GitHub App 연결에는 `workflows` 권한이 없어 `.github/workflows/` 푸시가 거부됩니다. CI 빌드가 필요하면 저장소
-> Settings에서 Actions 권한을 켜고 워크플로를 직접 추가하세요.
-
 ### 새 버전 배포 순서
 
-1. `src/lib/update.ts`의 `APP_VERSION`, `package.json`의 `version`, `android/app/build.gradle`의 `versionCode`·`versionName`을 올립니다.
+1. `src/lib/update.ts`의 `APP_VERSION`, `package.json`의 `version`, `android/app/build.gradle`의
+   `versionCode`·`versionName`을 올립니다.
 2. `npm run build` → `npx cap sync android` → `cd android && ./gradlew assembleDebug`.
-3. `dist/`를 `gh-pages` 브랜치에 게시(Pages 반영)하고 앱 APK를 새 태그 릴리즈에 첨부합니다.
-   설치된 앱의 **설정 → 앱 · 업데이트**가 GitHub Releases API로 새 버전을 감지해 다운로드 버튼을 띄웁니다.
+3. `./scripts/deploy-gh-pages.sh`로 `dist/`를 `gh-pages` 브랜치에 게시합니다.
+4. APK를 새 태그 릴리즈에 `bitget-crt-scanner.apk` 이름으로 첨부합니다(파일명 유지 → latest 다운로드 URL 호환).
 
-## 실행
+## 구조
 
-```bash
-export PATH="$HOME/.local/node/node-v22.14.0-linux-x64/bin:$PATH"
-npm install
-npm run dev      # http://127.0.0.1:5173
-npm run build    # tsc + vite build → dist/
-npm run preview  # http://127.0.0.1:4173
+```
+src/
+  components/   SignalCard · ScannerTab · MarketTab · EngineTab · HistoryTab · SettingsTab
+                ShareModal · OnboardingModal · MiniCandles · BottomNav · shareCard(canvas)
+  engine/       backtest · strategies · indicators · universe(코인 주력+주식 워치리스트)
+  hooks/        useScanner · useFavorites
+  lib/          format(가격·손익비) · profile(시드·추천 레버리지) · notify · storage · update · native
+  api/          bitget(공개 USDT-M 계약·티커·캔들)
 ```
 
-## 화면
+## 데이터
 
-하단 내비게이션 6탭: **스캐너 | FX | 시황 | 전략엔진 | 기록 | 설정** (390px 폭에서도 겹침·줄바꿈 없이 한 줄).
-스캐너·FX 탭 아이콘에는 현재 활성(진행중) 시그널 수 배지가 붙습니다.
+- 비트겟 공개 API: `GET /api/v2/mix/market/contracts|tickers|candles?productType=USDT-FUTURES`
+- 1H/4H 200봉 실데이터를 최근 60봉 기준으로 백테스트해 승률·손익비 미달 전략은 즉시 교체합니다.
 
-| 탭 | 내용 |
-| --- | --- |
-| 스캐너 | 코인·주식선물 전용 — TS 발생 종목 카운터(롱/숏/1시간/4시간), **₿ 비트 퀵 필터**, **종목·심볼·전략 검색**, 전체·코인·주식선물 필터, 레버리지(5/10/20/50x), 최소 손익비(1.2~2.5R), 진행중/종료, **⭐ 즐겨찾기 모아보기**, 12건씩 펼치는 **이전 시그널 더보기**, 시그널 카드(⭐ 즐겨찾기·미니 캔들 차트·목표/EQ/진입/무효·진행 게이지·전략 승률) |
-| FX | FX·금·원자재·지수 + **비트코인(BTCUSD+)** 전용 — 발송 시그널 수·롱/숏/1H/4H·**선택 랏 합계 손익**, 검색, **🥇 금 · 💶 유로 · ₿ 비트 퀵 필터**, 타임프레임(전체/1H/4H), **랏(Lot) 선택기(0.01~1.00)**, 최소 손익비, 진행중/종료, ⭐ 즐겨찾기, **Vantage 호가 보정 미니 바**, 카드에 `0.10 Lot 수익 +$…`·목표 `+$…`·무효 `-$…`·`1포인트 $…` 표시 |
-| 시황 | 코인/주식선물/**FX·금** 상승·하락 TOP, 거래대금 TOP, 펀딩비 극단, 상승·하락 종목 수·평균 펀딩비·24h 거래대금 |
-| 전략엔진 | 6개 매매법 실시간 순위(채택 마켓·채택 승률·표본·손익비·기대 수익), 자동 교체 로그, 백테스트 재실행 |
-| 기록 | 탐지된 시그널의 적중/무효/진행 추적(최대 400건 보관), **종목·전략 검색**, 15건씩 펼치는 **이전 기록 더보기**, 실현·미실현 레버리지 수익률 |
-| 설정 | 레버리지·**FX 탭 랏(Lot)**·최소 손익비·자동 갱신 주기(30/60/120초·꺼짐)·알림음, **FX·금 종목별 벤티지 호가 보정 표**, **Twelve Data API 키(선택)**, 엔진 기준, 데이터 초기화, **앱 버전·업데이트 확인·캐시 갱신** |
+## 주의
 
-시그널 카드를 탭하면 **다크 네온 공유 카드**(캔버스 렌더링)가 열리고 PNG로 저장하거나 Web Share로 보낼 수
-있습니다.
-
-### ⭐ 즐겨찾기 · 검색 · 이전 시그널 더보기
-
-- 카드 우측 상단 **⭐ 버튼**(공유 모달 안에도 있음)으로 시그널을 찜합니다. 버튼 클릭은 `stopPropagation()`으로
-  공유 카드를 열지 않고 즉시 토글되며, 활성 상태는 네온 골드(`#FFD166`) 글로우로 표시됩니다.
-- 즐겨찾기는 `localStorage`의 `bgss.favorites.v1`에 저장되어 새로고침·60초 자동 갱신 후에도 유지됩니다. 키는
-  `심볼|타임프레임|방향|감지봉 시각`이라 스캔이 반복돼도 같은 시그널을 가리킵니다.
-- **⭐ 즐겨찾기 (N)** 필터를 켜면 진행중/종료·자산·타임프레임·최소 손익비와 무관하게 찜한 시그널을 모두 모아
-  보여줍니다. 현재 스캔에 살아 있으면 최신 현재가·레버리지 수익률·진행도로 갱신되고, 스캔에서 사라진 시그널은
-  마지막 스냅샷 카드(보관된 스냅샷)로 남아 확인·해제할 수 있습니다.
-- 검색창은 심볼(`BTCUSDT`)·종목명·전략명(`EMA`, `CRT`, `SuperTrend`)·태그를 대소문자 구분 없이 실시간으로
-  걸러주며, 공백으로 여러 단어를 넣으면 AND 조건입니다. 입력값이 있으면 우측 `×`로 즉시 초기화됩니다.
-- 채택 전략의 시그널 중 **진행중(최근 10봉)** + **종료(적중/무효, 최근 160봉)** 을 마켓당 최대 18건까지 모아,
-  스캐너는 12건씩 `이전 시그널 더보기 (+N건)`, 기록 탭은 15건씩 `이전 기록 더보기 (+N건)`으로 계속 펼쳐 봅니다.
-
-## 데이터 소스 (Bitget 공개 API · CORS 허용)
-
-| 용도 | 엔드포인트 |
-| --- | --- |
-| 계약 목록(890개) | `GET /api/v2/mix/market/contracts?productType=USDT-FUTURES` |
-| 실시간 티커 | `GET /api/v2/mix/market/tickers?productType=USDT-FUTURES` |
-| 캔들 200봉 | `GET /api/v2/mix/market/candles?productType=USDT-FUTURES&symbol=..&granularity=1H\|4H&limit=200` |
-
-- `granularity`는 실제 호출로 검증한 대문자 포맷(`1H`/`4H`)만 사용합니다.
-- 계약의 `isRwa` 플래그로 주식·ETF 선물을 구분하고, 원자재·금속·외환·지수(XAU, XAG, CL, COPPER, EURUSD,
-  NDX100, HSI …)는 `fx` 카테고리로 모아 주식선물 목록과 섞지 않습니다. 표기 소수점은 계약의 `pricePlace`를 씁니다.
-- 스캔 유니버스 = **주력 3종목(XAUUSDT·EURUSDUSDT·BTCUSDT, 항상 맨 앞)** + FX·금·원자재·지수 21종목 +
-  주식선물 주요 43종목 + 거래대금 상위 코인 30종목, 각 1H/4H → 마켓 약 95개·캔들 190건. 요청은 워커 3개·간격
-  165ms로 제한하고 429 발생 시 지수 백오프로 재시도합니다. 캔들 갱신 주기 기본 60초.
-
-## FX·금 스캐너 · Vantage 호가 보정
-
-### 스캔 심볼 (벤티지 MT5 표기)
-
-| 비트겟 계약 | 표기 | 비고 |
-| --- | --- | --- |
-| `XAUUSDT` | **XAUUSD+** | 금 현물 프록시 (주력) |
-| `EURUSDUSDT` | **EURUSD+** | 유로/달러 (주력) |
-| `BTCUSDT` | **BTCUSD+** (스캐너 탭은 코인 `BTC`) | 비트코인 (주력 · FX 탭에서도 표시) |
-| `XAGUSDT` · `XPTUSDT` · `XPDUSDT` | `XAGUSD+` · `XPTUSD+` · `XPDUSD+` | 은·백금·팔라듐 |
-| `XAUTUSDT` · `PAXGUSDT` | `XAUT+` · `PAXG+` | 금 토큰(Tether/Paxos Gold) |
-| `EURUSD` · `GBPUSD` · `USDJPY` · `USDBRL` | `EURUSD+` · `GBPUSD+` · `USDJPY+` · `USDBRL+` | FX |
-| `CLUSDT` · `BZUSDT` · `NATGASUSDT` · `COPPERUSDT` | `USOIL+` · `UKOIL+` · `NATGAS+` · `COPPER+` | 원자재 |
-| `DXYUSDT` | `DXY+` | 달러 인덱스 |
-| `NDX100` · `SP500` · `JP225` · `HSI` · `KR200` | `NAS100+` · `US500+` · `JP225+` · `HK50+` · `KR200+` | 지수 |
-
-- **FX 탭**에서만 이 카테고리를 모아 봅니다(스캐너 탭은 코인·주식선물 전용). FX 카드는 `pricePlace` 기준 고정 소수점
-  (EURUSD 4자리, USDJPY·XAUUSD 2자리, 지수 0~2자리)으로 표기합니다.
-- **주력 퀵 필터**: FX 탭의 🥇 금(`XAU`) · 💶 유로(`EURUSD`) · ₿ 비트(`BTCUSD`), 스캐너 탭의 ₿ 비트(`BTC`). 누르면
-  검색어·필터가 한 번에 적용되고(진행중 시그널이 없으면 종료 셋업까지 표시) 다시 누르면 해제됩니다.
-- **비트코인은 한 번만 스캔해 두 탭이 함께 씁니다.** 스캐너 탭은 비트겟 `BTCUSDT` 캔들·시그널을 배수(x) 기준 `BTC`
-  카드로, FX 탭은 같은 데이터를 `BTCUSD+`(벤티지 호가 보정 + 랏 달러 손익) 카드로 보여줍니다 — 추가 API 호출 없음
-  (`src/lib/fxview.ts`).
-
-### 랏(Lot) 손익 — FX 탭은 배수(x) 대신 계약 크기 기준 달러
-
-FX 탭의 카드·공유 카드에는 `레버리지 10x` 같은 배수 표현이 나오지 않고, 선택한 랏과 **MT5·Vantage 표준 계약
-크기(Contract Size)** 로 계산한 달러 손익이 표시됩니다. 랏 프리셋은 `0.01 / 0.05 / 0.10(기본) / 0.20 / 0.50 / 1.00`
-이며 `localStorage`(`bgss.settings.v1.fxLot`)에 저장됩니다.
-
-| 종목군 | 1 Lot 계약 크기 | 달러 손익식 |
-| --- | --- | --- |
-| `XAUUSD+` `XAUT+` `PAXG+` `XPTUSD+` `XPDUSD+` | 100 oz | 가격차 × 100 × lot |
-| `XAGUSD+` | 5,000 oz | 가격차 × 5,000 × lot |
-| `COPPER+` | 25,000 lbs | 가격차 × 25,000 × lot |
-| `USOIL+` `UKOIL+` | 1,000 배럴 | 가격차 × 1,000 × lot |
-| `NATGAS+` | 10,000 MMBtu | 가격차 × 10,000 × lot |
-| `EURUSD+` `GBPUSD+` (USD 견적) | 100,000 | 가격차 × 100,000 × lot |
-| `USDJPY+` `USDBRL+` (USD가 기초) · `EURJPY+` `GBPJPY+` (JPY 견적) | 100,000 | (가격차 ÷ 청산가) × 100,000 × lot |
-| `NAS100+` `US500+` `JP225+` `HK50+` `KR200+` `DXY+` | 1 계약 | 가격차(포인트) × 1 × lot (1p = $1) |
-| `BTCUSD+` `BTCUSD` `BTC` | 1 BTC | 가격차 × 1 × lot (예: $1,000 이동 × 0.10 Lot = $100.00) |
-
-- 계산은 `src/utils/lot.ts`의 `lotSpec()`/`lotCalc()` 하나로 카드·공유 카드가 함께 씁니다.
-- 카드 우측 상단 `0.10 Lot 수익 +$125.00`, 목표/무효 아래 `+$…`/`-$…`, 하단 `0.10 Lot · 1포인트 $0.10 · 목표 250
-  포인트 · 손절 85 포인트 · 1 Lot = 100 oz` 스트립으로 계약 크기와 핍 가치를 함께 보여줍니다.
-- 다크 공유 카드(`ShareCardModal` → `drawShareCard(..., lot)`)도 FX 시그널이면 상단 `0.10 Lot` 배지, `0.10 Lot
-  +$125.00`, 목표/반익 EQ/무효 박스의 달러 손익, 푸터 계약 크기로 렌더링합니다.
-
-### 벤티지 호가 보정(오프셋)
-
-- FX 탭 상단 미니 바 또는 **설정 → FX·금 · 벤티지 호가 보정**에서 종목별 오프셋을 입력합니다.
-  목록 맨 위는 주력 3종목(`XAUUSD+`, `EURUSD+`, `BTCUSD+` — 저장 키는 기존 `BTC`)으로 고정되어 있습니다.
-  `BTCUSD+` 카드·공유 카드는 이 `★ BTCUSD+` 입력을 그대로 씁니다(`src/lib/offset.ts`의 별칭).
-- 입력 즉시 카드와 다크 공유 카드의 **현재가·진입가·목표가·EQ·무효가**가 같은 값만큼 이동합니다. 가격 차이의
-  비율인 **손익비·R배수는 그대로**이고, 수익률(%)만 보정된 진입가 기준으로 다시 계산됩니다.
-- 설정 탭에서는 `MT5가 입력` 칸에 벤티지 화면의 현재가를 그대로 넣으면 `오프셋 = MT5가 − 비트겟가`로 계산됩니다.
-- 값은 `localStorage`(`bgss.settings.v1.fxOffsets`)에 저장되어 새로고침·자동 갱신 후에도 유지되고, `전체 초기화`로
-  한 번에 지울 수 있습니다.
-
-### Twelve Data 보조 페어 (선택)
-
-- 설정 → **Twelve Data**에 무료 API 키를 넣으면 `AUD/USD`·`USD/CAD`·`USD/CHF`·`NZD/USD`·`EUR/JPY`·`GBP/JPY`를
-  1H/4H로 함께 스캔합니다. 키가 비어 있으면 호출하지 않고 비트겟 실시간 FX·금 피드만 사용합니다.
-- 무료 플랜 분당 8회 제한을 지키기 위해 요청을 **7.8초 간격·60초 창 8회**로 직렬화하고, 1H 캔들 1회만 받아
-  4H를 로컬 리샘플링하며, 페어당 5분 캐시를 둡니다. 보조 페어 스캔은 본 스캔을 막지 않고 뒤에서 진행됩니다.
-
-## 엔진
-
-### 전략 6종 (`src/engine/strategies.ts`)
-
-1. **CRT + FVG + CISD** — 20봉 레인지 스윕 + FVG/구조전환 확인, 진입은 레인지 바깥 45% 구간에서만
-2. **Liquidity Sweep + Order Block** — 30봉 유동성 스윕 후 오더블록 리테스트, EMA50 추세 정렬
-3. **EMA 20/50 Pullback + RSI Divergence** — 추세 방향 EMA20 눌림 + RSI 다이버전스/회복
-4. **Bollinger Squeeze + Volume Breakout** — 밴드 폭 하위 30% 수축 후 거래량 1.35배 돌파
-5. **EQ Mean Reversion + Engulfing** — 30봉 스윙 EQ(0.5)에서 장악형 반전
-6. **SuperTrend / Donchian Momentum** — SuperTrend 전환 또는 돈치안 20 돌파
-
-### 백테스트·판정
-
-- 각 마켓의 실제 캔들 200봉에 6개 전략을 전부 돌려 1건씩 트레이드로 기록(중복 진입 방지, 최대 42봉 판정).
-- 목표/무효 도달 여부로 적중·무효 판정, 같은 봉에서 동시 도달 시 **무효 우선**(보수적).
-- 워크포워드: 과거 구간(최근 60봉 이전) 1위 전략을 최근 60봉에서 다시 채점 → 승률 55%·손익비 1.5R·표본
-  2건을 못 넘으면 **현재 최고 성과 전략으로 즉시 교체**하고 교체 로그(시각·마켓·이전/신규 전략·사유)를 남깁니다.
-- 시그널은 채택 전략이 최근 10봉 안에 낸 셋업만 노출하며, 진입 손익비가 사용자가 정한 최소 손익비 미만이면 제외합니다.
-- 코인·주식선물 카드의 레버리지 수익률 = (가격 변동 ÷ 진입가) × 배율. FX 카드는 배수 대신 랏(Lot) 달러 손익. 기록
-  탭의 누적 수익률은 무효가까지 거리(%)를 가중해 합산합니다.
-
-## 검증
-
-```bash
-npm run build
-node scripts/lot-check.mjs    # 랏 계약 크기·핍 가치·비례 단위 검증(esbuild로 src/utils/lot.ts 번들 후 24종목 케이스 · BTCUSD+ 1 Lot = 1 BTC 포함)
-LD_LIBRARY_PATH=/workspace/.local/sysroot/root/usr/lib/x86_64-linux-gnu \
-PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/capture.mjs      # 390×844 + 1280×800, 콘솔 에러 수집, PNG 저장 검증
-LD_LIBRARY_PATH=/workspace/.local/sysroot/root/usr/lib/x86_64-linux-gnu \
-PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/fx-lot-check.mjs  # 6탭 레이아웃·FX 탭 랏 표시·FX 탭 BTCUSD+ 랏·호가 보정 연동·0.01↔0.10↔1.00 비례·공유 카드·소수점/호가 보정/시황/설정 회귀
-LD_LIBRARY_PATH=/workspace/.local/sysroot/root/usr/lib/x86_64-linux-gnu \
-PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/pages-check.mjs    # /bitget-signal-scanner/ 서브패스 검증
-node scripts/favorites-check.mjs                                                  # ⭐ 즐겨찾기·검색·더보기·새로고침 유지·보관 스냅샷 검증
-LD_LIBRARY_PATH=/workspace/.deps/root/usr/lib/x86_64-linux-gnu \
-node scripts/notify-check.mjs                                                      # 🔔 알림 로직(중복 방지·대상 필터) + 설정 UI·테스트 알림·ntfy 전송·과거 시그널 미알림·새로고침 중복 0건
-node scripts/live-check.mjs                                                        # 라이브 Pages 반영 확인
-LD_LIBRARY_PATH=/workspace/.local/sysroot/root/usr/lib/x86_64-linux-gnu \
-PLAYWRIGHT_BROWSERS_PATH=$HOME/.cache/ms-playwright node scripts/live-btc-check.mjs  # 라이브 FX 탭 BTCUSD+ 랏·퀵 필터·호가 보정 칩 집중 검증
-```
-
-결과 스크린샷은 `docs/screens/`에 저장됩니다(`01-scanner.png`, `02-dark-card.png`, `03-strategy-engine.png`,
-`04-market.png`, `05-history.png`, `06-desktop.png`, `07-pages-subpath.png`, `08-settings.png`,
-`09-live-pages.png`, `02-dark-card-export.png`). FX 탭·랏 화면은 `14-fx-tab-lot.png`(FX 탭 + 랏 선택기),
-`14-fx-card-lot.png`(카드의 `0.10 Lot 수익`·`+$` 손익), `14-fx-share-lot.png`(FX 공유 카드 랏 표시),
-`14-fx-tab-lot-desktop.png`(데스크톱), `13-settings-fx.png`(종목별 보정 표), `15-fx-btc-lot.png`(FX 탭 `BTCUSD+` 카드 · `0.10 Lot 수익` · `1 Lot = 1 BTC`), `15-live-fx-btc.png`(라이브 Pages 동일 화면),
-`16-settings-notify.png`(설정 탭 🔔 핸드폰 알림 — 알림 토글·대상·테스트·ntfy 토픽)입니다.
-
-## 배포 (GitHub Pages)
-
-- 라이브: **https://hw3238.github.io/bitget-signal-scanner/** (브랜치 `gh-pages` / 루트, HTTP 200·실데이터 렌더링 확인)
-- 소스: https://github.com/hw3238/bitget-signal-scanner (`main`)
-- 재배포는 아래 스크립트로 `dist` 내용을 `gh-pages` 루트에 올립니다.
-
-```bash
-./scripts/deploy-gh-pages.sh hw3238/bitget-signal-scanner
-```
-
-## 면책
-
-정보 도구입니다. 투자 권유가 아니며 표시된 승률·수익률은 과거 데이터 통계로 미래 성과를 보장하지 않습니다.
-레버리지 거래는 원금 전액을 잃을 수 있습니다.
+COTA는 비트겟 공개 시세를 계산해 과거 통계를 보여주는 **정보 도구**입니다. 투자 권유가 아니며,
+표시된 승률·수익률은 과거 데이터 기준으로 미래 성과를 보장하지 않습니다. 레버리지 거래는 원금 전액을
+잃을 수 있습니다. 카드의 예상 손익은 시드 전액을 한 포지션에 넣는 기준의 단순 계산입니다.

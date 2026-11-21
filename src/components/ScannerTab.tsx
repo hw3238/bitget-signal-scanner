@@ -151,7 +151,7 @@ export function ScannerTab({
               진행 중 시그널 <span className="dot-live" /> <b>{openSignals.length}</b>
             </div>
             <div className="summary-sub">
-              비트겟 USDT-M 코인 선물 · {marketCount}개 마켓 · {qualified}개 마켓 고승률 전략 채택
+              비트겟 USDT-M 코인·주식선물 · {marketCount}개 마켓 · {qualified}개 고승률 전략 채택
             </div>
           </div>
           <button className={`rescan ${scanning ? 'busy' : ''}`} onClick={onRescan} disabled={scanning}>
