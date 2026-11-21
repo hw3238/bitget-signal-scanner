@@ -108,6 +108,9 @@ const run = async () => {
   await page.waitForTimeout(500);
   check('라이브 검색 빈 결과 안내', await page.locator('.search-empty').isVisible());
   await page.locator('.search-clear').click();
+  // 검증용으로 넣은 스냅샷 즐겨찾기를 해제해 화면을 깨끗하게 되돌린다
+  await page.locator('.signal-card.stale .fav-btn').click();
+  await page.waitForTimeout(300);
   await page.locator('.fav-toggle').click();
   await page.waitForTimeout(400);
 
@@ -128,6 +131,9 @@ const run = async () => {
     scan = { status: '스캔 미완료(시간 초과)', cards: 0 };
   }
   console.log('live scan:', JSON.stringify(scan));
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: 'docs/screens/09-live-pages.png' });
   if (scan.cards) {
     check('라이브 시그널 카드 렌더', scan.cards > 0, `${scan.cards}장 · 첫 카드 ${scan.first || '-'}`);
     check('라이브 더보기 버튼', !!scan.more, scan.more || '');
