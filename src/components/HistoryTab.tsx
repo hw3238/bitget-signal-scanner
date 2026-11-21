@@ -1,6 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { HistoryRecord } from '../lib/storage';
 import { fmtDateTime, fmtPct, fmtPrice, tfLabel } from '../lib/format';
+import { CloseIcon, SearchIcon } from './Icons';
+
+const PAGE_SIZE = 15;
+
+function matchesQuery(h: HistoryRecord, terms: string[]): boolean {
+  if (!terms.length) return true;
+  const hay = `${h.base} ${h.symbol} ${h.strategyShort} ${h.strategyId}`.toLowerCase();
+  return terms.every((t) => hay.includes(t));
+}
 
 interface Props {
   history: HistoryRecord[];
@@ -12,6 +21,14 @@ type Filter = 'all' | 'win' | 'loss' | 'open';
 
 export function HistoryTab({ history, leverage, onClear }: Props) {
   const [filter, setFilter] = useState<Filter>('all');
+  const [query, setQuery] = useState('');
+  const [visible, setVisible] = useState(PAGE_SIZE);
+
+  const terms = useMemo(() => query.trim().toLowerCase().split(/\s+/).filter(Boolean), [query]);
+
+  useEffect(() => {
+    setVisible(PAGE_SIZE);
+  }, [query, filter]);
 
   const stats = useMemo(() => {
     const closed = history.filter((h) => h.state !== 'open');
@@ -35,10 +52,15 @@ export function HistoryTab({ history, leverage, onClear }: Props) {
     };
   }, [history, leverage]);
 
-  const list = useMemo(
-    () => history.filter((h) => (filter === 'all' ? true : h.state === filter)).slice(0, 80),
-    [history, filter],
+  const matched = useMemo(
+    () =>
+      history
+        .filter((h) => (filter === 'all' ? true : h.state === filter))
+        .filter((h) => matchesQuery(h, terms)),
+    [history, filter, terms],
   );
+  const list = matched.slice(0, visible);
+  const remaining = matched.length - list.length;
 
   return (
     <div className="tab history-tab">
@@ -82,6 +104,30 @@ export function HistoryTab({ history, leverage, onClear }: Props) {
           </div>
         </div>
 
+        <div className="search-row">
+          <div className="search-box">
+            <SearchIcon size={15} />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="종목·심볼·전략으로 기록 검색 (예: BTC, NVDA, SuperTrend)"
+              aria-label="기록 검색"
+              enterKeyHint="search"
+            />
+            {query && (
+              <button type="button" className="search-clear" onClick={() => setQuery('')} aria-label="검색어 지우기">
+                <CloseIcon size={13} />
+              </button>
+            )}
+          </div>
+          {query && (
+            <span className="search-count">
+              <b>{matched.length}</b>건
+            </span>
+          )}
+        </div>
+
         <div className="segmented">
           {(
             [
@@ -99,6 +145,13 @@ export function HistoryTab({ history, leverage, onClear }: Props) {
       </section>
 
       <section className="panel">
+        <div className="list-head history-head">
+          <span>
+            {filter === 'all' ? '전체' : filter === 'win' ? '적중' : filter === 'loss' ? '무효' : '진행중'} 기록{' '}
+            <b>{Math.min(visible, matched.length)}</b> / {matched.length}건
+          </span>
+          <span className="muted">최근 {Math.min(history.length, 400)}건 보관</span>
+        </div>
         <ul className="history-list">
           {list.map((h) => (
             <li key={h.id}>
@@ -133,8 +186,19 @@ export function HistoryTab({ history, leverage, onClear }: Props) {
               </div>
             </li>
           ))}
-          {list.length === 0 && <li className="h-empty">해당 조건의 기록이 없습니다.</li>}
+          {list.length === 0 && (
+            <li className="h-empty">
+              {query ? `'${query.trim()}' 검색 결과가 없습니다.` : '해당 조건의 기록이 없습니다.'}
+            </li>
+          )}
         </ul>
+        {remaining > 0 && (
+          <button className="more-btn" type="button" onClick={() => setVisible((v) => v + PAGE_SIZE)}>
+            <span className="more-label">이전 기록 더보기</span>
+            <b>+{remaining}건</b>
+            <span className="more-sub">표시 {Math.min(visible, matched.length)} / {matched.length}</span>
+          </button>
+        )}
       </section>
 
       <div className="feed-note">

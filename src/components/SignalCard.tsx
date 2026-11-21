@@ -1,15 +1,19 @@
 import type { Signal } from '../engine/types';
 import { fmtPct, fmtPrice, fmtTime, tfLabel } from '../lib/format';
 import { MiniCandles } from './MiniCandles';
-import { BoltIcon } from './Icons';
+import { BoltIcon, StarIcon } from './Icons';
 
 interface Props {
   signal: Signal;
   leverage: number;
   onOpen: (signal: Signal) => void;
+  isFavorite: boolean;
+  onToggleFavorite: (signal: Signal) => void;
+  /** 현재 스캔 결과에 없는 즐겨찾기(저장된 스냅샷) */
+  stale?: boolean;
 }
 
-export function SignalCard({ signal, leverage, onOpen }: Props) {
+export function SignalCard({ signal, leverage, onOpen, isFavorite, onToggleFavorite, stale = false }: Props) {
   const roi = signal.changePct * leverage;
   const sideClass = signal.side === 'long' ? 'long' : 'short';
   const stateClass = signal.state === 'open' ? 'open' : signal.state === 'win' ? 'win' : 'loss';
@@ -18,7 +22,7 @@ export function SignalCard({ signal, leverage, onOpen }: Props) {
 
   return (
     <article
-      className={`signal-card ${sideClass} ${stateClass}`}
+      className={`signal-card ${sideClass} ${stateClass}${isFavorite ? ' fav' : ''}${stale ? ' stale' : ''}`}
       onClick={() => onOpen(signal)}
       role="button"
       tabIndex={0}
@@ -42,6 +46,22 @@ export function SignalCard({ signal, leverage, onOpen }: Props) {
           <span className={`badge ${sideClass}`}>{signal.side === 'long' ? '▲ 롱' : '▼ 숏'}</span>
           <span className={`badge state ${stateClass}`}>{stateLabel}</span>
         </div>
+        <button
+          type="button"
+          className={`fav-btn ${isFavorite ? 'on' : ''}`}
+          aria-pressed={isFavorite}
+          aria-label={isFavorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+          title={isFavorite ? '즐겨찾기 해제' : '즐겨찾기에 추가'}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleFavorite(signal);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+          }}
+        >
+          <StarIcon size={17} filled={isFavorite} />
+        </button>
       </header>
 
       <div className="price-row">
@@ -110,7 +130,11 @@ export function SignalCard({ signal, leverage, onOpen }: Props) {
           ))}
           <span className="tag ghost">{fmtTime(signal.detectedAt)} KST</span>
         </div>
-        <span className="share-hint">탭하여 공유 카드</span>
+        {stale ? (
+          <span className="share-hint stale-hint">보관된 스냅샷 · 탭하여 공유 카드</span>
+        ) : (
+          <span className="share-hint">탭하여 공유 카드</span>
+        )}
       </footer>
     </article>
   );

@@ -89,8 +89,32 @@ const run = async () => {
     };
   });
 
+  // 즐겨찾기(⭐) 두 건을 표시한 상태로 스캐너 대표 화면 촬영
+  await page.locator('.signal-card:not(.skeleton) .fav-btn').first().click();
+  await page.locator('.signal-card:not(.skeleton) .fav-btn').nth(1).click();
+  await page.waitForTimeout(400);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(300);
   await page.screenshot({ path: `${OUT}/01-scanner.png`, fullPage: false });
   await page.screenshot({ path: `${OUT}/01-scanner-full.png`, fullPage: true, scale: 'css' });
+
+  // 이전 시그널 더보기 · 검색
+  await page.locator('.ghost-toggle').click();
+  await page.waitForTimeout(500);
+  if (await page.locator('.more-btn').count()) {
+    await page.locator('.more-btn').click();
+    await page.waitForTimeout(400);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `${OUT}/15-scanner-more.png`, fullPage: false });
+  }
+  await page.locator('.search-box input').fill('BTC');
+  await page.waitForTimeout(400);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${OUT}/16-scanner-search.png`, fullPage: false });
+  await page.locator('.search-clear').click();
+  await page.waitForTimeout(300);
 
   // 다크 공유 카드
   await page.locator('.signal-card').first().click();

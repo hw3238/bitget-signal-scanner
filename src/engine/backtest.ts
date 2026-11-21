@@ -7,7 +7,12 @@ export const MIN_WINRATE = 55;
 export const MIN_RR = 1.5;
 export const MIN_TRADES = 2;
 export const RECENT_BARS = 60;
+/** 진행중 시그널 강조 구간(봉) */
 export const SCAN_SIGNAL_BARS = 10;
+/** 이전(종료) 시그널까지 함께 수집하는 최근 구간(봉) — 200봉 백테스트 안에서 넉넉히 노출 */
+export const RECENT_SIGNAL_BARS = 160;
+/** 마켓·타임프레임당 최대로 노출하는 시그널 수(진행중 우선 + 최근 종료 순) */
+export const MAX_SIGNALS_PER_MARKET = 18;
 export const HORIZON = 42;
 
 export function emptyStats(): StrategyStats {
@@ -225,7 +230,9 @@ export function analyzeSymbol(
 
   if (qualified) {
     for (const t of activeEntry.trades) {
-      if (t.entryIdx < last - SCAN_SIGNAL_BARS) continue;
+      // 진행중 시그널은 최근 10봉 안에서 감지된 것만, 종료(적중/무효) 시그널은 최근 160봉까지 수집한다.
+      const windowBars = t.result === 'open' ? SCAN_SIGNAL_BARS : RECENT_SIGNAL_BARS;
+      if (t.entryIdx < last - windowBars) continue;
       const rr = entryRR(t.entry, t.stop, t.target);
       const changePct = ((price - t.entry) / t.entry) * 100 * (t.side === 'long' ? 1 : -1);
       const risk = Math.abs(price - t.stop);
@@ -277,6 +284,14 @@ export function analyzeSymbol(
     }
   }
 
+  // 진행중 시그널을 먼저, 그 다음 최근에 종료된 시그널 순으로 마켓당 상한까지 노출
+  const trimmed = signals
+    .sort((a, b) => {
+      const rank = (s: Signal) => (s.state === 'open' ? 0 : 1);
+      return rank(a) - rank(b) || b.detectedAt - a.detectedAt;
+    })
+    .slice(0, MAX_SIGNALS_PER_MARKET);
+
   return {
     symbol,
     base,
@@ -288,7 +303,7 @@ export function analyzeSymbol(
     activeN: activeStats.n,
     activeStats,
     candidates: perStrategy.map((p) => ({ id: p.meta.id, stats: p.stats })),
-    signals: signals.sort((a, b) => (a.state === 'open' ? -1 : 1) - (b.state === 'open' ? -1 : 1) || b.detectedAt - a.detectedAt),
+    signals: trimmed,
     replacement,
     candlesLoaded: candles.length,
   };

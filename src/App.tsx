@@ -7,6 +7,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { ShareModal } from './components/ShareModal';
 import { EngineIcon, HistoryIcon, MarketIcon, RefreshIcon, ScannerIcon, SettingsIcon } from './components/Icons';
 import type { Signal } from './engine/types';
+import { useFavorites } from './hooks/useFavorites';
 import { useScanner } from './hooks/useScanner';
 import { fmtTime } from './lib/format';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from './lib/storage';
@@ -28,6 +29,7 @@ export default function App() {
   const { state, history, swapLog, scan, clearHistory, clearSwapLog } = useScanner({
     refreshSec: settings.refreshSec,
   });
+  const favorites = useFavorites();
 
   const patchSettings = useCallback((patch: Partial<Settings>) => {
     setSettings((prev) => {
@@ -126,6 +128,9 @@ export default function App() {
           <ScannerTab
             state={state}
             settings={settings}
+            favorites={favorites.entries}
+            isFavorite={favorites.isFavorite}
+            onToggleFavorite={favorites.toggle}
             onSettings={patchSettings}
             onOpen={setShareSignal}
             onRescan={() => void scan()}
@@ -172,7 +177,13 @@ export default function App() {
       </nav>
 
       {shareSignal && (
-        <ShareModal signal={shareSignal} leverage={settings.leverage} onClose={() => setShareSignal(null)} />
+        <ShareModal
+          signal={shareSignal}
+          leverage={settings.leverage}
+          isFavorite={favorites.isFavorite(shareSignal)}
+          onToggleFavorite={favorites.toggle}
+          onClose={() => setShareSignal(null)}
+        />
       )}
     </div>
   );

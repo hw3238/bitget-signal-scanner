@@ -79,6 +79,19 @@ export const ShareIcon = ({ size = 18, className }: IconProps) => (
   </svg>
 );
 
+export const SearchIcon = ({ size = 16, className }: IconProps) => (
+  <svg {...base(size)} className={className}>
+    <circle cx="10.6" cy="10.6" r="6.4" />
+    <path d="M15.4 15.4 20 20" />
+  </svg>
+);
+
+export const StarIcon = ({ size = 18, className, filled = false }: IconProps & { filled?: boolean }) => (
+  <svg {...base(size)} className={className} fill={filled ? 'currentColor' : 'none'}>
+    <path d="M12 3.4l2.6 5.3 5.8.85-4.2 4.1 1 5.8-5.2-2.75L6.8 19.45l1-5.8-4.2-4.1 5.8-.85L12 3.4Z" />
+  </svg>
+);
+
 export const BoltIcon = ({ size = 14, className }: IconProps) => (
   <svg {...base(size)} className={className}>
     <path d="M13 2 5 13h5l-1 9 8-11h-5l1-9Z" />

@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Signal } from '../engine/types';
 import { drawShareCard } from './shareCard';
-import { CloseIcon, DownloadIcon, ShareIcon } from './Icons';
+import { CloseIcon, DownloadIcon, ShareIcon, StarIcon } from './Icons';
 
 interface Props {
   signal: Signal;
   leverage: number;
+  isFavorite: boolean;
+  onToggleFavorite: (signal: Signal) => void;
   onClose: () => void;
 }
 
-export function ShareModal({ signal, leverage, onClose }: Props) {
+export function ShareModal({ signal, leverage, isFavorite, onToggleFavorite, onClose }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [ready, setReady] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -86,6 +88,15 @@ export function ShareModal({ signal, leverage, onClose }: Props) {
           <canvas ref={canvasRef} className={`share-canvas ${ready ? 'in' : ''}`} aria-label="시그널 공유 카드" />
         </div>
         <div className="share-actions">
+          <button
+            type="button"
+            className={`fav-action ${isFavorite ? 'on' : ''}`}
+            aria-pressed={isFavorite}
+            onClick={() => onToggleFavorite(signal)}
+          >
+            <StarIcon size={16} filled={isFavorite} />
+            {isFavorite ? '즐겨찾기됨' : '즐겨찾기'}
+          </button>
           <button className="primary" onClick={save}>
             <DownloadIcon size={17} />
             {saved ? '저장됨' : 'PNG 저장'}
