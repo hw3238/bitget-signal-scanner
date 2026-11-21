@@ -213,7 +213,6 @@ const run = async () => {
     );
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.waitForTimeout(300);
-    await page.screenshot({ path: 'docs/screens/15-live-fx-btc.png' });
     await page.locator('.fx-tab .quick-chip', { hasText: '비트' }).click();
     await page.waitForTimeout(500);
     await page.evaluate(() => window.scrollTo(0, 0));
