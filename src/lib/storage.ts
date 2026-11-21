@@ -4,6 +4,10 @@ export interface Settings {
   refreshSec: number;
   scanPairs: boolean;
   sound: boolean;
+  /** 벤티지 호가 보정: 카드 표시 이름(XAUUSD+, EURUSD+ …) → 가격 오프셋 */
+  fxOffsets: Record<string, number>;
+  /** 선택: Twelve Data 무료 API 키(추가 FX 페어 스캔) */
+  twelveDataKey: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -12,6 +16,8 @@ export const DEFAULT_SETTINGS: Settings = {
   refreshSec: 60,
   scanPairs: true,
   sound: false,
+  fxOffsets: {},
+  twelveDataKey: '',
 };
 
 const SETTINGS_KEY = 'bgss.settings.v1';
@@ -53,7 +59,7 @@ export interface HistoryRecord {
   id: string;
   symbol: string;
   base: string;
-  asset: 'crypto' | 'stock' | 'commodity';
+  asset: 'crypto' | 'stock' | 'fx';
   tf: '1H' | '4H';
   side: 'long' | 'short';
   strategyId: string;
@@ -68,6 +74,8 @@ export interface HistoryRecord {
   state: 'open' | 'win' | 'loss';
   r: number;
   bars: number;
+  /** FX·금 고정 소수점 표기용 */
+  decimals?: number;
 }
 
 export interface SwapLogEntry {

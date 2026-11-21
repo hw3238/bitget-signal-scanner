@@ -135,6 +135,7 @@ export function analyzeSymbol(
   asset: AssetClass,
   tf: TF,
   candles: Candle[],
+  decimals?: number,
 ): SymbolAnalysis | null {
   if (candles.length < 80) return null;
   const series = buildSeries(candles);
@@ -280,6 +281,7 @@ export function analyzeSymbol(
         tags: t.tags,
         fundingRate: 0,
         quoteVolume: 0,
+        decimals,
       });
     }
   }

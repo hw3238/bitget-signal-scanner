@@ -2749,3 +2749,529 @@ textarea {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* =========================================================
+   FX·금 (벤티지 호가 보정)
+   ========================================================= */
+
+.asset.fx {
+  background: rgba(255, 209, 102, 0.12);
+  border-color: rgba(255, 209, 102, 0.42);
+  color: #ffd166;
+}
+
+.counter.fx {
+  background: rgba(255, 209, 102, 0.1);
+  border-color: rgba(255, 209, 102, 0.42);
+  color: var(--amber);
+  box-shadow: 0 0 16px -6px rgba(255, 209, 102, 0.75);
+}
+
+.signal-card.fx .sym-logo.long {
+  box-shadow: 0 0 18px -6px rgba(255, 209, 102, 0.85);
+}
+
+.signal-card.fx .sym {
+  color: #fff3d4;
+}
+
+.fx-offset-bar {
+  margin-top: 12px;
+  padding: 11px 12px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 209, 102, 0.3);
+  background:
+    linear-gradient(180deg, rgba(255, 209, 102, 0.07), rgba(10, 16, 36, 0.92)),
+    rgba(8, 13, 30, 0.94);
+  box-shadow: 0 0 26px -20px rgba(255, 209, 102, 0.9), var(--shadow-sm);
+}
+
+.fx-offset-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fx-offset-head b {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--amber);
+  letter-spacing: -0.1px;
+  text-shadow: 0 0 12px rgba(255, 209, 102, 0.45);
+}
+
+.fx-count {
+  margin-left: 4px;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #1b1300;
+  background: var(--amber);
+  border-radius: 999px;
+  padding: 1px 7px;
+  text-shadow: none;
+}
+
+.fx-offset-hint {
+  flex: 1 1 220px;
+  min-width: 0;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--sub);
+  font-weight: 600;
+}
+
+.fx-offset-reset {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 209, 102, 0.35);
+  background: rgba(30, 25, 12, 0.7);
+  color: #e2cd98;
+  border-radius: 9px;
+  padding: 5px 9px;
+  font-size: 10.5px;
+  font-weight: 800;
+}
+
+.fx-offset-reset:hover {
+  border-color: rgba(255, 209, 102, 0.7);
+  color: var(--amber);
+}
+
+.fx-chips {
+  display: flex;
+  gap: 7px;
+  margin-top: 9px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.fx-chip {
+  flex: 0 0 auto;
+  width: 138px;
+  padding: 7px 8px 6px;
+  border-radius: 11px;
+  border: 1px solid rgba(122, 158, 255, 0.16);
+  background: rgba(6, 11, 26, 0.86);
+}
+
+.fx-chip.live {
+  border-color: rgba(0, 229, 255, 0.28);
+}
+
+.fx-chip.on {
+  border-color: rgba(255, 209, 102, 0.6);
+  box-shadow: 0 0 16px -8px rgba(255, 209, 102, 0.9), inset 0 0 12px rgba(255, 209, 102, 0.06);
+}
+
+.fx-chip-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.fx-chip-label {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 900;
+  color: #f2f6ff;
+  white-space: nowrap;
+}
+
+.fx-chip-price {
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  letter-spacing: -0.2px;
+}
+
+.fx-chip-note {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 46px;
+}
+
+.fx-chip-edit {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 5px;
+}
+
+.fx-chip-sign {
+  font-size: 10px;
+  font-weight: 900;
+  color: var(--amber);
+}
+
+.fx-offset-input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  border: 1px solid rgba(122, 158, 255, 0.22);
+  background: rgba(10, 17, 38, 0.95);
+  border-radius: 7px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  padding: 4px 6px;
+  outline: none;
+  text-align: right;
+}
+
+.fx-offset-input:focus {
+  border-color: rgba(255, 209, 102, 0.7);
+  box-shadow: 0 0 14px -6px rgba(255, 209, 102, 0.9);
+}
+
+.fx-chip-step {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  border: 1px solid rgba(122, 158, 255, 0.2);
+  background: rgba(19, 27, 52, 0.9);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  padding: 0;
+}
+
+.fx-chip-step:hover {
+  color: var(--amber);
+  border-color: rgba(255, 209, 102, 0.6);
+}
+
+.fx-chip-applied {
+  margin-top: 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #8fa6c9;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fx-chip.on .fx-chip-applied {
+  color: var(--amber);
+}
+
+.fx-offset-foot {
+  margin-top: 7px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #7f90ad;
+  font-weight: 600;
+}
+
+.fx-offset-foot b {
+  color: #cbb6ff;
+}
+
+.fx-extra {
+  color: #7cf0ff;
+}
+
+.fx-extra.err {
+  color: var(--short-2);
+}
+
+/* ---- 설정 탭: 종목별 보정 표 ---- */
+
+.setting-desc.block {
+  display: block;
+  margin: -2px 0 10px;
+  line-height: 1.55;
+}
+
+.fx-table {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-x: auto;
+}
+
+.fx-table-head,
+.fx-tr {
+  display: grid;
+  grid-template-columns: minmax(92px, 1.25fr) minmax(78px, 1fr) minmax(86px, 1fr) minmax(84px, 1fr) minmax(84px, 1fr) 48px;
+  align-items: center;
+  gap: 7px;
+  min-width: 520px;
+  padding: 6px 4px;
+}
+
+.fx-table-head {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--sub);
+  border-bottom: 1px solid var(--line);
+  text-transform: uppercase;
+}
+
+.fx-tr {
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fx-tr.on {
+  background: rgba(255, 209, 102, 0.05);
+}
+
+.fx-td-label {
+  font-weight: 900;
+  color: #f2f6ff;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.fx-td-label i {
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--sub);
+}
+
+.fx-td-price {
+  color: var(--ink-2);
+  font-weight: 700;
+}
+
+.fx-td-offset {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fx-td-offset b {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: var(--sub);
+  white-space: nowrap;
+}
+
+.fx-td-offset b.up {
+  color: var(--long);
+}
+
+.fx-td-offset b.down {
+  color: var(--short-2);
+}
+
+.fx-td-applied {
+  font-weight: 800;
+  color: var(--amber);
+  white-space: nowrap;
+}
+
+.fx-td-reset button {
+  padding: 3px 6px;
+  font-size: 10px;
+}
+
+.fx-vantage-input {
+  width: 100%;
+  border: 1px dashed rgba(122, 158, 255, 0.26);
+  background: rgba(10, 17, 38, 0.7);
+  border-radius: 7px;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 4px 6px;
+  outline: none;
+  text-align: right;
+}
+
+.fx-vantage-input:focus {
+  border-style: solid;
+  border-color: rgba(0, 229, 255, 0.6);
+  box-shadow: 0 0 14px -6px rgba(0, 229, 255, 0.9);
+}
+
+.td-key-row {
+  flex-wrap: wrap;
+}
+
+.td-key-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.td-key-input {
+  min-width: 190px;
+  flex: 1 1 190px;
+  border: 1px solid rgba(122, 158, 255, 0.24);
+  background: rgba(8, 13, 30, 0.95);
+  border-radius: 9px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 7px 9px;
+  outline: none;
+}
+
+.td-key-input:focus {
+  border-color: rgba(0, 229, 255, 0.6);
+  box-shadow: 0 0 16px -6px rgba(0, 229, 255, 0.9);
+}
+
+@media (max-width: 560px) {
+  .fx-chip {
+    width: 132px;
+  }
+
+  .fx-offset-hint {
+    flex-basis: 100%;
+  }
+}
+
+/* ---- 주력 종목(금·유로·비트) 퀵 필터 ---- */
+
+.quick-row {
+  display: inline-flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.quick-chip {
+  border: 1px solid rgba(122, 158, 255, 0.22);
+  background: rgba(10, 16, 36, 0.9);
+  color: var(--ink-2);
+  border-radius: 999px;
+  padding: 6px 11px;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease, background 0.16s ease;
+}
+
+.quick-chip.gold.on {
+  border-color: rgba(255, 209, 102, 0.85);
+  background: linear-gradient(120deg, rgba(255, 209, 102, 0.95), rgba(255, 183, 3, 0.9));
+  color: #1b1300;
+  box-shadow: 0 0 20px -6px rgba(255, 209, 102, 0.95);
+}
+
+.quick-chip.euro.on {
+  border-color: rgba(0, 229, 255, 0.8);
+  background: linear-gradient(120deg, rgba(0, 229, 255, 0.9), rgba(123, 97, 255, 0.9));
+  color: #04121a;
+  box-shadow: 0 0 20px -6px rgba(0, 229, 255, 0.95);
+}
+
+.quick-chip.btc.on {
+  border-color: rgba(255, 183, 3, 0.85);
+  background: linear-gradient(120deg, rgba(255, 153, 0, 0.95), rgba(255, 90, 0, 0.9));
+  color: #1a0d00;
+  box-shadow: 0 0 20px -6px rgba(255, 153, 0, 0.95);
+}
+
+.quick-chip:hover {
+  border-color: rgba(0, 229, 255, 0.5);
+}
+
+.fx-chip.priority {
+  border-color: rgba(255, 209, 102, 0.5);
+  background: linear-gradient(180deg, rgba(255, 209, 102, 0.1), rgba(6, 11, 26, 0.9));
+  order: -1;
+}
+
+.fx-chip.priority .fx-chip-label {
+  color: var(--amber);
+}
+
+.fx-chip.priority.on {
+  border-color: rgba(255, 209, 102, 0.85);
+}
+
+/* 모바일: 설정 탭 보정 표를 2열 카드형으로 접는다 */
+@media (max-width: 560px) {
+  .fx-table {
+    overflow-x: visible;
+  }
+
+  .fx-table-head {
+    display: none;
+  }
+
+  .fx-tr {
+    min-width: 0;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      'label price'
+      'offset vantage'
+      'applied reset';
+    row-gap: 6px;
+    padding: 10px 2px;
+  }
+
+  .fx-td-label {
+    grid-area: label;
+  }
+
+  .fx-td-price {
+    grid-area: price;
+    text-align: right;
+    font-size: 12.5px;
+  }
+
+  .fx-td-offset {
+    grid-area: offset;
+  }
+
+  .fx-td-offset::before {
+    content: '오프셋';
+    flex: 0 0 auto;
+    font-size: 9.5px;
+    font-weight: 800;
+    color: var(--sub);
+  }
+
+  .fx-td-offset .fx-offset-input {
+    max-width: 88px;
+  }
+
+  .fx-td-vantage {
+    grid-area: vantage;
+  }
+
+  .fx-td-vantage::before {
+    content: 'MT5가';
+    display: none;
+  }
+
+  .fx-td-applied {
+    grid-area: applied;
+  }
+
+  .fx-td-reset {
+    grid-area: reset;
+    text-align: right;
+  }
+}

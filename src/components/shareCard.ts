@@ -1,5 +1,7 @@
 import type { Signal } from '../engine/types';
+import { symbolLogo } from '../lib/asset';
 import { fmtPct, fmtPrice, tfLabel } from '../lib/format';
+import { fmtOffset, shiftSignal } from '../lib/offset';
 
 const FONT = '"Noto Sans KR","Noto Sans CJK KR",system-ui,sans-serif';
 
@@ -52,7 +54,9 @@ function neon(
   ctx.restore();
 }
 
-export function drawShareCard(canvas: HTMLCanvasElement, signal: Signal, leverage: number) {
+export function drawShareCard(canvas: HTMLCanvasElement, signalInput: Signal, leverage: number, offset = 0) {
+  // 벤티지 호가 보정 — 모든 가격을 같은 값동안 평행 이동(비율·손익비는 그대로)
+  const signal = offset ? shiftSignal(signalInput, offset) : signalInput;
   const dpr = 2;
   canvas.width = W * dpr;
   canvas.height = H * dpr;
@@ -181,7 +185,7 @@ export function drawShareCard(canvas: HTMLCanvasElement, signal: Signal, leverag
   ctx.beginPath();
   ctx.arc(66, 64, 26, 0, Math.PI * 2);
   ctx.stroke();
-  label(ctx, signal.base.slice(0, 3), 66, 71, `900 15px ${FONT}`, '#04121A', 'center');
+  label(ctx, symbolLogo(signal.base), 66, 71, `900 15px ${FONT}`, '#04121A', 'center');
 
   label(ctx, '비트겟', 104, 60, `800 25px ${FONT}`, ink);
   const wBit = ctx.measureText('비트겟').width;
@@ -234,7 +238,7 @@ export function drawShareCard(canvas: HTMLCanvasElement, signal: Signal, leverag
   rr(ctx, bx + 96, 195, 78, 28, 14);
   ctx.fill();
   ctx.stroke();
-  label(ctx, signal.asset === 'stock' ? '주식선물' : '코인', bx + 135, 214, `700 13px ${FONT}`, '#DCE8FF', 'center');
+  label(ctx, signal.asset === 'stock' ? '주식선물' : signal.asset === 'fx' ? 'FX·금' : '코인', bx + 135, 214, `700 13px ${FONT}`, '#DCE8FF', 'center');
 
   /* 우측 R/ROI — 형광 */
   const rText = `${signal.currentR >= 0 ? '+' : '−'}${Math.abs(signal.currentR).toFixed(1)}R`;
@@ -364,8 +368,8 @@ export function drawShareCard(canvas: HTMLCanvasElement, signal: Signal, leverag
     ctx.restore();
     label(ctx, text, inner.x + inner.w - 7, ty + 13, `900 11px ${FONT}`, textColor, 'right');
   };
-  priceTag(signal.target, '#031A10', 'rgba(0, 245, 160, 0.92)', 'rgba(0, 245, 160, 0.9)', `목표 ${fmtPrice(signal.target)}`);
-  priceTag(signal.stop, '#1A0308', 'rgba(255, 46, 99, 0.92)', 'rgba(255, 46, 99, 0.9)', `무효 ${fmtPrice(signal.stop)}`);
+  priceTag(signal.target, '#031A10', 'rgba(0, 245, 160, 0.92)', 'rgba(0, 245, 160, 0.9)', `목표 ${fmtPrice(signal.target, signal.decimals)}`);
+  priceTag(signal.stop, '#1A0308', 'rgba(255, 46, 99, 0.92)', 'rgba(255, 46, 99, 0.9)', `무효 ${fmtPrice(signal.stop, signal.decimals)}`);
 
   /* 현재가 점 */
   const lastC = candles[candles.length - 1];
@@ -387,10 +391,10 @@ export function drawShareCard(canvas: HTMLCanvasElement, signal: Signal, leverag
 
   /* ---------- 4칸 박스 ---------- */
   const boxes = [
-    { label: '목표', value: fmtPrice(signal.target), color: green, border: 'rgba(0, 245, 160, 0.5)', glow: 'rgba(0, 245, 160, 0.75)' },
-    { label: '반익 EQ', value: fmtPrice(signal.eq), color: amber, border: 'rgba(255, 209, 102, 0.45)', glow: 'rgba(255, 209, 102, 0.7)' },
-    { label: '진입가 추천', value: fmtPrice(signal.entry), color: ink, border: 'rgba(0, 229, 255, 0.35)', glow: 'rgba(0, 229, 255, 0.6)' },
-    { label: '무효', value: fmtPrice(signal.stop), color: red, border: 'rgba(255, 46, 99, 0.5)', glow: 'rgba(255, 46, 99, 0.75)' },
+    { label: '목표', value: fmtPrice(signal.target, signal.decimals), color: green, border: 'rgba(0, 245, 160, 0.5)', glow: 'rgba(0, 245, 160, 0.75)' },
+    { label: '반익 EQ', value: fmtPrice(signal.eq, signal.decimals), color: amber, border: 'rgba(255, 209, 102, 0.45)', glow: 'rgba(255, 209, 102, 0.7)' },
+    { label: '진입가 추천', value: fmtPrice(signal.entry, signal.decimals), color: ink, border: 'rgba(0, 229, 255, 0.35)', glow: 'rgba(0, 229, 255, 0.6)' },
+    { label: '무효', value: fmtPrice(signal.stop, signal.decimals), color: red, border: 'rgba(255, 46, 99, 0.5)', glow: 'rgba(255, 46, 99, 0.75)' },
   ];
   const boxW = (pw - 16) / 2;
   const boxH = 78;
@@ -458,6 +462,15 @@ export function drawShareCard(canvas: HTMLCanvasElement, signal: Signal, leverag
   ctx.restore();
 
   label(ctx, `${signal.strategyName}`, px, 898, `800 18px ${FONT}`, ink);
-  label(ctx, `${signal.symbol} · Bitget USDT-M · ${tfLabel(signal.tf)}봉 200개 실데이터`, px, 924, `500 14px ${FONT}`, dim);
+  label(
+    ctx,
+    `${signal.symbol} · Bitget USDT-M · ${tfLabel(signal.tf)}봉 200개 실데이터${
+      offset ? ` · Vantage 호가 ${fmtOffset(offset, signal.decimals ?? 2)}` : ''
+    }`,
+    px,
+    924,
+    `500 14px ${FONT}`,
+    dim,
+  );
   neon(ctx, '셋업 기록 공유 · 투자 권유 아님', W / 2, 976, `700 16px ${FONT}`, '#7E90B0', 'center', 12);
 }

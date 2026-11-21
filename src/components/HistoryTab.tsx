@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { HistoryRecord } from '../lib/storage';
 import { fmtDateTime, fmtPct, fmtPrice, tfLabel } from '../lib/format';
+import { offsetFor, type OffsetMap } from '../lib/offset';
 import { CloseIcon, SearchIcon } from './Icons';
 
 const PAGE_SIZE = 15;
@@ -15,11 +16,12 @@ interface Props {
   history: HistoryRecord[];
   leverage: number;
   onClear: () => void;
+  offsets?: OffsetMap;
 }
 
 type Filter = 'all' | 'win' | 'loss' | 'open';
 
-export function HistoryTab({ history, leverage, onClear }: Props) {
+export function HistoryTab({ history, leverage, onClear, offsets }: Props) {
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [visible, setVisible] = useState(PAGE_SIZE);
@@ -171,7 +173,9 @@ export function HistoryTab({ history, leverage, onClear }: Props) {
                   <span className="h-strategy">{h.strategyShort}</span>
                 </div>
                 <div className="h-levels">
-                  진입 {fmtPrice(h.entry)} · 목표 {fmtPrice(h.target)} · 무효 {fmtPrice(h.stop)} · {h.bars}봉 경과
+                  진입 {fmtPrice(h.entry + offsetFor(h.base, offsets), h.decimals)} · 목표{' '}
+                  {fmtPrice(h.target + offsetFor(h.base, offsets), h.decimals)} · 무효{' '}
+                  {fmtPrice(h.stop + offsetFor(h.base, offsets), h.decimals)} · {h.bars}봉 경과
                 </div>
                 <div className="h-time">
                 {fmtDateTime(h.detectedAt)} 감지 · 무효가 거리 {h.riskPct ? `${h.riskPct.toFixed(2)}%` : '-'}

@@ -1,5 +1,5 @@
 import type { AssetClass, Candle, Contract, TF, Ticker } from '../engine/types';
-import { COMMODITY_BASES, isStockSymbol } from '../engine/universe';
+import { FX_BASES, isStockSymbol } from '../engine/universe';
 
 const BASE = 'https://api.bitget.com';
 const PRODUCT = 'USDT-FUTURES';
@@ -33,10 +33,11 @@ async function getJson<T>(path: string, attempt = 0): Promise<T> {
 }
 
 export function classifyContract(symbol: string, isRwa: boolean): AssetClass {
-  if (!isRwa) return 'crypto';
   const base = symbol.replace(/USDT$/, '');
-  if (COMMODITY_BASES.has(base)) return 'commodity';
-  if (COMMODITY_BASES.has(base.replace(/STOCK$/, ''))) return 'commodity';
+  const norm = base.replace(/STOCK$/, '');
+  // FX·금·원자재·지수는 RWA 여부와 무관하게 FX 카테고리로 모은다.
+  if (FX_BASES.has(base) || FX_BASES.has(norm)) return 'fx';
+  if (!isRwa) return 'crypto';
   if (isStockSymbol(symbol)) return 'stock';
   return 'stock';
 }
@@ -50,11 +51,13 @@ export async function fetchContracts(): Promise<Contract[]> {
     .map((c) => {
       const symbol = String(c.symbol);
       const isRwa = c.isRwa === 'YES';
+      const decimals = Number(c.pricePlace);
       return {
         symbol,
         base: String(c.baseCoin ?? symbol.replace(/USDT$/, '')),
         asset: classifyContract(symbol, isRwa),
         isRwa,
+        decimals: Number.isFinite(decimals) ? decimals : undefined,
       } satisfies Contract;
     });
 }

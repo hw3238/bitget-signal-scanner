@@ -1,5 +1,7 @@
 import type { Signal } from '../engine/types';
+import { assetClass, assetLabel, symbolLogo } from '../lib/asset';
 import { fmtPct, fmtPrice, fmtTime, tfLabel } from '../lib/format';
+import { fmtOffset } from '../lib/offset';
 import { MiniCandles } from './MiniCandles';
 import { BoltIcon, StarIcon } from './Icons';
 
@@ -11,18 +13,37 @@ interface Props {
   onToggleFavorite: (signal: Signal) => void;
   /** 현재 스캔 결과에 없는 즐겨찾기(저장된 스냅샷) */
   stale?: boolean;
+  /** 벤티지 호가 보정 오프셋 — 현재가·진입·목표·EQ·무효에 더해 표시한다 */
+  offset?: number;
 }
 
-export function SignalCard({ signal, leverage, onOpen, isFavorite, onToggleFavorite, stale = false }: Props) {
-  const roi = signal.changePct * leverage;
+export function SignalCard({
+  signal,
+  leverage,
+  onOpen,
+  isFavorite,
+  onToggleFavorite,
+  stale = false,
+  offset = 0,
+}: Props) {
+  const price = signal.price + offset;
+  const entry = signal.entry + offset;
+  const target = signal.target + offset;
+  const stop = signal.stop + offset;
+  const eq = signal.eq + offset;
+  const changePct = ((price - entry) / (entry || 1)) * 100 * (signal.side === 'long' ? 1 : -1);
+  const roi = changePct * leverage;
   const sideClass = signal.side === 'long' ? 'long' : 'short';
   const stateClass = signal.state === 'open' ? 'open' : signal.state === 'win' ? 'win' : 'loss';
   const stateLabel = signal.state === 'open' ? '진행중' : signal.state === 'win' ? '적중' : '무효';
   const progress = Math.max(0, Math.min(1, signal.progress));
+  const dec = signal.decimals;
 
   return (
     <article
-      className={`signal-card ${sideClass} ${stateClass}${isFavorite ? ' fav' : ''}${stale ? ' stale' : ''}`}
+      className={`signal-card ${sideClass} ${stateClass}${isFavorite ? ' fav' : ''}${stale ? ' stale' : ''}${
+        signal.asset === 'fx' ? ' fx' : ''
+      }${offset ? ' offset' : ''}`}
       onClick={() => onOpen(signal)}
       role="button"
       tabIndex={0}
@@ -31,15 +52,16 @@ export function SignalCard({ signal, leverage, onOpen, isFavorite, onToggleFavor
       }}
     >
       <header className="card-head">
-        <div className={`sym-logo ${sideClass}`}>{signal.base.slice(0, 4)}</div>
+        <div className={`sym-logo ${sideClass}`}>{symbolLogo(signal.base)}</div>
         <div className="sym-title">
           <div className="sym-line">
             <span className="sym">{signal.base}</span>
             <span className="tf">{tfLabel(signal.tf)}</span>
-            {signal.asset === 'stock' ? <span className="asset stock">주식선물</span> : <span className="asset crypto">코인</span>}
+            <span className={`asset ${assetClass(signal.asset)}`}>{assetLabel(signal.asset)}</span>
           </div>
           <div className="sym-sub">
             {signal.symbol} · <BoltIcon size={11} /> {signal.strategyShort}
+            {offset ? ` · 벤티지 ${fmtOffset(offset, Math.max(2, dec ?? 2))}` : ''}
           </div>
         </div>
         <div className="badge-col">
@@ -54,6 +76,7 @@ export function SignalCard({ signal, leverage, onOpen, isFavorite, onToggleFavor
           title={isFavorite ? '즐겨찾기 해제' : '즐겨찾기에 추가'}
           onClick={(e) => {
             e.stopPropagation();
+            // 즐겨찾기에는 보정 전 원본 시그널을 저장해 오프셋이 두 번 더해지지 않게 한다.
             onToggleFavorite(signal);
           }}
           onKeyDown={(e) => {
@@ -65,11 +88,9 @@ export function SignalCard({ signal, leverage, onOpen, isFavorite, onToggleFavor
       </header>
 
       <div className="price-row">
-        <div className="price">{fmtPrice(signal.price)}</div>
+        <div className="price">{fmtPrice(price, dec)}</div>
         <div className="roi">
-          <span className="roi-cap">
-            레버리지 {leverage}x 수익률
-          </span>
+          <span className="roi-cap">레버리지 {leverage}x 수익률</span>
           <span className={`roi-value ${roi >= 0 ? 'up' : 'down'}`}>{fmtPct(roi)}</span>
         </div>
       </div>
@@ -96,19 +117,19 @@ export function SignalCard({ signal, leverage, onOpen, isFavorite, onToggleFavor
       <div className="levels">
         <div className="lvl">
           <span className="lvl-label">목표</span>
-          <span className="lvl-value target">{fmtPrice(signal.target)}</span>
+          <span className="lvl-value target">{fmtPrice(target, dec)}</span>
         </div>
         <div className="lvl">
           <span className="lvl-label">진입</span>
-          <span className="lvl-value entry">{fmtPrice(signal.entry)}</span>
+          <span className="lvl-value entry">{fmtPrice(entry, dec)}</span>
         </div>
         <div className="lvl">
           <span className="lvl-label">EQ</span>
-          <span className="lvl-value eq">{fmtPrice(signal.eq)}</span>
+          <span className="lvl-value eq">{fmtPrice(eq, dec)}</span>
         </div>
         <div className="lvl">
           <span className="lvl-label">무효</span>
-          <span className="lvl-value stop">{fmtPrice(signal.stop)}</span>
+          <span className="lvl-value stop">{fmtPrice(stop, dec)}</span>
         </div>
       </div>
 

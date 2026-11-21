@@ -1,26 +1,42 @@
 import { useMemo, useState } from 'react';
 import type { ScanState } from '../hooks/useScanner';
 import type { AssetClass } from '../engine/types';
+import { fxLabel } from '../engine/universe';
 import { fmtPct, fmtPrice, fmtVolume } from '../lib/format';
+import { offsetFor, type OffsetMap } from '../lib/offset';
 
 interface Props {
   state: ScanState;
   onRescan: () => void;
+  offsets?: OffsetMap;
 }
 
-type Tab = 'crypto' | 'stock';
+type Tab = 'crypto' | 'stock' | 'fx';
 
-export function MarketTab({ state, onRescan }: Props) {
+export function MarketTab({ state, onRescan, offsets }: Props) {
   const [tab, setTab] = useState<Tab>('crypto');
 
   const data = useMemo(() => {
     const assetOf = new Map<string, AssetClass>(state.contracts.map((c) => [c.symbol, c.asset]));
+    const decimalsOf = new Map<string, number | undefined>(state.contracts.map((c) => [c.symbol, c.decimals]));
     const rows = state.tickers
-      .map((t) => ({ ...t, asset: assetOf.get(t.symbol) ?? 'crypto' }))
+      .map((t) => {
+        const asset = assetOf.get(t.symbol) ?? 'crypto';
+        return {
+          ...t,
+          asset,
+          decimals: asset === 'fx' ? decimalsOf.get(t.symbol) : undefined,
+          label:
+            asset === 'fx'
+              ? fxLabel(t.symbol, t.symbol.replace(/USDT$/, ''))
+              : t.symbol.replace(/USDT$/, '').replace(/STOCK$/, ''),
+        };
+      })
       .filter((t) => t.quoteVolume > 150_000 && Number.isFinite(t.change24h));
 
     const cryptos = rows.filter((r) => r.asset === 'crypto');
     const stocks = rows.filter((r) => r.asset === 'stock');
+    const fxs = rows.filter((r) => r.asset === 'fx');
 
     const summary = (list: typeof rows) => {
       const up = list.filter((r) => r.change24h > 0).length;
@@ -53,6 +69,14 @@ export function MarketTab({ state, onRescan }: Props) {
         funding: byFunding(stocks).slice(0, 5),
         count: stocks.length,
       },
+      fx: {
+        summary: summary(fxs),
+        gainers: byChange(fxs).slice(0, 6),
+        losers: byChange(fxs).slice(-6).reverse(),
+        volume: byVolume(fxs).slice(0, 6),
+        funding: byFunding(fxs).slice(0, 5),
+        count: fxs.length,
+      },
     };
   }, [state.tickers, state.contracts]);
 
@@ -76,10 +100,12 @@ export function MarketTab({ state, onRescan }: Props) {
         {rows.map((r) => (
           <li key={r.symbol}>
             <div className="mv-sym">
-              <span className="mv-base">{r.symbol.replace(/USDT$/, '').replace(/STOCK$/, '')}</span>
+              <span className="mv-base">{r.label}</span>
               <span className="mv-vol">{fmtVolume(r.quoteVolume)}</span>
             </div>
-            <div className="mv-price">{fmtPrice(r.last)}</div>
+            <div className="mv-price">
+              {fmtPrice(r.last + offsetFor(r.label, offsets), r.decimals)}
+            </div>
             <span className={`mv-change ${r.change24h >= 0 ? 'up' : 'down'}`}>{fmtPct(r.change24h, 2)}</span>
             {tone === 'flat' && <span className="mv-funding">{r.fundingRate.toFixed(3)}%</span>}
           </li>
@@ -96,7 +122,11 @@ export function MarketTab({ state, onRescan }: Props) {
           <div>
             <div className="summary-title">시황 · 비트겟 USDT-M</div>
             <div className="summary-sub">
-              {tab === 'crypto' ? `코인 ${view.count}종목` : `주식·ETF 선물 ${view.count}종목`} · 티커 갱신 {refreshed} KST
+              {tab === 'crypto'
+                ? `코인 ${view.count}종목`
+                : tab === 'stock'
+                  ? `주식·ETF 선물 ${view.count}종목`
+                  : `FX·금 ${view.count}종목 · 벤티지 표기/보정 반영`} · 티커 갱신 {refreshed} KST
             </div>
           </div>
           <div className="segmented">
@@ -105,6 +135,9 @@ export function MarketTab({ state, onRescan }: Props) {
             </button>
             <button className={tab === 'stock' ? 'on' : ''} onClick={() => setTab('stock')}>
               주식선물
+            </button>
+            <button className={tab === 'fx' ? 'on' : ''} onClick={() => setTab('fx')}>
+              FX·금
             </button>
           </div>
         </div>

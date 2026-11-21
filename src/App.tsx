@@ -10,6 +10,7 @@ import type { Signal } from './engine/types';
 import { useFavorites } from './hooks/useFavorites';
 import { useScanner } from './hooks/useScanner';
 import { fmtTime } from './lib/format';
+import { offsetFor } from './lib/offset';
 import { openExternalUrl } from './lib/native';
 import { checkForUpdate, RELEASES_PAGE } from './lib/update';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from './lib/storage';
@@ -34,6 +35,7 @@ export default function App() {
   const [updateDismissed, setUpdateDismissed] = useState(false);
   const { state, history, swapLog, scan, clearHistory, clearSwapLog } = useScanner({
     refreshSec: settings.refreshSec,
+    twelveDataKey: settings.twelveDataKey,
   });
   const favorites = useFavorites();
 
@@ -118,7 +120,7 @@ export default function App() {
             <span className="brand-mark">B</span>
             <div className="brand-text">
               <b>비트겟 CRT 스캐너</b>
-              <span>코인 · 주식선물 실시간 시그널</span>
+              <span>코인 · 주식선물 · FX·금 실시간 시그널</span>
             </div>
           </div>
 
@@ -175,7 +177,9 @@ export default function App() {
             onRescan={() => void scan()}
           />
         )}
-        {tab === 'market' && <MarketTab state={state} onRescan={() => void scan()} />}
+        {tab === 'market' && (
+          <MarketTab state={state} offsets={settings.fxOffsets} onRescan={() => void scan()} />
+        )}
         {tab === 'engine' && (
           <EngineTab
             state={state}
@@ -186,11 +190,17 @@ export default function App() {
           />
         )}
         {tab === 'history' && (
-          <HistoryTab history={history} leverage={settings.leverage} onClear={clearHistory} />
+          <HistoryTab
+            history={history}
+            leverage={settings.leverage}
+            offsets={settings.fxOffsets}
+            onClear={clearHistory}
+          />
         )}
         {tab === 'settings' && (
           <SettingsTab
             settings={settings}
+            state={state}
             onChange={patchSettings}
             onClearHistory={clearHistory}
             onClearSwapLog={clearSwapLog}
@@ -219,6 +229,7 @@ export default function App() {
         <ShareModal
           signal={shareSignal}
           leverage={settings.leverage}
+          offset={offsetFor(shareSignal.base, settings.fxOffsets)}
           isFavorite={favorites.isFavorite(shareSignal)}
           onToggleFavorite={favorites.toggle}
           onClose={() => setShareSignal(null)}

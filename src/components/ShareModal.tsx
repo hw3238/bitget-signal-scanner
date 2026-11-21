@@ -10,9 +10,11 @@ interface Props {
   isFavorite: boolean;
   onToggleFavorite: (signal: Signal) => void;
   onClose: () => void;
+  /** 벤티지 호가 보정 오프셋 */
+  offset?: number;
 }
 
-export function ShareModal({ signal, leverage, isFavorite, onToggleFavorite, onClose }: Props) {
+export function ShareModal({ signal, leverage, isFavorite, onToggleFavorite, onClose, offset = 0 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [ready, setReady] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -22,7 +24,7 @@ export function ShareModal({ signal, leverage, isFavorite, onToggleFavorite, onC
     let cancelled = false;
     const draw = () => {
       if (cancelled || !canvasRef.current) return;
-      drawShareCard(canvasRef.current, signal, leverage);
+      drawShareCard(canvasRef.current, signal, leverage, offset);
       setReady(true);
     };
     if (document.fonts?.ready) {
@@ -33,7 +35,7 @@ export function ShareModal({ signal, leverage, isFavorite, onToggleFavorite, onC
     return () => {
       cancelled = true;
     };
-  }, [signal, leverage]);
+  }, [signal, leverage, offset]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

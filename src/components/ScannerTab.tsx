@@ -3,7 +3,9 @@ import type { Signal } from '../engine/types';
 import type { ScanState } from '../hooks/useScanner';
 import { favoriteKey, type FavoriteEntry } from '../lib/favorites';
 import { fmtPct, tfLabel } from '../lib/format';
+import { offsetFor } from '../lib/offset';
 import type { Settings } from '../lib/storage';
+import { FxOffsetBar } from './FxOffsetBar';
 import { SignalCard } from './SignalCard';
 import { CloseIcon, RefreshIcon, SearchIcon, StarIcon } from './Icons';
 
@@ -18,7 +20,14 @@ interface Props {
   onRescan: () => void;
 }
 
-type AssetFilter = 'all' | 'crypto' | 'stock';
+type AssetFilter = 'all' | 'crypto' | 'stock' | 'fx';
+
+/** 주력 3종목 원클릭 퀵 필터 */
+const QUICK_FILTERS: { key: string; label: string; query: string; asset: AssetFilter; hint: string }[] = [
+  { key: 'gold', label: '🥇 금', query: 'XAU', asset: 'fx', hint: 'XAUUSD+ · 금 현물' },
+  { key: 'euro', label: '💶 유로', query: 'EURUSD', asset: 'fx', hint: 'EURUSD+ · 유로/달러' },
+  { key: 'btc', label: '₿ 비트', query: 'BTC', asset: 'crypto', hint: 'BTCUSDT · 비트겐' },
+];
 
 const PAGE_SIZE = 12;
 
@@ -63,6 +72,7 @@ export function ScannerTab({
       h4: openSignals.filter((s) => s.tf === '4H').length,
       stock: openSignals.filter((s) => s.asset === 'stock').length,
       crypto: openSignals.filter((s) => s.asset === 'crypto').length,
+      fx: openSignals.filter((s) => s.asset === 'fx').length,
     }),
     [openSignals],
   );
@@ -93,7 +103,7 @@ export function ScannerTab({
     if (favOnly) return favoriteSignals;
     return state.signals
       .filter((s) => (onlyOpen ? s.state === 'open' : true))
-      .filter((s) => (asset === 'all' ? s.asset !== 'commodity' : s.asset === asset))
+      .filter((s) => (asset === 'all' ? true : s.asset === asset))
       .filter((s) => (tf === 'all' ? true : s.tf === tf))
       .filter((s) => s.rr >= settings.minRR)
       .filter((s) => matchesQuery(s, terms))
@@ -107,6 +117,7 @@ export function ScannerTab({
 
   const shown = filtered.slice(0, visible);
   const remaining = filtered.length - shown.length;
+  const activeQuick = QUICK_FILTERS.find((q) => q.query.toLowerCase() === query.trim().toLowerCase());
 
   const qualified = state.analyses.filter(
     (a) => a.activeWinRate >= 55 && a.activeRR >= 1.5 && a.activeN >= 2,
@@ -141,6 +152,7 @@ export function ScannerTab({
           <span className="counter short">숏 {counts.short}</span>
           <span className="counter">{tfLabel('1H')} {counts.h1}</span>
           <span className="counter">{tfLabel('4H')} {counts.h4}</span>
+          <span className="counter fx">FX·금 {counts.fx}</span>
           <span className="counter alt">평균 {fmtPct(avgRoi)}</span>
         </div>
 
@@ -174,12 +186,40 @@ export function ScannerTab({
         </div>
 
         <div className="filter-grid">
+          <div className="quick-row" role="group" aria-label="주력 종목 퀵 필터">
+            {QUICK_FILTERS.map((q) => {
+              const active = query.trim().toLowerCase() === q.query.toLowerCase();
+              return (
+                <button
+                  key={q.key}
+                  type="button"
+                  className={`quick-chip ${q.key} ${active ? 'on' : ''}`}
+                  aria-pressed={active}
+                  title={active ? `${q.hint} 필터 해제` : `${q.hint} 만 보기`}
+                  onClick={() => {
+                    if (active) {
+                      setQuery('');
+                      return;
+                    }
+                    setAsset(q.asset);
+                    setFavOnly(false);
+                    // 진행중 시그널이 없어도 해당 종목의 최근 셋업을 바로 볼 수 있게 종료 시그널까지 포함한다.
+                    setOnlyOpen(false);
+                    setQuery(q.query);
+                  }}
+                >
+                  {q.label}
+                </button>
+              );
+            })}
+          </div>
           <div className="segmented" role="group" aria-label="자산 구분">
             {(
               [
                 ['all', '전체'],
                 ['crypto', '코인'],
                 ['stock', '주식선물'],
+                ['fx', 'FX·금'],
               ] as [AssetFilter, string][]
             ).map(([key, label]) => (
               <button key={key} className={asset === key ? 'on' : ''} onClick={() => setAsset(key)}>
@@ -252,6 +292,21 @@ export function ScannerTab({
         </div>
       )}
 
+      {asset === 'fx' && (
+        <FxOffsetBar
+          state={state}
+          offsets={settings.fxOffsets}
+          twelveDataKey={settings.twelveDataKey}
+          onChange={(label, value) => {
+            const next = { ...settings.fxOffsets };
+            if (value) next[label] = value;
+            else delete next[label];
+            onSettings({ fxOffsets: next });
+          }}
+          onReset={() => onSettings({ fxOffsets: {} })}
+        />
+      )}
+
       <div className="list-head">
         {favOnly ? (
           <span>
@@ -266,7 +321,9 @@ export function ScannerTab({
         <span className="muted">
           {favOnly
             ? '찜한 시그널은 진행중/종료·필터와 무관하게 모두 표시됩니다'
-            : `승률 55%·손익비 ${settings.minRR.toFixed(1)}R 이상 전략만 시그널 생성`}
+            : asset === 'fx'
+              ? `Vantage 호가 기준 표기 · 승률 55%·손익비 ${settings.minRR.toFixed(1)}R 이상 전략만 시그널 생성`
+              : `승률 55%·손익비 ${settings.minRR.toFixed(1)}R 이상 전략만 시그널 생성`}
         </span>
       </div>
 
@@ -280,6 +337,7 @@ export function ScannerTab({
             isFavorite={isFavorite(signal)}
             onToggleFavorite={onToggleFavorite}
             stale={stale}
+            offset={offsetFor(signal.base, settings.fxOffsets)}
           />
         ))}
 
@@ -298,13 +356,33 @@ export function ScannerTab({
         {filtered.length === 0 && query && (favOnly || !scanning) && (
           <div className="empty search-empty">
             <div className="empty-title">
-              {favOnly ? `즐겨찾기 안에 '${query.trim()}' 검색 결과가 없습니다` : `'${query.trim()}' 검색 결과가 없습니다`}
+              {activeQuick
+                ? `${activeQuick.hint} — 지금은 고승률 셋업이 없습니다`
+                : favOnly
+                  ? `즐겨찾기 안에 '${query.trim()}' 검색 결과가 없습니다`
+                  : `'${query.trim()}' 검색 결과가 없습니다`}
             </div>
-            <p>심볼 전체(BTCUSDT)나 전략명(EMA, CRT, SuperTrend) 일부로 다시 검색해 보세요. 진행중만 토글을 끄면 종료된 이전 시그널도 검색됩니다.</p>
+            <p>
+              {activeQuick
+                ? `${activeQuick.hint}는 현재 승률 55%·손익비 1.5R 기준을 통과한 전략이 없어 시그널을 만들지 않았습니다. 기준을 잠시 낮춰 최근 셋업을 보거나, 다른 종목으로 돌아가세요.`
+                : '심볼 전체(BTCUSDT)나 전략명(EMA, CRT, SuperTrend) 일부로 다시 검색해 보세요. 진행중만 토글을 끄면 종료된 이전 시그널도 검색됩니다.'}
+            </p>
             <div className="empty-actions">
-              <button onClick={() => setQuery('')} className="primary">
-                검색어 지우기
-              </button>
+              {activeQuick ? (
+                <button
+                  onClick={() => {
+                    setQuery('');
+                    setOnlyOpen(true);
+                  }}
+                  className="primary"
+                >
+                  퀵 필터 해제
+                </button>
+              ) : (
+                <button onClick={() => setQuery('')} className="primary">
+                  검색어 지우기
+                </button>
+              )}
             </div>
           </div>
         )}

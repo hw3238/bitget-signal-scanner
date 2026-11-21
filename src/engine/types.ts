@@ -1,5 +1,5 @@
 export type Side = 'long' | 'short';
-export type AssetClass = 'crypto' | 'stock' | 'commodity';
+export type AssetClass = 'crypto' | 'stock' | 'fx';
 export type TF = '1H' | '4H';
 export type SignalState = 'open' | 'win' | 'loss';
 
@@ -17,6 +17,8 @@ export interface Contract {
   base: string;
   asset: AssetClass;
   isRwa: boolean;
+  /** 소수점 자리수(거래소 pricePlace). FX·금 표기 정밀도에 사용 */
+  decimals?: number;
 }
 
 export interface Ticker {
@@ -180,6 +182,8 @@ export interface Signal {
   tags: string[];
   fundingRate: number;
   quoteVolume: number;
+  /** FX·금처럼 고정 소수점 표기가 필요한 종목의 자리수 */
+  decimals?: number;
 }
 
 export interface SymbolAnalysis {

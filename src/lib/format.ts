@@ -1,5 +1,9 @@
-export function fmtPrice(value: number): string {
+export function fmtPrice(value: number, decimals?: number): string {
   if (!Number.isFinite(value)) return '-';
+  if (decimals != null && Number.isFinite(decimals)) {
+    const d = Math.max(0, Math.min(8, Math.round(decimals)));
+    return value.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+  }
   const abs = Math.abs(value);
   if (abs >= 10000) return value.toLocaleString('ko-KR', { maximumFractionDigits: 0 });
   if (abs >= 100) return value.toLocaleString('ko-KR', { maximumFractionDigits: 2 });

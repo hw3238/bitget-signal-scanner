@@ -139,6 +139,57 @@ const run = async () => {
     check('라이브 더보기 버튼', !!scan.more, scan.more || '');
   }
 
+  // FX·금 탭 + 벤티지 호가 보정 반영 확인
+  if (scan.cards) {
+    await page.locator('.segmented[aria-label="자산 구분"] button', { hasText: 'FX·금' }).click();
+    await page.waitForTimeout(900);
+    const fx = await page.evaluate(() => {
+      const cards = [...document.querySelectorAll('.signal-card:not(.skeleton)')];
+      return {
+        bar: !!document.querySelector('.fx-offset-bar'),
+        chips: [...document.querySelectorAll('.fx-chip')].map((c) =>
+          c.querySelector('.fx-chip-label')?.textContent?.replace('★', '').trim(),
+        ),
+        cards: cards.length,
+        syms: cards.slice(0, 4).map((c) => c.querySelector('.sym')?.textContent),
+        badges: [...new Set(cards.map((c) => c.querySelector('.asset')?.textContent))],
+      };
+    });
+    check('라이브 FX·금 탭', fx.bar && fx.chips.length > 10, `칩 ${fx.chips.length}종목 · ${fx.chips.slice(0, 3).join(',')}`);
+    check(
+      '라이브 호가 보정 상단 고정(금·유로·비트)',
+      fx.chips[0] === 'XAUUSD+' && fx.chips[1] === 'EURUSD+' && /BTC/.test(fx.chips[2] || ''),
+      fx.chips.slice(0, 4).join(' / '),
+    );
+    check('라이브 FX 카드/배지', fx.cards > 0 && fx.badges.every((b) => b === 'FX·금'), `${fx.cards}장 ${fx.syms.join(',')}`);
+
+    // 오프셋 입력이 카드 가격에 반영되는지 (금 카드가 있으면 금, 없으면 첫 카드)
+    const target = (fx.syms || []).find((s) => (s || '').startsWith('XAUUSD')) || fx.syms?.[0];
+    if (target) {
+      const before = await page.evaluate((sym) => {
+        const card = [...document.querySelectorAll('.signal-card')].find((c) => c.querySelector('.sym')?.textContent?.trim() === sym);
+        return card?.querySelector('.price')?.textContent || null;
+      }, target);
+      const chip = page.locator('.fx-chip', { hasText: target }).first();
+      await chip.locator('.fx-offset-input').fill('0.5');
+      await page.waitForTimeout(500);
+      const after = await page.evaluate((sym) => {
+        const card = [...document.querySelectorAll('.signal-card')].find((c) => c.querySelector('.sym')?.textContent?.trim() === sym);
+        return {
+          price: card?.querySelector('.price')?.textContent || null,
+          sub: card?.querySelector('.sym-sub')?.textContent?.replace(/\s+/g, ' ').trim(),
+        };
+      }, target);
+      const n = (t) => Number(String(t).replace(/[^0-9.-]/g, ''));
+      check('라이브 호가 보정 반영', Math.abs(n(after.price) - n(before) - 0.5) <= 0.51, `${target} ${before} → ${after.price} · ${after.sub}`);
+      await page.locator('.fx-offset-reset').click();
+      await page.waitForTimeout(300);
+    }
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: 'docs/screens/13-live-fx.png' });
+  }
+
   await browser.close();
   check('콘솔/페이지 에러 0건', errors.length === 0, errors.slice(0, 3).join(' | '));
   const failed = results.filter((r) => !r.pass);
