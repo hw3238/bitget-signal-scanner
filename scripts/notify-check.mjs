@@ -33,19 +33,19 @@ const check = (ok, label, detail = '') => {
  * ------------------------------------------------------------------ */
 
 const signal = (over) => ({
-  id: `${over.symbol ?? 'XAUUSDT'}-1H-x-1`,
-  symbol: 'XAUUSDT',
-  base: 'XAUUSD+',
-  asset: 'fx',
+  id: `${over.symbol ?? 'BTCUSDT'}-1H-x-1`,
+  symbol: 'BTCUSDT',
+  base: 'BTC',
+  asset: 'crypto',
   tf: '1H',
   side: 'long',
   state: 'open',
   detectedAt: 1000,
-  entry: 4132.5,
-  stop: 4118,
-  target: 4158,
+  entry: 68000,
+  stop: 66500,
+  target: 71000,
   winRate: 62.4,
-  decimals: 2,
+  decimals: 1,
   ...over,
 });
 
@@ -63,61 +63,66 @@ async function logicChecks() {
 
   // 중복 방지 키
   check(
-    n.signalKey(signal({})) === 'XAUUSDT|1H|long|1000',
+    n.signalKey(signal({})) === 'BTCUSDT|1H|long|1000',
     '중복 판정 키 = symbol|tf|side|detectedAt',
     n.signalKey(signal({})),
   );
 
-  // 대상 필터
-  const gold = signal({});
-  const euro = signal({ symbol: 'EURUSDUSDT', base: 'EURUSD+', detectedAt: 1001 });
-  const btc = signal({ symbol: 'BTCUSDT', base: 'BTC', asset: 'crypto', detectedAt: 1002 });
-  const tsla = signal({ symbol: 'TSLAUSDT', base: 'TSLA', asset: 'stock', detectedAt: 1003 });
+  // 대상 필터 — 코인 중심 3택
+  const btc = signal({});
+  const eth = signal({ symbol: 'ETHUSDT', base: 'ETH', detectedAt: 1001 });
+  const sol = signal({ symbol: 'SOLUSDT', base: 'SOL', detectedAt: 1002 });
+  const xrp = signal({ symbol: 'XRPUSDT', base: 'XRP', detectedAt: 1003 });
+  const pepe = signal({ symbol: 'PEPEUSDT', base: 'PEPE', detectedAt: 1004 });
+  const tsla = signal({ symbol: 'TSLAUSDT', base: 'TSLA', asset: 'stock', detectedAt: 1005 });
+  const gold = signal({ symbol: 'XAUUSDT', base: 'XAU', asset: 'fx', detectedAt: 1006 });
   check(
-    [gold, euro, btc].every((s) => n.matchesNotifyTarget(s, 'priority')) &&
-      !n.matchesNotifyTarget(tsla, 'priority'),
-    '주력 3종목 = 금·유로·비트만',
+    [btc, eth, sol].every((s) => n.matchesNotifyTarget(s, 'top3')) &&
+      ![xrp, tsla, gold].some((s) => n.matchesNotifyTarget(s, 'top3')),
+    '비트·이더·솔 대상 = 세 종목만',
   );
   check(
-    n.matchesNotifyTarget(gold, 'fx') && n.matchesNotifyTarget(euro, 'fx') && !n.matchesNotifyTarget(btc, 'fx'),
-    'FX·금 전체 = FX·금 시그널만',
+    [btc, eth, sol, xrp].every((s) => n.matchesNotifyTarget(s, 'majors')) &&
+      ![pepe, tsla, gold].some((s) => n.matchesNotifyTarget(s, 'majors')),
+    '주요 코인 대상 = 주요 코인만',
   );
   check(
-    [gold, euro, btc, tsla].every((s) => n.matchesNotifyTarget(s, 'all')),
-    '전체 종목 = 코인·주식·FX 전부',
+    [btc, eth, sol, xrp, pepe, tsla].every((s) => n.matchesNotifyTarget(s, 'all')) &&
+      !n.matchesNotifyTarget(gold, 'all'),
+    '전체 종목 = 코인·주식선물 전부(FX 제외)',
   );
   check(
     !n.matchesNotifyTarget(signal({ state: 'win' }), 'all'),
-    '이미 목표/무효가 된 시그널은 알림 제외',
+    '이미 목표/손절이 끝난 시그널은 알림 제외',
   );
 
   // 첫 스캔 기준선 → 60초 갱신 시나리오
-  const scan1 = [gold, btc];
+  const scan1 = [btc, eth];
   const seen = new Set(scan1.map(n.signalKey));
   check(n.pickNewSignals(scan1, seen, 'all').length === 0, '첫 스캔 시그널은 알림 없이 기록');
   check(n.pickNewSignals([...scan1], seen, 'all').length === 0, '같은 시그널이 갱신돼도 다시 울리지 않음');
 
-  const scan2 = [gold, btc, signal({ symbol: 'EURUSDUSDT', base: 'EURUSD+', detectedAt: 2000 })];
-  const fresh = n.pickNewSignals(scan2, seen, 'priority');
-  check(fresh.length === 1 && fresh[0].symbol === 'EURUSDUSDT', '새로 감지된 시그널만 1건 알림', `${fresh.length}건`);
+  const scan2 = [btc, eth, signal({ symbol: 'SOLUSDT', base: 'SOL', detectedAt: 2000 })];
+  const fresh = n.pickNewSignals(scan2, seen, 'top3');
+  check(fresh.length === 1 && fresh[0].symbol === 'SOLUSDT', '새로 감지된 시그널만 1건 알림', `${fresh.length}건`);
   check(
-    n.pickNewSignals([signal({ detectedAt: 3000 }), signal({ detectedAt: 3000 })], new Set(), 'priority')
+    n.pickNewSignals([signal({ detectedAt: 3000 }), signal({ detectedAt: 3000 })], new Set(), 'top3')
       .length === 1,
     '한 갱신에 같은 시그널이 두 번 들어와도 1건',
   );
   check(
-    n.pickNewSignals([signal({ detectedAt: 5000 }), signal({ detectedAt: 4000 })], new Set(), 'priority')[0]
+    n.pickNewSignals([signal({ detectedAt: 5000 }), signal({ detectedAt: 4000 })], new Set(), 'top3')[0]
       .detectedAt === 4000,
     '알림은 감지가 오래된 순으로',
   );
 
   // 문구
-  const msg = n.buildSignalMessage(signal({}), { lot: 0.1 });
-  check(msg.title === 'XAUUSD+ 1시간 롱 시그널', '알림 제목', msg.title);
-  check(msg.body.includes('0.10 Lot') && msg.body.includes('62%'), '알림 본문(랏·승률)', msg.body);
-  const test = n.buildTestMessage(0.1, signal({}));
+  const msg = n.buildSignalMessage(signal({}));
+  check(msg.title === 'BTC 1시간 롱 시그널', '알림 제목', msg.title);
+  check(msg.body.includes('진입가') && msg.body.includes('손절가') && msg.body.includes('62%'), '알림 본문(한글 라벨·승률)', msg.body);
+  const test = n.buildTestMessage(signal({}));
   check(test.title.startsWith('[테스트] ') && test.title.endsWith('감지'), '테스트 알림 문구', test.title);
-  check(n.buildTestMessage(0.1, null).body.includes('0.10 Lot'), '테스트 알림(신호 없을 때) 안내 문구');
+  check(n.buildTestMessage(null).title === '[테스트] COTA 시그널 알림 감지', '테스트 알림(신호 없을 때) 안내 문구');
 
   // ntfy
   check(n.ntfyEndpoint('bgss-hw3238-9f4k2m') === 'https://ntfy.sh/bgss-hw3238-9f4k2m', 'ntfy 토픽 → 게시 URL');
@@ -174,6 +179,11 @@ async function browserChecks() {
     // (헤드리스 Chromium 은 알림 권한을 항상 denied 로 두므로, 앱이 부르는 Notification API
     //  계약(permission / requestPermission / 생성자)을 granted 로 대신해 호출 여부를 검증한다.)
     await context.addInitScript(() => {
+      // 첫 실행 온보딩을 건너뛰도록 프로필을 미리 저장한다.
+      localStorage.setItem(
+        'cota.profile.v1',
+        JSON.stringify({ seed: 1000, style: 'conservative', updatedAt: Date.now() }),
+      );
       window.__notified = [];
       class FakeNotification {
         constructor(title, options = {}) {
@@ -258,7 +268,7 @@ async function browserChecks() {
     check(ui.heading === '🔔 핸드폰 알림', '설정 탭에 🔔 핸드폰 알림 섹션', ui.heading);
     check(ui.switchOn === true, '시그널 알림 기본 ON');
     check(ui.targets.length === 3, '알림 대상 3개 선택지', ui.targets.join(' / '));
-    check(ui.targetOn === '주력 3종목', '알림 대상 기본값 = 주력 3종목', ui.targetOn);
+    check(ui.targetOn === '주요 코인', '알림 대상 기본값 = 주요 코인', ui.targetOn);
     check(ui.ntfy === 'bgss-hw3238-9f4k2m', 'ntfy 전용 토픽 기본값', ui.ntfy);
     check(!!ui.testBtn, '알림 테스트 버튼', ui.testBtn);
 
@@ -293,8 +303,10 @@ async function browserChecks() {
       ntfyCalls[0]?.url,
     );
     check(
-      (ntfyCalls[0]?.url ?? '').includes('title=') && (ntfyCalls[0]?.body ?? '').includes('Lot'),
-      'ntfy 본문·제목 전달',
+      (ntfyCalls[0]?.url ?? '').includes('title=') &&
+        decodeURIComponent(ntfyCalls[0]?.url ?? '').includes('[COTA]') &&
+        (ntfyCalls[0]?.body ?? '').includes('진입가'),
+      'ntfy 본문·제목 전달(COTA 브랜드)',
       ntfyCalls[0]?.body,
     );
     check((afterTest.note ?? '').includes('ntfy'), '테스트 결과 안내 문구', afterTest.note);

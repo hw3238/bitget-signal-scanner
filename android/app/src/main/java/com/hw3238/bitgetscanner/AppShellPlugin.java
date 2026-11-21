@@ -58,7 +58,7 @@ public class AppShellPlugin extends Plugin {
 
     private static final String CHANNEL_ID = "bitget_signals";
     private static final String CHANNEL_NAME = "시그널 알림";
-    private static final String CHANNEL_DESC = "비트겟 CRT 스캐너의 새 시그널 알림";
+    private static final String CHANNEL_DESC = "COTA의 새 시그널 알림";
 
     /** 알림 채널 생성 — Android 8+ 는 채널 중요도가 소리·진동·헤드업을 결정한다. */
     private void ensureChannel() {
@@ -79,7 +79,7 @@ public class AppShellPlugin extends Plugin {
         channel.enableVibration(true);
         channel.setVibrationPattern(new long[] { 0, 260, 160, 260 });
         channel.enableLights(true);
-        channel.setLightColor(Color.parseColor("#00F5A0"));
+        channel.setLightColor(Color.parseColor("#3182F6"));
         channel.setShowBadge(true);
         AudioAttributes audio = new AudioAttributes.Builder()
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -131,7 +131,7 @@ public class AppShellPlugin extends Plugin {
 
     @PluginMethod
     public void notifySignal(PluginCall call) {
-        String title = call.getString("title", "비트겟 CRT 시그널");
+        String title = call.getString("title", "COTA 시그널");
         String body = call.getString("body", "");
         Integer idValue = call.getInt("id");
         int id = idValue != null ? idValue : (int) (System.currentTimeMillis() % 100000) + 1;
@@ -160,7 +160,7 @@ public class AppShellPlugin extends Plugin {
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_signal)
-            .setColor(Color.parseColor("#00F5A0"))
+            .setColor(Color.parseColor("#3182F6"))
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
@@ -302,7 +302,7 @@ public class AppShellPlugin extends Plugin {
             values.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
             values.put(
                 MediaStore.Images.Media.RELATIVE_PATH,
-                Environment.DIRECTORY_PICTURES + "/CRT-Scanner"
+                Environment.DIRECTORY_PICTURES + "/COTA"
             );
             values.put(MediaStore.Images.Media.IS_PENDING, 1);
             ContentResolver resolver = getContext().getContentResolver();
@@ -324,7 +324,7 @@ public class AppShellPlugin extends Plugin {
 
         File dir = new File(
             getContext().getExternalFilesDir(Environment.DIRECTORY_PICTURES),
-            "CRT-Scanner"
+            "COTA"
         );
         if (!dir.exists() && !dir.mkdirs()) {
             throw new Exception("저장 폴더를 만들 수 없습니다");

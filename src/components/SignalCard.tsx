@@ -1,58 +1,60 @@
 import type { Signal } from '../engine/types';
 import { assetClass, assetLabel, symbolLogo } from '../lib/asset';
-import { fmtPct, fmtPrice, fmtTime, tfLabel } from '../lib/format';
-import { fmtOffset } from '../lib/offset';
-import { fmtLot, fmtPips, fmtUsd, lotCalc, lotSpec } from '../utils/lot';
+import { fmtPct, fmtPrice, fmtRR, fmtTime, sideFullLabel, stateLabel, tfLabel } from '../lib/format';
+import {
+  STYLE_META,
+  fmtSeed,
+  fmtUsdAmount,
+  recommendLeverage,
+  seedPnl,
+  type Profile,
+} from '../lib/profile';
 import { MiniCandles } from './MiniCandles';
-import { BoltIcon, StarIcon } from './Icons';
+import { StarIcon } from './Icons';
 
 interface Props {
   signal: Signal;
+  /** 수동 고정 배율 */
   leverage: number;
-  /** FX 탭: 배수(x) 대신 이 랏(Lot) 기준 달러 손익으로 표시한다. */
-  lot?: number;
+  /** 'auto' 면 시그널마다 COTA 추천 배율을 쓴다 */
+  leverageMode?: 'auto' | 'manual';
+  profile?: Profile | null;
   onOpen: (signal: Signal) => void;
   isFavorite: boolean;
   onToggleFavorite: (signal: Signal) => void;
   /** 현재 스캔 결과에 없는 즐겨찾기(저장된 스냅샷) */
   stale?: boolean;
-  /** 벤티지 호가 보정 오프셋 — 현재가·진입·목표·EQ·무효에 더해 표시한다 */
-  offset?: number;
 }
 
 export function SignalCard({
   signal,
   leverage,
-  lot,
+  leverageMode = 'manual',
+  profile = null,
   onOpen,
   isFavorite,
   onToggleFavorite,
   stale = false,
-  offset = 0,
 }: Props) {
-  const price = signal.price + offset;
-  const entry = signal.entry + offset;
-  const target = signal.target + offset;
-  const stop = signal.stop + offset;
-  const eq = signal.eq + offset;
-  const changePct = ((price - entry) / (entry || 1)) * 100 * (signal.side === 'long' ? 1 : -1);
-  const roi = changePct * leverage;
-  // FX 카드: 랏(Lot) × 표준 계약 크기로 달러 손익을 계산한다.
-  const lc =
-    lot != null
-      ? lotCalc(lotSpec(signal.base), lot, { entry, price, target, stop, eq, side: signal.side })
-      : null;
+  const { entry, target, stop, eq, price } = signal;
+  const dir = signal.side === 'long' ? 1 : -1;
+  const changePct = ((price - entry) / (entry || 1)) * 100 * dir;
+  const auto = leverageMode === 'auto' && !!profile;
+  const rec = profile ? recommendLeverage(signal, profile.style) : null;
+  const lev = auto && rec ? rec.leverage : leverage;
+  const roi = changePct * lev;
+  const pnl = auto && profile ? seedPnl(signal, lev, profile.seed) : null;
+  /** 목표가·손절가까지 남은 변동률(현재가 기준, 방향 반영) */
+  const toTargetPct = ((target - price) / (price || 1)) * 100 * dir;
+  const toStopPct = ((stop - price) / (price || 1)) * 100 * dir;
   const sideClass = signal.side === 'long' ? 'long' : 'short';
   const stateClass = signal.state === 'open' ? 'open' : signal.state === 'win' ? 'win' : 'loss';
-  const stateLabel = signal.state === 'open' ? '진행중' : signal.state === 'win' ? '적중' : '무효';
   const progress = Math.max(0, Math.min(1, signal.progress));
   const dec = signal.decimals;
 
   return (
     <article
-      className={`signal-card ${sideClass} ${stateClass}${isFavorite ? ' fav' : ''}${stale ? ' stale' : ''}${
-        signal.asset === 'fx' ? ' fx' : ''
-      }${offset ? ' offset' : ''}`}
+      className={`signal-card ${sideClass} ${stateClass}${isFavorite ? ' fav' : ''}${stale ? ' stale' : ''}`}
       onClick={() => onOpen(signal)}
       role="button"
       tabIndex={0}
@@ -69,13 +71,13 @@ export function SignalCard({
             <span className={`asset ${assetClass(signal.asset)}`}>{assetLabel(signal.asset)}</span>
           </div>
           <div className="sym-sub">
-            {signal.symbol} · <BoltIcon size={11} /> {signal.strategyShort}
-            {offset ? ` · 벤티지 ${fmtOffset(offset, Math.max(2, dec ?? 2))}` : ''}
+            {signal.symbol} · {signal.strategyShort}
           </div>
         </div>
         <div className="badge-col">
-          <span className={`badge ${sideClass}`}>{signal.side === 'long' ? '▲ 롱' : '▼ 숏'}</span>
-          <span className={`badge state ${stateClass}`}>{stateLabel}</span>
+          <span className={`badge ${sideClass}`}>{sideFullLabel(signal.side)}</span>
+          <span className={`badge state ${stateClass}`}>{stateLabel(signal.state)}</span>
+          {auto && <span className="badge rec">COTA 추천 {lev}x</span>}
         </div>
         <button
           type="button"
@@ -85,7 +87,6 @@ export function SignalCard({
           title={isFavorite ? '즐겨찾기 해제' : '즐겨찾기에 추가'}
           onClick={(e) => {
             e.stopPropagation();
-            // 즐겨찾기에는 보정 전 원본 시그널을 저장해 오프셋이 두 번 더해지지 않게 한다.
             onToggleFavorite(signal);
           }}
           onKeyDown={(e) => {
@@ -97,29 +98,55 @@ export function SignalCard({
       </header>
 
       <div className="price-row">
-        <div className="price">{fmtPrice(price, dec)}</div>
-        {lc ? (
-          <div className="roi lot">
-            <span className="roi-cap">{fmtLot(lc.lot)} Lot 수익</span>
-            <span className={`roi-value ${lc.pnl >= 0 ? 'up' : 'down'}`}>{fmtUsd(lc.pnl)}</span>
-          </div>
-        ) : (
-          <div className="roi">
-            <span className="roi-cap">레버리지 {leverage}x 수익률</span>
-            <span className={`roi-value ${roi >= 0 ? 'up' : 'down'}`}>{fmtPct(roi)}</span>
-          </div>
-        )}
+        <div className="price-block">
+          <span className="price-cap">현재가</span>
+          <div className="price">{fmtPrice(price, dec)}</div>
+          <span className={`price-change ${changePct >= 0 ? 'up' : 'down'}`}>
+            진입가 대비 {fmtPct(changePct, 2)}
+          </span>
+        </div>
+        <div className="roi">
+          <span className="roi-cap">
+            {auto ? `COTA 추천 ${lev}x · 예상 수익` : `레버리지 ${lev}x 수익률`}
+          </span>
+          <span className={`roi-value ${roi >= 0 ? 'up' : 'down'}`}>{fmtPct(roi)}</span>
+          <span className="roi-sub">
+            {pnl ? `목표 ${fmtUsdAmount(pnl.profitUsd)}` : `현재 손익 ${fmtPct(changePct, 2)}`}
+          </span>
+        </div>
       </div>
+
+      {auto && pnl && profile && (
+        <div className="seed-strip">
+          <span className="seed-cap">
+            내 시드 <b>${fmtSeed(profile.seed)}</b> · {STYLE_META[profile.style].emoji}{' '}
+            {STYLE_META[profile.style].label}
+          </span>
+          <div className="seed-cells">
+            <div className="seed-cell">
+              <span>예상 수익</span>
+              <b className="up">{fmtUsdAmount(pnl.profitUsd)}</b>
+              <i className="up">{fmtPct(pnl.profitPct)}</i>
+            </div>
+            <div className="seed-cell">
+              <span>손절 시</span>
+              <b className="down">{fmtUsdAmount(pnl.lossUsd)}</b>
+              <i className="down">{fmtPct(pnl.lossPct)}</i>
+            </div>
+          </div>
+          <span className="seed-note">시드 전액을 한 포지션에 넣는 기준</span>
+        </div>
+      )}
 
       <div className="rr-row">
         <span className="rr-pill">
-          손익비 <b>{signal.rr.toFixed(2)}R</b>
+          손익비 <b>{fmtRR(signal.rr, 1)}</b>
         </span>
         <span className="rr-pill muted">
-          잔여 <b>{signal.state === 'open' ? signal.remainingRR.toFixed(2) : '0.00'}R</b>
+          잔여 <b>{signal.state === 'open' ? signal.remainingRR.toFixed(1) : '0.0'}R</b>
         </span>
         <span className="rr-pill muted">
-          승률 <b>{signal.winRate.toFixed(0)}%</b>
+          최근 승률 <b>{signal.winRate.toFixed(0)}%</b>
         </span>
         <span className="rr-pill muted">
           {signal.barsSince === 0 ? '방금 감지' : `${signal.barsSince}봉 전`}
@@ -132,37 +159,26 @@ export function SignalCard({
 
       <div className="levels">
         <div className="lvl">
-          <span className="lvl-label">목표</span>
+          <span className="lvl-label">목표가</span>
           <span className="lvl-value target">{fmtPrice(target, dec)}</span>
-          {lc && <span className="lvl-usd target">{fmtUsd(lc.targetUsd)}</span>}
+          <span className="lvl-usd up">{fmtPct(toTargetPct, 2)}</span>
         </div>
         <div className="lvl">
-          <span className="lvl-label">진입</span>
+          <span className="lvl-label">진입가</span>
           <span className="lvl-value entry">{fmtPrice(entry, dec)}</span>
-          {lc && <span className="lvl-usd muted">기준가</span>}
+          <span className="lvl-usd muted">기준가</span>
         </div>
         <div className="lvl">
-          <span className="lvl-label">EQ</span>
+          <span className="lvl-label">본전 (EQ)</span>
           <span className="lvl-value eq">{fmtPrice(eq, dec)}</span>
-          {lc && <span className="lvl-usd eq">{fmtUsd(lc.eqUsd)}</span>}
+          <span className="lvl-usd muted">절반 익절</span>
         </div>
         <div className="lvl">
-          <span className="lvl-label">무효</span>
+          <span className="lvl-label">손절가</span>
           <span className="lvl-value stop">{fmtPrice(stop, dec)}</span>
-          {lc && <span className="lvl-usd stop">{fmtUsd(lc.stopUsd)}</span>}
+          <span className="lvl-usd down">{fmtPct(toStopPct, 2)}</span>
         </div>
       </div>
-
-      {lc && (
-        <div className="lot-strip">
-          <b>{fmtLot(lc.lot)} Lot</b>
-          <span>1{lc.spec.pipUnit} ${lc.pipUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-          <span>
-            목표 {fmtPips(lc.targetPips)} {lc.spec.pipUnit} · 손절 {fmtPips(lc.stopPips)} {lc.spec.pipUnit}
-          </span>
-          <span className="lot-spec">{lc.spec.label}</span>
-        </div>
-      )}
 
       <div className="progress-row">
         <div className="progress-track">

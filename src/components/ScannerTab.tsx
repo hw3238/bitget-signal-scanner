@@ -3,8 +3,8 @@ import type { Signal } from '../engine/types';
 import type { ScanState } from '../hooks/useScanner';
 import { favoriteKey, type FavoriteEntry } from '../lib/favorites';
 import { fmtPct, tfLabel } from '../lib/format';
-import { offsetFor } from '../lib/offset';
 import type { Settings } from '../lib/storage';
+import { recommendLeverage, type Profile } from '../lib/profile';
 import { SignalCard } from './SignalCard';
 import { CloseIcon, RefreshIcon, SearchIcon, StarIcon } from './Icons';
 
@@ -17,13 +17,17 @@ interface Props {
   onSettings: (patch: Partial<Settings>) => void;
   onOpen: (s: Signal) => void;
   onRescan: () => void;
+  /** 시드·매매 성향 — COTA 추천 레버리지 계산에 쓴다 */
+  profile: Profile | null;
 }
 
-type AssetFilter = 'all' | 'crypto' | 'stock';
+type AssetFilter = 'crypto' | 'stock' | 'all';
 
-/** 주력 종목 원클릭 퀵 필터 (FX·금은 FX 탭에서) */
+/** 주력 종목 원클릭 퀵 필터 */
 const QUICK_FILTERS: { key: string; label: string; query: string; asset: AssetFilter; hint: string }[] = [
   { key: 'btc', label: '₿ 비트', query: 'BTC', asset: 'crypto', hint: 'BTCUSDT · 비트겟' },
+  { key: 'eth', label: 'Ξ 이더', query: 'ETH', asset: 'crypto', hint: 'ETHUSDT · 비트겟' },
+  { key: 'sol', label: '◎ 솔', query: 'SOL', asset: 'crypto', hint: 'SOLUSDT · 비트겟' },
 ];
 
 const PAGE_SIZE = 12;
@@ -45,8 +49,9 @@ export function ScannerTab({
   onSettings,
   onOpen,
   onRescan,
+  profile,
 }: Props) {
-  const [asset, setAsset] = useState<AssetFilter>('all');
+  const [asset, setAsset] = useState<AssetFilter>('crypto');
   const [tf, setTf] = useState<TfFilter>('all');
   const [onlyOpen, setOnlyOpen] = useState(true);
   const [favOnly, setFavOnly] = useState(false);
@@ -60,18 +65,22 @@ export function ScannerTab({
     setVisible(PAGE_SIZE);
   }, [query, asset, tf, onlyOpen, favOnly, settings.minRR]);
 
-  const openSignals = state.signals.filter((s) => s.state === 'open' && s.asset !== 'fx');
-  /** 스캐너 탭은 코인·주식선물 전용 — FX·금·원자재·지수는 FX 탭에서 본다. */
+  /** 코인·주식선물만 — FX는 스캔 대상에서 빠졌다. */
   const baseSignals = useMemo(() => state.signals.filter((s) => s.asset !== 'fx'), [state.signals]);
-  const fxFavorites = useMemo(() => favorites.filter((f) => f.signal.asset !== 'fx'), [favorites]);
+  const openSignals = useMemo(
+    () => baseSignals.filter((s) => s.state === 'open'),
+    [baseSignals],
+  );
+  const scanFavorites = useMemo(() => favorites.filter((f) => f.signal.asset !== 'fx'), [favorites]);
+
   const counts = useMemo(
     () => ({
       long: openSignals.filter((s) => s.side === 'long').length,
       short: openSignals.filter((s) => s.side === 'short').length,
       h1: openSignals.filter((s) => s.tf === '1H').length,
       h4: openSignals.filter((s) => s.tf === '4H').length,
-      stock: openSignals.filter((s) => s.asset === 'stock').length,
       crypto: openSignals.filter((s) => s.asset === 'crypto').length,
+      stock: openSignals.filter((s) => s.asset === 'stock').length,
     }),
     [openSignals],
   );
@@ -84,7 +93,7 @@ export function ScannerTab({
   }, [state.signals]);
 
   const favoriteSignals = useMemo(() => {
-    return fxFavorites
+    return scanFavorites
       .filter((f) => matchesQuery(liveByKey.get(f.key) ?? f.signal, terms))
       .map((f) => ({ entry: f, signal: liveByKey.get(f.key) ?? null }))
       .map(({ entry, signal }) => ({ signal: signal ?? entry.signal, stale: !signal }))
@@ -93,7 +102,7 @@ export function ScannerTab({
         if (rank(a) !== rank(b)) return rank(a) - rank(b);
         return b.signal.detectedAt - a.signal.detectedAt;
       });
-  }, [fxFavorites, liveByKey, terms]);
+  }, [scanFavorites, liveByKey, terms]);
 
   const favoriteLiveCount = favoriteSignals.filter((f) => !f.stale).length;
 
@@ -121,11 +130,16 @@ export function ScannerTab({
   const qualified = state.analyses.filter(
     (a) => a.asset !== 'fx' && a.activeWinRate >= 55 && a.activeRR >= 1.5 && a.activeN >= 2,
   ).length;
+  const marketCount = state.analyses.filter((a) => a.asset !== 'fx').length;
   const scanning = state.status === 'scanning';
   const pct = state.progress.total ? Math.round((state.progress.done / state.progress.total) * 100) : 0;
 
+  const leverageFor = (signal: Signal): number =>
+    settings.leverageMode === 'auto' && profile
+      ? recommendLeverage(signal, profile.style).leverage
+      : settings.leverage;
   const avgRoi = filtered.length
-    ? filtered.reduce((acc, f) => acc + f.signal.changePct * settings.leverage, 0) / filtered.length
+    ? filtered.reduce((acc, f) => acc + f.signal.changePct * leverageFor(f.signal), 0) / filtered.length
     : 0;
 
   return (
@@ -134,11 +148,10 @@ export function ScannerTab({
         <div className="summary-top">
           <div>
             <div className="summary-title">
-              TS 발생 종목 <span className="dot-live" /> <b>{openSignals.length}</b>
+              진행 중 시그널 <span className="dot-live" /> <b>{openSignals.length}</b>
             </div>
             <div className="summary-sub">
-              비트겟 USDT-M 코인·주식선물 · {state.analyses.filter((a) => a.asset !== 'fx').length}개 마켓 ·{' '}
-              {qualified}개 마켓 고승률 전략 채택
+              비트겟 USDT-M 코인 선물 · {marketCount}개 마켓 · {qualified}개 마켓 고승률 전략 채택
             </div>
           </div>
           <button className={`rescan ${scanning ? 'busy' : ''}`} onClick={onRescan} disabled={scanning}>
@@ -166,8 +179,8 @@ export function ScannerTab({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="종목명·심볼·전략 검색 (예: BTC, MSFT, EMA)"
-              aria-label="종목·심볼·전략 검색"
+              placeholder="코인·심볼·전략 검색 (예: BTC, ETH, EMA)"
+              aria-label="코인·심볼·전략 검색"
               enterKeyHint="search"
             />
             {query && (
@@ -189,7 +202,7 @@ export function ScannerTab({
         </div>
 
         <div className="filter-grid">
-          <div className="quick-row" role="group" aria-label="주력 종목 퀵 필터">
+          <div className="quick-row" role="group" aria-label="주력 코인 퀵 필터">
             {QUICK_FILTERS.map((q) => {
               const active = query.trim().toLowerCase() === q.query.toLowerCase();
               return (
@@ -204,8 +217,8 @@ export function ScannerTab({
                       setQuery('');
                       return;
                     }
-                    setAsset(q.asset);
                     setFavOnly(false);
+                    setAsset(q.asset);
                     // 진행중 시그널이 없어도 해당 종목의 최근 셋업을 바로 볼 수 있게 종료 시그널까지 포함한다.
                     setOnlyOpen(false);
                     setQuery(q.query);
@@ -219,9 +232,9 @@ export function ScannerTab({
           <div className="segmented" role="group" aria-label="자산 구분">
             {(
               [
-                ['all', '전체'],
                 ['crypto', '코인'],
                 ['stock', '주식선물'],
+                ['all', '전체'],
               ] as [AssetFilter, string][]
             ).map(([key, label]) => (
               <button key={key} className={asset === key ? 'on' : ''} onClick={() => setAsset(key)}>
@@ -245,12 +258,17 @@ export function ScannerTab({
           <label className="select-pill">
             <span>레버리지</span>
             <select
-              value={settings.leverage}
-              onChange={(e) => onSettings({ leverage: Number(e.target.value) })}
+              value={settings.leverageMode === 'auto' ? 'auto' : String(settings.leverage)}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === 'auto') onSettings({ leverageMode: 'auto' });
+                else onSettings({ leverageMode: 'manual', leverage: Number(v) });
+              }}
             >
+              <option value="auto">COTA 추천</option>
               {[5, 10, 20, 50].map((l) => (
                 <option key={l} value={l}>
-                  {l}x
+                  {l}x 고정
                 </option>
               ))}
             </select>
@@ -276,7 +294,7 @@ export function ScannerTab({
           >
             <StarIcon size={14} filled={favOnly} />
             즐겨찾기
-            <b>{fxFavorites.length}</b>
+            <b>{scanFavorites.length}</b>
           </button>
         </div>
 
@@ -297,7 +315,7 @@ export function ScannerTab({
       <div className="list-head">
         {favOnly ? (
           <span>
-            ⭐ 즐겨찾기 <b>{filtered.length}</b>건 · 진행중 {favoriteLiveCount} · 보관{' '}
+            ⭐ 즐겨찾기 <b>{filtered.length}</b>건 · 진행 중 {favoriteLiveCount} · 보관{' '}
             {favoriteSignals.length - favoriteLiveCount}
           </span>
         ) : (
@@ -307,8 +325,12 @@ export function ScannerTab({
         )}
         <span className="muted">
           {favOnly
-            ? '찜한 시그널은 진행중/종료·필터와 무관하게 모두 표시됩니다 (FX·금은 FX 탭)'
-            : `승률 55%·손익비 ${settings.minRR.toFixed(1)}R 이상 전략만 시그널 생성 · FX·금은 FX 탭`}
+            ? '찜한 시그널은 진행중/종료·필터와 무관하게 모두 표시됩니다'
+            : `승률 55%·손익비 ${settings.minRR.toFixed(1)}R 이상 전략만 시그널 생성 · ${
+                settings.leverageMode === 'auto' && profile
+                  ? `COTA 추천 배율(${profile.style === 'aggressive' ? '공격적' : '보수적'})`
+                  : `레버리지 ${settings.leverage}x 고정`
+              } · 코인 ${counts.crypto}건 · 주식선물 ${counts.stock}건`}
         </span>
       </div>
 
@@ -318,11 +340,12 @@ export function ScannerTab({
             key={favoriteKey(signal)}
             signal={signal}
             leverage={settings.leverage}
+            leverageMode={settings.leverageMode}
+            profile={profile}
             onOpen={onOpen}
             isFavorite={isFavorite(signal)}
             onToggleFavorite={onToggleFavorite}
             stale={stale}
-            offset={offsetFor(signal.base, settings.fxOffsets)}
           />
         ))}
 
@@ -386,9 +409,9 @@ export function ScannerTab({
 
         {!scanning && filtered.length === 0 && !query && !favOnly && (
           <div className="empty">
-            <div className="empty-title">조건을 통과한 TS가 없습니다</div>
+            <div className="empty-title">조건을 통과한 시그널이 없습니다</div>
             <p>
-              현재 {state.analyses.filter((a) => a.asset !== 'fx').length}개 마켓을 200봉 기준으로 다시 계산했지만, 고승률 기준(승률 55% ·
+              현재 {marketCount}개 마켓을 200봉 기준으로 다시 계산했지만, 고승률 기준(승률 55% ·
               손익비 {settings.minRR.toFixed(1)}R)을 만족하는 진행중 시그널이 없습니다.
             </p>
             <div className="empty-actions">
@@ -420,9 +443,9 @@ export function ScannerTab({
       </div>
 
       <div className="feed-note">
-        실시간 Bitget 캔들(1H/4H, 200봉) 기반 · 마지막 스캔{' '}
+        실시간 비트겟 캔들(1H/4H, 200봉) 기반 · 마지막 스캔{' '}
         {state.finishedAt ? new Date(state.finishedAt).toLocaleTimeString('ko-KR', { hour12: false }) : '-'} ·
-        자동 갱신 {settings.refreshSec ? `${settings.refreshSec}초` : '꺼짐'} · 즐겨찾기 {favorites.length}개 저장됨
+        자동 갱신 {settings.refreshSec ? `${settings.refreshSec}초` : '꺼짐'} · 즐겨찾기 {scanFavorites.length}개 저장됨
       </div>
     </div>
   );

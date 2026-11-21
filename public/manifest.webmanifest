@@ -1,0 +1,32 @@
+{
+  "name": "COTA · 실시간 트레이딩 시그널",
+  "short_name": "COTA",
+  "description": "비트겟 코인·주식선물·FX 실시간 트레이딩 시그널 스캐너",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#EFF4FB",
+  "theme_color": "#F2F4F6",
+  "icons": [
+    {
+      "src": "./cota-logo-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./cota-logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./cota-logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

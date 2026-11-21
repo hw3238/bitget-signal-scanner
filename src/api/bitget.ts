@@ -1,5 +1,5 @@
 import type { AssetClass, Candle, Contract, TF, Ticker } from '../engine/types';
-import { FX_BASES, isStockSymbol } from '../engine/universe';
+import { isFxSymbol, isStockSymbol } from '../engine/universe';
 
 const BASE = 'https://api.bitget.com';
 const PRODUCT = 'USDT-FUTURES';
@@ -33,10 +33,8 @@ async function getJson<T>(path: string, attempt = 0): Promise<T> {
 }
 
 export function classifyContract(symbol: string, isRwa: boolean): AssetClass {
-  const base = symbol.replace(/USDT$/, '');
-  const norm = base.replace(/STOCK$/, '');
-  // FX·금·원자재·지수는 RWA 여부와 무관하게 FX 카테고리로 모은다.
-  if (FX_BASES.has(base) || FX_BASES.has(norm)) return 'fx';
+  // 금·은·원유·지수·FX 같은 RWA는 코인 스캐너에서 쓰지 않는다(fetchContracts에서 제외).
+  if (isFxSymbol(symbol)) return 'fx';
   if (!isRwa) return 'crypto';
   if (isStockSymbol(symbol)) return 'stock';
   return 'stock';
@@ -48,6 +46,8 @@ export async function fetchContracts(): Promise<Contract[]> {
   );
   return raw
     .filter((c) => c.symbolStatus === 'normal')
+    // FX·금·원자재·지수 계약은 코인 스캐너 대상이 아니므로 목록에서 뺀다.
+    .filter((c) => !isFxSymbol(String(c.symbol)))
     .map((c) => {
       const symbol = String(c.symbol);
       const isRwa = c.isRwa === 'YES';
@@ -91,22 +91,4 @@ export async function fetchCandles(symbol: string, tf: TF): Promise<Candle[]> {
       v: Number(row[5]),
     }))
     .sort((a, b) => a.t - b.t);
-}
-
-export function formatPrice(value: number): string {
-  if (!Number.isFinite(value)) return '-';
-  const abs = Math.abs(value);
-  if (abs >= 10000) return value.toLocaleString('ko-KR', { maximumFractionDigits: 0 });
-  if (abs >= 100) return value.toLocaleString('ko-KR', { maximumFractionDigits: 2 });
-  if (abs >= 1) return value.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
-  if (abs >= 0.01) return value.toLocaleString('ko-KR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-  return value.toPrecision(4);
-}
-
-export function formatVolume(v: number): string {
-  if (!Number.isFinite(v)) return '-';
-  if (v >= 1e9) return `${(v / 1e9).toFixed(2)}B`;
-  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
-  if (v >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
-  return v.toFixed(0);
 }

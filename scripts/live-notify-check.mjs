@@ -27,6 +27,13 @@ const context = await browser.newContext({
   locale: 'ko-KR',
   timezoneId: 'Asia/Seoul',
 });
+// 첫 실행 온보딩을 건너뛰도록 프로필을 미리 저장한다.
+await context.addInitScript(() => {
+  localStorage.setItem(
+    'cota.profile.v1',
+    JSON.stringify({ seed: 1000, style: 'conservative', updatedAt: Date.now() }),
+  );
+});
 const page = await context.newPage();
 const errors = [];
 page.on('console', (m) => {
@@ -74,13 +81,13 @@ const info = await page.evaluate(() => {
 check(info.heading === '🔔 핸드폰 알림', '설정 탭 🔔 핸드폰 알림 섹션', info.heading);
 check(info.switchOn === true, '알림 토글 기본 ON');
 check(
-  info.targets?.length === 3 && info.target === '주력 3종목',
-  '알림 대상 3개 · 기본 주력 3종목',
+  info.targets?.length === 3 && info.target === '주요 코인',
+  '알림 대상 3개 · 기본 주요 코인',
   info.targets?.join(' / '),
 );
 check(info.ntfy === 'bgss-hw3238-9f4k2m', 'ntfy 기본 전용 토픽', info.ntfy);
-check(info.version === '앱 v1.1.0', '앱 버전 표기', info.version);
-check((info.update ?? '').includes('최신 버전입니다 (v1.1.0)'), '업데이트 확인 = 최신 v1.1.0', info.update);
+check(/앱 v1\.2\.0/.test(info.version || ''), '앱 버전 표기', info.version);
+check((info.update ?? '').includes('최신 버전입니다 (v1.2.0)'), '업데이트 확인 = 최신 v1.2.0', info.update);
 
 await page.evaluate(() => {
   const panel = document.querySelector('#settings-notify');

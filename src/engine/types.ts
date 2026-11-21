@@ -81,7 +81,7 @@ export interface StrategyMeta {
 export const STRATEGIES: StrategyMeta[] = [
   {
     id: 'crt-fvg-cisd',
-    name: 'CRT + FVG + CISD',
+    name: 'CRT 레인지 스윕 + FVG + CISD',
     short: 'CRT·FVG·CISD',
     desc: '레인지 스윕 후 FVG·구조전환(CISD)이 겹치는 되돌림 구간을 잡는다.',
     star: 5,
@@ -89,7 +89,7 @@ export const STRATEGIES: StrategyMeta[] = [
   },
   {
     id: 'sweep-ob',
-    name: 'Liquidity Sweep + Order Block',
+    name: '유동성 스윕 + 오더블록 리테스트',
     short: '스윕·OB',
     desc: '유동성 스윕 뒤 오더블록(마지막 역방향 캔들) 리테스트 진입.',
     star: 5,
@@ -97,7 +97,7 @@ export const STRATEGIES: StrategyMeta[] = [
   },
   {
     id: 'ema-pullback-rsi',
-    name: 'EMA 20/50 Pullback + RSI Divergence',
+    name: 'EMA 20/50 눌림 + RSI 다이버전스',
     short: 'EMA 눌림·RSI',
     desc: '추세 방향 EMA20 눌림 + RSI 다이버전스에서 추세 지속 진입.',
     star: 4,
@@ -105,7 +105,7 @@ export const STRATEGIES: StrategyMeta[] = [
   },
   {
     id: 'bb-squeeze-break',
-    name: 'Bollinger Squeeze + Volume Breakout',
+    name: '볼린저 스퀴즈 + 거래량 돌파',
     short: 'BB 스퀴즈',
     desc: '볼린저 밴드 폭 수축 후 거래량 동반 이탈 돌파.',
     star: 3,
@@ -113,7 +113,7 @@ export const STRATEGIES: StrategyMeta[] = [
   },
   {
     id: 'eq-engulfing',
-    name: 'EQ Mean Reversion + Engulfing',
+    name: 'EQ 평균회귀 + 장악형 캔들',
     short: 'EQ·장악형',
     desc: '스윙 구간 EQ(0.5) 지지/저항에서 장악형 캔들 반전 진입.',
     star: 2,
@@ -121,7 +121,7 @@ export const STRATEGIES: StrategyMeta[] = [
   },
   {
     id: 'supertrend-donchian',
-    name: 'SuperTrend / Donchian Momentum',
+    name: 'SuperTrend · 돈치안 모멘텀',
     short: 'ST·돈치안',
     desc: 'SuperTrend 방향 전환 또는 돈치안 20 돌파 모멘텀 추종.',
     star: 4,

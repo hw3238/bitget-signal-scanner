@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { ScanState } from '../hooks/useScanner';
 import { STRATEGIES, STRATEGY_BY_ID } from '../engine/types';
 import type { SwapLogEntry } from '../lib/storage';
-import { fmtAgo, fmtDateTime, fmtPct, tfLabel } from '../lib/format';
+import { fmtAgo, fmtDateTime, fmtPct, fmtRR, tfLabel } from '../lib/format';
 import { RefreshIcon } from './Icons';
 
 interface Props {
@@ -103,10 +103,10 @@ export function EngineTab({ state, swapLog, leverage, onRescan, onClearLog }: Pr
               </div>
               <div>
                 <span>손익비</span>
-                <b>{leader.adoptedRR ? `${leader.adoptedRR.toFixed(2)}R` : '-'}</b>
+                <b>{leader.adoptedRR ? fmtRR(leader.adoptedRR, 2) : '-'}</b>
               </div>
               <div>
-                <span>기대 {leverage}x /건</span>
+                <span>기대 수익 ({leverage}배)</span>
                 <b className={leader.expectancyRoi >= 0 ? 'up' : 'down'}>
                   {leader.adoptedN ? fmtPct(leader.expectancyRoi) : '-'}
                 </b>
@@ -147,10 +147,10 @@ export function EngineTab({ state, swapLog, leverage, onRescan, onClearLog }: Pr
                   </span>
                   <span>
                     <i>손익비</i>
-                    <b>{r.adoptedRR ? `${r.adoptedRR.toFixed(2)}R` : '-'}</b>
+                    <b>{r.adoptedRR ? fmtRR(r.adoptedRR, 2) : '-'}</b>
                   </span>
                   <span>
-                    <i>기대 {leverage}x</i>
+                    <i>기대 수익 {leverage}배</i>
                     <b className={r.expectancyRoi >= 0 ? 'up' : 'down'}>
                       {r.adoptedN ? fmtPct(r.expectancyRoi) : '-'}
                     </b>
@@ -165,8 +165,8 @@ export function EngineTab({ state, swapLog, leverage, onRescan, onClearLog }: Pr
           ))}
         </ul>
         <p className="table-note">
-          채택 승률·표본은 이 전략이 실제로 선택된 마켓들의 최근 60봉 성과 합계입니다. 기대 {leverage}x는 1건당
-          무효가까지 거리 대비 R배수를 레버리지로 환산한 값이고, 전체 승률은 스캔한 모든 마켓(채택 여부 무관)의
+          채택 승률·표본은 이 전략이 실제로 선택된 마켓들의 최근 60봉 성과 합계입니다. 기대 수익 {leverage}배는 1건당
+          손절가까지 거리 대비 R배수를 레버리지로 환산한 값이고, 전체 승률은 스캔한 모든 마켓(채택 여부 무관)의
           기록입니다.
         </p>
       </section>

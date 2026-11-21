@@ -1,259 +1,146 @@
-/** 라이브 GitHub Pages 배포본 검증 — 새 빌드(⭐ 즐겨찾기·검색·더보기) 반영 확인 */
+/**
+ * 라이브 Pages 검증 — COTA (v1.2.0)
+ *   - 배포본이 새 번들·COTA 브랜드·5탭 코인 스캐너를 실제로 내려주는지
+ *   - 첫 실행 온보딩(프로필 없음) → 저장 → 메인 진입
+ *   - 카드 한글 라벨·천단위 콤마·COTA 추천 배지·시드 예상 손익
+ *   - 공유 카드 모달 · 즐겨찾기 · 콘솔/페이지 에러 0건
+ *
+ * 실행: node scripts/live-check.mjs
+ */
 import { chromium } from 'playwright';
 
 const URL = 'https://hw3238.github.io/bitget-signal-scanner/';
+const OUT = 'docs/screens';
 
-const results = [];
-const check = (name, pass, detail = '') => {
-  results.push({ name, pass: !!pass, detail });
-  console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
+let failures = 0;
+const check = (ok, label, detail = '') => {
+  if (!ok) failures += 1;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? ` — ${detail}` : ''}`);
 };
 
-const staleFavorite = () => {
-  const now = Date.now();
-  const candles = Array.from({ length: 24 }, (_, i) => {
-    const b = 100 + i;
-    return { t: now - (24 - i) * 3600000, o: b, h: b + 2, l: b - 2, c: b + 1, v: 50 + i };
-  });
-  const signal = {
-    id: 'LIVE-1H-crt-fvg-cisd-9',
-    symbol: 'LIVETESTUSDT',
-    base: 'LIVETEST',
-    asset: 'crypto',
-    tf: '1H',
-    side: 'long',
-    strategyId: 'crt-fvg-cisd',
-    strategyName: 'CRT + FVG + CISD',
-    strategyShort: 'CRT·FVG·CISD',
-    star: 5,
-    entry: 100,
-    stop: 96,
-    target: 108,
-    eq: 104,
-    rr: 2,
-    remainingRR: 1,
-    currentR: 0.5,
-    price: 103,
-    changePct: 3,
-    progress: 0.4,
-    state: 'open',
-    detectedAt: now - 5 * 3600000,
-    barsSince: 5,
-    winRate: 60,
-    strategyRR: 1.9,
-    leverage: 10,
-    levRoi: 30,
-    candles,
-    detectedIdx: 18,
-    tags: ['라이브 검증'],
-    fundingRate: 0,
-    quoteVolume: 1000000,
-  };
-  localStorage.setItem(
-    'bgss.favorites.v1',
-    JSON.stringify([{ key: `${signal.symbol}|${signal.tf}|${signal.side}|${signal.detectedAt}`, addedAt: now, signal }]),
-  );
-};
-
-const run = async () => {
-  const browser = await chromium.launch({ args: ['--no-sandbox'] });
-  const ctx = await browser.newContext({
-    viewport: { width: 390, height: 844 },
-    deviceScaleFactor: 2,
-    isMobile: true,
-    hasTouch: true,
-    locale: 'ko-KR',
-    timezoneId: 'Asia/Seoul',
-  });
-  await ctx.addInitScript(staleFavorite);
-  const page = await ctx.newPage();
-  const errors = [];
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(m.text());
-  });
-  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-
-  const res = await page.goto(`${URL}?v=${Date.now()}`, { waitUntil: 'domcontentloaded' });
-  check('라이브 페이지 응답', res?.status() === 200, `HTTP ${res?.status()}`);
-
-  await page.waitForSelector('.fav-toggle', { timeout: 30000 });
-  const ui = await page.evaluate(() => ({
-    search: !!document.querySelector('.search-box input'),
-    fav: document.querySelector('.fav-toggle')?.textContent?.replace(/\s+/g, ' ').trim(),
-    scripts: [...document.querySelectorAll('script[src]')].map((s) => s.getAttribute('src')),
-    placeholder: document.querySelector('.search-box input')?.getAttribute('placeholder'),
-  }));
-  check('검색창 배포 반영', ui.search, ui.placeholder || '');
-  check('⭐ 즐겨찾기 칩 배포 반영', !!ui.fav && ui.fav.includes('즐겨찾기'), ui.fav || '');
-  check('새 빌드 자산 로드', (ui.scripts || []).some((s) => /index-.*\.js/.test(s || '')), (ui.scripts || []).join(','));
-
-  // 즐겨찾기 필터 → 주입한 스냅샷 카드 표시
-  await page.locator('.fav-toggle').click();
-  await page.waitForTimeout(800);
-  const favView = await page.evaluate(() => ({
-    stale: !!document.querySelector('.signal-card.stale'),
-    starred: !!document.querySelector('.signal-card .fav-btn.on'),
-    text: document.querySelector('.signal-card.stale')?.textContent?.replace(/\s+/g, ' ').slice(0, 60),
-  }));
-  check('라이브 즐겨찾기 필터 + 보관 스냅샷 카드', favView.stale && favView.starred, favView.text || '');
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: 'docs/screens/09-live-pages.png' });
-
-  // 검색
-  await page.locator('.search-box input').fill('LIVETEST');
-  await page.waitForTimeout(500);
-  check('라이브 검색 동작', (await page.locator('.signal-card.stale').count()) === 1);
-  await page.locator('.search-box input').fill('ZZZNOPE');
-  await page.waitForTimeout(500);
-  check('라이브 검색 빈 결과 안내', await page.locator('.search-empty').isVisible());
-  await page.locator('.search-clear').click();
-  // 검증용으로 넣은 스냅샷 즐겨찾기를 해제해 화면을 깨끗하게 되돌린다
-  await page.locator('.signal-card.stale .fav-btn').click();
-  await page.waitForTimeout(300);
-  await page.locator('.fav-toggle').click();
-  await page.waitForTimeout(400);
-
-  // 실제 스캔 완료 대기(최대 150초) — 시간이 모자라면 건너뛴다
-  let scan = null;
-  try {
-    await page.waitForFunction(
-      () => (document.querySelector('.status-text')?.textContent || '').includes('실시간 ·'),
-      { timeout: 150000 },
-    );
-    scan = await page.evaluate(() => ({
-      status: document.querySelector('.status-text')?.textContent,
-      cards: document.querySelectorAll('.signal-card:not(.skeleton)').length,
-      more: document.querySelector('.more-btn')?.textContent?.replace(/\s+/g, ' ').trim() || null,
-      first: document.querySelector('.signal-card .sym')?.textContent,
-    }));
-  } catch {
-    scan = { status: '스캔 미완료(시간 초과)', cards: 0 };
-  }
-  console.log('live scan:', JSON.stringify(scan));
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: 'docs/screens/09-live-pages.png' });
-  if (scan.cards) {
-    check('라이브 시그널 카드 렌더', scan.cards > 0, `${scan.cards}장 · 첫 카드 ${scan.first || '-'}`);
-    check('라이브 더보기 버튼', !!scan.more, scan.more || '');
-  }
-
-  // FX·금 탭 + 벤티지 호가 보정 반영 확인
-  if (scan.cards) {
-    await page.locator('.bottom-nav button[data-tab="fx"]').click();
-    await page.waitForTimeout(900);
-    const fx = await page.evaluate(() => {
-      const cards = [...document.querySelectorAll('.signal-card:not(.skeleton)')];
-      return {
-        bar: !!document.querySelector('.fx-offset-bar'),
-        chips: [...document.querySelectorAll('.fx-chip')].map((c) =>
-          c.querySelector('.fx-chip-label')?.textContent?.replace('★', '').trim(),
-        ),
-        cards: cards.length,
-        syms: cards.slice(0, 4).map((c) => c.querySelector('.sym')?.textContent),
-        badges: [...new Set(cards.map((c) => c.querySelector('.asset')?.textContent))],
-      };
-    });
-    check('라이브 FX·금 탭', fx.bar && fx.chips.length > 10, `칩 ${fx.chips.length}종목 · ${fx.chips.slice(0, 3).join(',')}`);
-    check(
-      '라이브 호가 보정 상단 고정(금·유로·비트)',
-      fx.chips[0] === 'XAUUSD+' && fx.chips[1] === 'EURUSD+' && /BTC/.test(fx.chips[2] || ''),
-      fx.chips.slice(0, 4).join(' / '),
-    );
-    check('라이브 FX 카드/배지', fx.cards > 0 && fx.badges.every((b) => b === 'FX·금'), `${fx.cards}장 ${fx.syms.join(',')}`);
-
-    // 랏(Lot) 표시 — 배수(x) 대신 랏·달러 손익
-    const lot = await page.evaluate(() => {
-      const cards = [...document.querySelectorAll('.fx-tab .signal-card:not(.skeleton)')];
-      const first = cards[0];
-      return {
-        buttons: [...document.querySelectorAll('.fx-tab .lot-select button')].map((b) => b.textContent?.trim()),
-        on: document.querySelector('.fx-tab .lot-select button.on')?.textContent?.trim(),
-        cap: first?.querySelector('.roi-cap')?.textContent?.trim(),
-        pnl: first?.querySelector('.roi-value')?.textContent?.trim(),
-        target: first?.querySelectorAll('.lvl')[0]?.querySelector('.lvl-usd')?.textContent?.trim(),
-        stop: first?.querySelectorAll('.lvl')[3]?.querySelector('.lvl-usd')?.textContent?.trim(),
-        multiplier: /\b\d+x\b|레버리지/.test(document.querySelector('.fx-tab')?.innerText || ''),
-      };
-    });
-    check('라이브 FX 랏 선택기 6개(기본 0.10)', lot.buttons.length === 6 && lot.on === '0.10', `${lot.buttons.join(' ')} (선택 ${lot.on})`);
-    check(
-      '라이브 FX 카드 랏·달러 손익',
-      /^0\.10 Lot 수익$/.test(lot.cap || '') && /^[+-]?\$/.test(lot.pnl || '') && /^[+-]\$/.test(lot.target || '') && /^-\$/.test(lot.stop || ''),
-      `${lot.cap} ${lot.pnl} · 목표 ${lot.target} · 무효 ${lot.stop}`,
-    );
-    check('라이브 FX 탭에 배수(x)·레버리지 없음', !lot.multiplier, lot.multiplier ? '배수 표현 발견' : '없음');
-
-    // FX 탭 비트코인(BTCUSD+) — 1 Lot = 1 BTC
-    await page.locator('.fx-tab .quick-chip', { hasText: '비트' }).click();
-    await page.waitForTimeout(900);
-    const btc = await page.evaluate(() => {
-      const cards = [...document.querySelectorAll('.fx-tab .signal-card:not(.skeleton)')];
-      const card = cards.find((c) => (c.querySelector('.sym')?.textContent || '').trim() === 'BTCUSD+');
-      return {
-        quick: [...document.querySelectorAll('.fx-tab .quick-chip')].map((b) => b.textContent?.trim()),
-        pinned: [...document.querySelectorAll('.fx-chip.priority .fx-chip-label')].map((e) => e.textContent?.replace('★', '').trim()),
-        cards: cards.length,
-        sym: card?.querySelector('.sym')?.textContent?.trim() || null,
-        cap: card?.querySelector('.roi-cap')?.textContent?.trim() || null,
-        pnl: card?.querySelector('.roi-value')?.textContent?.trim() || null,
-        strip: card?.querySelector('.lot-strip')?.textContent?.replace(/\s+/g, '') || null,
-      };
-    });
-    check(
-      '라이브 FX 탭 ₿ 비트 퀵 버튼·★ BTCUSD+ 호가 칩',
-      (btc.quick || []).some((t) => /비트/.test(t || '')) && (btc.pinned || []).some((t) => /BTCUSD\+/.test(t || '')),
-      `${(btc.quick || []).join(' ')} · ${(btc.pinned || []).join(', ')}`,
-    );
-    check(
-      '라이브 BTCUSD+ 카드 = 랏 기준(1 Lot = 1 BTC)',
-      btc.sym === 'BTCUSD+' && /Lot 수익/.test(btc.cap || '') && /(^|[^0-9])1Lot=1BTC/.test(btc.strip || ''),
-      `${btc.sym} ${btc.cap} ${btc.pnl} · ${btc.strip}`,
-    );
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.waitForTimeout(300);
-    await page.locator('.fx-tab .quick-chip', { hasText: '비트' }).click();
-    await page.waitForTimeout(500);
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.waitForTimeout(300);
-    await page.screenshot({ path: 'docs/screens/14-live-fx-lot.png' });
-
-    // 오프셋 입력이 카드 가격에 반영되는지 (금 카드가 있으면 금, 없으면 첫 카드)
-    const target = (fx.syms || []).find((s) => (s || '').startsWith('XAUUSD')) || fx.syms?.[0];
-    if (target) {
-      const before = await page.evaluate((sym) => {
-        const card = [...document.querySelectorAll('.signal-card')].find((c) => c.querySelector('.sym')?.textContent?.trim() === sym);
-        return card?.querySelector('.price')?.textContent || null;
-      }, target);
-      const chip = page.locator('.fx-chip', { hasText: target }).first();
-      await chip.locator('.fx-offset-input').fill('0.5');
-      await page.waitForTimeout(500);
-      const after = await page.evaluate((sym) => {
-        const card = [...document.querySelectorAll('.signal-card')].find((c) => c.querySelector('.sym')?.textContent?.trim() === sym);
-        return {
-          price: card?.querySelector('.price')?.textContent || null,
-          sub: card?.querySelector('.sym-sub')?.textContent?.replace(/\s+/g, ' ').trim(),
-        };
-      }, target);
-      const n = (t) => Number(String(t).replace(/[^0-9.-]/g, ''));
-      check('라이브 호가 보정 반영', Math.abs(n(after.price) - n(before) - 0.5) <= 0.51, `${target} ${before} → ${after.price} · ${after.sub}`);
-      await page.locator('.fx-offset-reset').click();
-      await page.waitForTimeout(300);
-    }
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.waitForTimeout(400);
-    await page.screenshot({ path: 'docs/screens/13-live-fx.png' });
-  }
-
-  await browser.close();
-  check('콘솔/페이지 에러 0건', errors.length === 0, errors.slice(0, 3).join(' | '));
-  const failed = results.filter((r) => !r.pass);
-  console.log(JSON.stringify({ url: URL, scan, results }, null, 1));
-  if (failed.length || errors.length) process.exitCode = 1;
-};
-
-run().catch((e) => {
-  console.error('LIVE CHECK FAILED', e);
-  process.exitCode = 1;
+const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+const context = await browser.newContext({
+  viewport: { width: 390, height: 844 },
+  deviceScaleFactor: 2,
+  isMobile: true,
+  hasTouch: true,
+  locale: 'ko-KR',
+  timezoneId: 'Asia/Seoul',
 });
+await context.addInitScript(() => {
+  window.clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
+});
+const page = await context.newPage();
+const errors = [];
+page.on('console', (m) => {
+  if (m.type() === 'error') errors.push(m.text());
+});
+page.on('pageerror', (e) => errors.push(`pageerror: ${e}`));
+
+const res = await page.goto(URL, { waitUntil: 'domcontentloaded' });
+check(res?.status() === 200, '라이브 페이지 응답', `HTTP ${res?.status()}`);
+
+await page.waitForSelector('.onboarding', { timeout: 30000 });
+const onb = await page.evaluate(() => ({
+  presets: [...document.querySelectorAll('.seed-chip')].map((b) => clean(b.textContent)),
+  styles: [...document.querySelectorAll('.style-card b')].map((b) => clean(b.textContent)),
+  title: clean(document.querySelector('.onboarding h2')?.textContent),
+}));
+check(onb.presets.join('|') === '$100|$500|$1,000|$5,000', '라이브 온보딩 시드 프리셋', onb.presets.join(' '));
+check(onb.styles.join('|') === '보수적 매매|공격적 매매', '라이브 온보딩 매매 성향 2택', onb.styles.join(' / '));
+
+// $1,000 · 보수적으로 시작
+await page.locator('.seed-chip', { hasText: '$1,000' }).click();
+await page.locator('.onb-start').click();
+await page.waitForSelector('.onboarding', { state: 'detached', timeout: 15000 });
+await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 180000 });
+await page.waitForFunction(
+  () => {
+    const b = document.querySelector('.rescan');
+    return !!b && !b.classList.contains('busy');
+  },
+  { timeout: 180000 },
+);
+await page.waitForTimeout(1500);
+
+const ui = await page.evaluate(() => {
+  const nav = document.querySelector('.bottom-nav');
+  const cards = [...document.querySelectorAll('.scanner-tab .signal-card:not(.skeleton)')];
+  const c = cards[0];
+  return {
+    brand: clean(document.querySelector('.brand-text b')?.textContent),
+    title: document.title,
+    tabs: [...nav.querySelectorAll('.nav-label')].map((b) => clean(b.textContent)),
+    cards: cards.length,
+    assets: [...new Set(cards.map((x) => clean(x.querySelector('.asset')?.textContent)))],
+    side: clean(c?.querySelector('.badge.long, .badge.short')?.textContent),
+    labels: [...c.querySelectorAll('.lvl-label')].map((l) => clean(l.textContent)),
+    price: clean(c?.querySelector('.price')?.textContent),
+    rec: clean(c?.querySelector('.badge.rec')?.textContent),
+    seedCells: [...c.querySelectorAll('.seed-cell b')].map((b) => clean(b.textContent)),
+    scripts: [...document.querySelectorAll('script[src]')].map((s) => s.getAttribute('src')),
+    fxLeft: /FX|벤티지|Lot|랏/.test(document.querySelector('.scanner-tab')?.innerText || ''),
+  };
+});
+check(ui.brand === 'COTA' && ui.title === 'COTA · 실시간 트레이딩 시그널', '라이브 COTA 브랜드·제목', `${ui.brand} · ${ui.title}`);
+check(ui.tabs.join('|') === '스캐너|시황|전략엔진|기록|설정', '라이브 5탭', ui.tabs.join(' | '));
+check((ui.scripts || []).some((s) => /index-.*\.js/.test(s || '')), '새 빌드 자산 로드', (ui.scripts || []).join(','));
+check(ui.cards > 0 && ui.assets.every((a) => a === '코인'), '라이브 코인 시그널 카드', `${ui.cards}건 · ${ui.assets.join('/')}`);
+check(!ui.fxLeft, '라이브 FX·랏 UI 없음');
+check(/^(롱 · 매수|숏 · 매도)$/.test(ui.side), '라이브 방향 배지 한글', ui.side);
+check(ui.labels.join('|') === '목표가|진입가|본전 (EQ)|손절가', '라이브 가격 박스 한글', ui.labels.join(' / '));
+check(/^COTA 추천 \d+x$/.test(ui.rec), '라이브 COTA 추천 배지', ui.rec);
+check(ui.seedCells.length === 2 && ui.seedCells.every((v) => /^[+-]?\$/.test(v)), '라이브 시드 예상 손익', ui.seedCells.join(' / '));
+check(
+  (ui.price || '').includes(',') || Number((ui.price || '').replace(/,/g, '')) < 1000,
+  '라이브 천단위 콤마 가격',
+  ui.price,
+);
+
+// 공유 카드
+await page.evaluate(() => {
+  window.__drawn = [];
+  const proto = CanvasRenderingContext2D.prototype;
+  if (!proto.__patched) {
+    const orig = proto.fillText;
+    proto.fillText = function (text, ...rest) {
+      window.__drawn.push(String(text));
+      return orig.call(this, text, ...rest);
+    };
+    proto.__patched = true;
+  }
+});
+await page.locator('.scanner-tab .signal-card:not(.skeleton)').first().click();
+await page.waitForSelector('.share-canvas.in', { timeout: 30000 });
+await page.waitForTimeout(800);
+await page.screenshot({ path: `${OUT}/09-live-pages.png` });
+const share = await page.evaluate(() => ({ drawn: [...new Set(window.__drawn)], w: document.querySelector('canvas.share-canvas').width }));
+await page.keyboard.press('Escape');
+await page.waitForTimeout(400);
+check(
+  ['진입가', '목표가', '손절가', 'COTA'].every((t) => share.drawn.includes(t)) && share.drawn.some((d) => /^COTA 추천 \d+x$/.test(d)),
+  '라이브 공유 카드 한글 라벨·COTA',
+  share.drawn.slice(0, 10).join(' | '),
+);
+check(share.w > 0, '라이브 공유 카드 캔버스', `${share.w}px`);
+
+// 설정 탭
+await page.locator('.bottom-nav button[data-tab="settings"]').click();
+await page.waitForSelector('#settings-profile', { timeout: 30000 });
+await page.waitForTimeout(800);
+const settings = await page.evaluate(() => ({
+  seed: clean(document.querySelector('#settings-profile .profile-cell b')?.textContent),
+  headings: [...document.querySelectorAll('.settings-tab .panel h3')].map((h) => clean(h.textContent)),
+  target: clean(document.querySelector('.notify-target button.on')?.textContent),
+  ntfy: document.querySelector('.td-key-input')?.value,
+  version: [...document.querySelectorAll('.setting-desc')].map((d) => d.textContent).find((t) => t?.includes('앱 v')),
+}));
+check(settings.seed === '$1,000' && settings.headings[0] === '💼 내 투자 프로필', '라이브 내 투자 프로필 카드', `${settings.seed} · ${settings.headings[0]}`);
+check(settings.target === '주요 코인' && settings.ntfy === 'bgss-hw3238-9f4k2m', '라이브 알림 기본값', `${settings.target} · ${settings.ntfy}`);
+check(/앱 v1\.2\.0/.test(settings.version || ''), '라이브 앱 버전 v1.2.0', settings.version);
+
+check(errors.length === 0, '라이브 콘솔·페이지 에러 0건', errors.slice(0, 3).join(' | '));
+
+await browser.close();
+console.log(failures === 0 ? '\n✅ 라이브 COTA 검증 통과' : `\n❌ 실패 ${failures}건`);
+process.exit(failures === 0 ? 0 : 1);

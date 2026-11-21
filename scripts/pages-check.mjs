@@ -34,6 +34,12 @@ const run = async () => {
   }
   const browser = await chromium.launch({ args: ['--no-sandbox'] });
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  await ctx.addInitScript(() => {
+    localStorage.setItem(
+      'cota.profile.v1',
+      JSON.stringify({ seed: 1000, style: 'conservative', updatedAt: Date.now() }),
+    );
+  });
   const page = await ctx.newPage();
   const errors = [];
   page.on('console', (m) => {
@@ -51,6 +57,8 @@ const run = async () => {
     cssLoaded: !!document.styleSheets.length,
     scriptSrc: [...document.querySelectorAll('script')].map((s) => s.src),
     brand: document.querySelector('.brand-text b')?.textContent,
+    tabs: [...document.querySelectorAll('.bottom-nav button .nav-label')].map((b) => b.textContent),
+    onboarding: !!document.querySelector('.onboarding'),
   }));
   await page.screenshot({ path: 'docs/screens/07-pages-subpath.png' });
   await browser.close();

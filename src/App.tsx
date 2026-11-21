@@ -1,24 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BottomNav, NAV_TABS, type TabKey } from './components/BottomNav';
 import { EngineTab } from './components/EngineTab';
-import { FxTab } from './components/FxTab';
 import { HistoryTab } from './components/HistoryTab';
 import { MarketTab } from './components/MarketTab';
 import { ScannerTab } from './components/ScannerTab';
 import { SettingsTab } from './components/SettingsTab';
+import { OnboardingModal } from './components/OnboardingModal';
 import { ShareModal } from './components/ShareModal';
+import logoUrl from './assets/cota-logo.png';
 import { RefreshIcon } from './components/Icons';
 import type { Signal } from './engine/types';
 import { useFavorites } from './hooks/useFavorites';
 import { useScanner } from './hooks/useScanner';
 import { fmtTime } from './lib/format';
-import { fxTabSignals } from './lib/fxview';
-import { offsetFor } from './lib/offset';
 import { openExternalUrl } from './lib/native';
 import { useSignalNotifications } from './lib/notify';
 import { checkForUpdate, RELEASES_PAGE } from './lib/update';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from './lib/storage';
-import { normalizeLot } from './utils/lot';
+import { loadProfile, recommendLeverage, saveProfile, type Profile } from './lib/profile';
 
 type Tab = TabKey;
 
@@ -30,9 +29,11 @@ export default function App() {
     null,
   );
   const [updateDismissed, setUpdateDismissed] = useState(false);
+  // 첫 실행 온보딩 — cota.profile.v1 이 없으면 시드·매매 성향을 먼저 받는다.
+  const [profile, setProfile] = useState<Profile | null>(() => loadProfile());
+  const [onboarding, setOnboarding] = useState<boolean>(() => loadProfile() === null);
   const { state, history, swapLog, scan, clearHistory, clearSwapLog } = useScanner({
     refreshSec: settings.refreshSec,
-    twelveDataKey: settings.twelveDataKey,
   });
   const favorites = useFavorites();
 
@@ -115,19 +116,33 @@ export default function App() {
   }, [state]);
 
   const openCount = state.signals.filter((s) => s.state === 'open' && s.asset !== 'fx').length;
-  // FX 탭 배지 — FX·금 시그널 + BTCUSD+(비트겟 BTCUSDT 재사용) 진행중 시그널
-  const openFxCount = fxTabSignals(state.signals).filter((s) => s.state === 'open').length;
-  const lot = normalizeLot(settings.fxLot);
+  /** 전략엔진·기록처럼 시그널별 계산이 아닌 화면에 쓰는 대표 배율 */
+  const repLeverage =
+    settings.leverageMode === 'auto' && profile
+      ? profile.style === 'aggressive'
+        ? 15
+        : 3
+      : settings.leverage;
+  const shareLeverage =
+    shareSignal && settings.leverageMode === 'auto' && profile
+      ? recommendLeverage(shareSignal, profile.style).leverage
+      : settings.leverage;
+
+  const saveOnboarding = (next: Profile) => {
+    saveProfile(next);
+    setProfile(next);
+    setOnboarding(false);
+  };
 
   return (
     <div className="app">
       <header className="app-bar">
         <div className="app-bar-inner">
           <div className="brand">
-            <span className="brand-mark">B</span>
+            <img className="brand-logo" src={logoUrl} alt="COTA" width={34} height={34} />
             <div className="brand-text">
-              <b>비트겟 CRT 스캐너</b>
-              <span>코인 · 주식선물 · FX·금 실시간 시그널</span>
+              <b>COTA</b>
+              <span>실시간 코인 · 주식선물 시그널</span>
             </div>
           </div>
 
@@ -188,40 +203,20 @@ export default function App() {
             onSettings={patchSettings}
             onOpen={setShareSignal}
             onRescan={() => void scan()}
+            profile={profile}
           />
         )}
-        {tab === 'fx' && (
-          <FxTab
-            state={state}
-            settings={settings}
-            favorites={favorites.entries}
-            isFavorite={favorites.isFavorite}
-            onToggleFavorite={favorites.toggle}
-            onSettings={patchSettings}
-            onOpen={setShareSignal}
-            onRescan={() => void scan()}
-          />
-        )}
-        {tab === 'market' && (
-          <MarketTab state={state} offsets={settings.fxOffsets} onRescan={() => void scan()} />
-        )}
+        {tab === 'market' && <MarketTab state={state} onRescan={() => void scan()} />}
         {tab === 'engine' && (
           <EngineTab
             state={state}
             swapLog={swapLog}
-            leverage={settings.leverage}
+            leverage={repLeverage}
             onRescan={() => void scan()}
             onClearLog={clearSwapLog}
           />
         )}
-        {tab === 'history' && (
-          <HistoryTab
-            history={history}
-            leverage={settings.leverage}
-            offsets={settings.fxOffsets}
-            onClear={clearHistory}
-          />
-        )}
+        {tab === 'history' && <HistoryTab history={history} leverage={repLeverage} onClear={clearHistory} />}
         {tab === 'settings' && (
           <SettingsTab
             settings={settings}
@@ -232,21 +227,32 @@ export default function App() {
             historyCount={history.length}
             swapCount={swapLog.length}
             onTestNotification={sendTest}
+            profile={profile}
+            onEditProfile={() => setOnboarding(true)}
           />
         )}
       </main>
 
-      <BottomNav tab={tab} onChange={setTab} badges={{ scanner: openCount, fx: openFxCount }} />
+      <BottomNav tab={tab} onChange={setTab} badges={{ scanner: openCount }} />
 
       {shareSignal && (
         <ShareModal
           signal={shareSignal}
-          leverage={settings.leverage}
-          lot={shareSignal.asset === 'fx' ? lot : undefined}
-          offset={offsetFor(shareSignal.base, settings.fxOffsets)}
+          leverage={shareLeverage}
+          profile={profile}
+          auto={settings.leverageMode === 'auto'}
           isFavorite={favorites.isFavorite(shareSignal)}
           onToggleFavorite={favorites.toggle}
           onClose={() => setShareSignal(null)}
+        />
+      )}
+
+      {onboarding && (
+        <OnboardingModal
+          initial={profile}
+          canClose={!!profile}
+          onSave={saveOnboarding}
+          onClose={() => setOnboarding(false)}
         />
       )}
     </div>

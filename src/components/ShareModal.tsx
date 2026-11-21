@@ -3,20 +3,19 @@ import type { Signal } from '../engine/types';
 import { drawShareCard } from './shareCard';
 import { CloseIcon, DownloadIcon, ShareIcon, StarIcon } from './Icons';
 import { isNativeApp, saveImageToDevice, shareImageFromDevice } from '../lib/native';
+import type { Profile } from '../lib/profile';
 
 interface Props {
   signal: Signal;
   leverage: number;
-  /** FX 시그널이면 배수(x) 대신 이 랏(Lot) 기준 달러 손익으로 그린다. */
-  lot?: number;
+  profile?: Profile | null;
+  auto?: boolean;
   isFavorite: boolean;
   onToggleFavorite: (signal: Signal) => void;
   onClose: () => void;
-  /** 벤티지 호가 보정 오프셋 */
-  offset?: number;
 }
 
-export function ShareModal({ signal, leverage, lot, isFavorite, onToggleFavorite, onClose, offset = 0 }: Props) {
+export function ShareModal({ signal, leverage, profile = null, auto = false, isFavorite, onToggleFavorite, onClose }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [ready, setReady] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -26,7 +25,7 @@ export function ShareModal({ signal, leverage, lot, isFavorite, onToggleFavorite
     let cancelled = false;
     const draw = () => {
       if (cancelled || !canvasRef.current) return;
-      drawShareCard(canvasRef.current, signal, leverage, offset, lot);
+      drawShareCard(canvasRef.current, signal, leverage, profile, auto);
       setReady(true);
     };
     if (document.fonts?.ready) {
@@ -37,7 +36,7 @@ export function ShareModal({ signal, leverage, lot, isFavorite, onToggleFavorite
     return () => {
       cancelled = true;
     };
-  }, [signal, leverage, offset, lot]);
+  }, [signal, leverage, profile, auto]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.hw3238.bitgetscanner',
-  appName: '비트겟 CRT 스캐너',
+  appName: 'COTA',
   webDir: 'dist',
   server: {
     // GitHub Pages 최신 배포본을 그대로 불러온다 → 웹/전략/UI 수정은 재배포만으로 앱에 즉시 반영.

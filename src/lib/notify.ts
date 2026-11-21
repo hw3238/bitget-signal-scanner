@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useRef } from 'react';
 import type { Signal } from '../engine/types';
-import { PRIORITY_SYMBOLS } from '../engine/universe';
+import { MAJOR_COINS, PRIORITY_COINS } from '../engine/universe';
 import { fmtPrice, sideLabel, tfLabel } from './format';
 import {
   isNativeApp,
@@ -19,15 +19,14 @@ import {
   showNativeNotification,
 } from './native';
 import type { Settings } from './storage';
-import { normalizeLot } from '../utils/lot';
 
-/** 알림 대상 범위 */
-export type NotifyTarget = 'priority' | 'fx' | 'all';
+/** 알림 대상 범위 — 코인 중심 3택 */
+export type NotifyTarget = 'top3' | 'majors' | 'all';
 
 export const NOTIFY_TARGETS: { key: NotifyTarget; label: string; desc: string }[] = [
-  { key: 'priority', label: '주력 3종목', desc: '금(XAUUSD+) · 유로(EURUSD+) · 비트코인(BTCUSD+)' },
-  { key: 'fx', label: 'FX·금 전체', desc: 'FX·금·원자재·지수 전 종목' },
-  { key: 'all', label: '전체 종목', desc: '코인·주식선물·FX 전부' },
+  { key: 'top3', label: '비트·이더·솔', desc: 'BTC · ETH · SOL 세 종목만 알립니다' },
+  { key: 'majors', label: '주요 코인', desc: '비트·이더·솔을 포함한 주요 코인 20종목' },
+  { key: 'all', label: '전체 종목', desc: '코인과 주식선물 전 종목' },
 ];
 
 export type NotifyPermission = 'granted' | 'denied' | 'default' | 'unsupported';
@@ -51,11 +50,9 @@ export function signalKey(signal: Pick<Signal, 'symbol' | 'tf' | 'side' | 'detec
   return `${signal.symbol}|${signal.tf}|${signal.side}|${signal.detectedAt}`;
 }
 
-/** 알림에 쓰는 종목 이름 — FX 탭 표기(XAUUSD+ · BTCUSD+)를 따른다. */
-export function notifyLabel(signal: Pick<Signal, 'symbol' | 'base' | 'asset'>): string {
-  if (signal.asset === 'fx') return signal.base;
-  if (signal.symbol === 'BTCUSDT') return 'BTCUSD+';
-  return signal.base;
+/** 알림에 쓰는 종목 이름 — 카드와 같은 표기(BTC · ETH …) */
+export function notifyLabel(signal: Pick<Signal, 'symbol' | 'base'>): string {
+  return signal.base.replace(/STOCK$/, '');
 }
 
 /** 알림 대상 범위에 들어가는 시그널인지 (진행중 시그널만) */
@@ -64,9 +61,11 @@ export function matchesNotifyTarget(
   target: NotifyTarget,
 ): boolean {
   if (signal.state !== 'open') return false;
+  // FX는 스캔·알림 대상에서 제외 — 앱은 코인·주식선물만 다룬다.
+  if (signal.asset === 'fx') return false;
   if (target === 'all') return true;
-  if (target === 'fx') return signal.asset === 'fx';
-  return (PRIORITY_SYMBOLS as readonly string[]).includes(signal.symbol);
+  if (target === 'top3') return (PRIORITY_COINS as readonly string[]).includes(signal.symbol);
+  return (MAJOR_COINS as readonly string[]).includes(signal.symbol);
 }
 
 /** 아직 알림을 보내지 않은 새 시그널만 — 오래된 감지 순으로 정렬 */
@@ -87,31 +86,26 @@ export function pickNewSignals(
   return out.sort((a, b) => a.detectedAt - b.detectedAt);
 }
 
-/** 실제 알림 문구 */
-export function buildSignalMessage(
-  signal: Signal,
-  options: { lot?: number; test?: boolean } = {},
-): NotifyMessage {
+/** 실제 알림 문구 — 한글 라벨(진입가·목표가·손절가) */
+export function buildSignalMessage(signal: Signal, options: { test?: boolean } = {}): NotifyMessage {
   const name = notifyLabel(signal);
   const title = `${options.test ? '[테스트] ' : ''}${name} ${tfLabel(signal.tf)} ${sideLabel(signal.side)} 시그널`;
-  const lot =
-    signal.asset === 'fx' && options.lot != null ? ` · ${normalizeLot(options.lot).toFixed(2)} Lot` : '';
-  const body = `진입 ${fmtPrice(signal.entry, signal.decimals)} · 목표 ${fmtPrice(
+  const body = `진입가 ${fmtPrice(signal.entry, signal.decimals)} · 목표가 ${fmtPrice(
     signal.target,
     signal.decimals,
-  )} · 손절 ${fmtPrice(signal.stop, signal.decimals)}${lot} · 승률 ${Math.round(signal.winRate)}%`;
+  )} · 손절가 ${fmtPrice(signal.stop, signal.decimals)} · 최근 승률 ${Math.round(signal.winRate)}%`;
   return { title, body };
 }
 
-/** 테스트 알림 — 실제 금 시그널이 있으면 그 값으로, 없으면 안내 문구로 */
-export function buildTestMessage(lot: number, gold?: Signal | null): NotifyMessage {
-  if (gold) {
-    const msg = buildSignalMessage(gold, { lot, test: true });
+/** 테스트 알림 — 실제 코인 시그널이 있으면 그 값으로, 없으면 안내 문구로 */
+export function buildTestMessage(signal?: Signal | null): NotifyMessage {
+  if (signal) {
+    const msg = buildSignalMessage(signal, { test: true });
     return { title: `${msg.title} 감지`, body: msg.body };
   }
   return {
-    title: '[테스트] XAUUSD+ 1시간 롱 시그널 감지',
-    body: `이 알림이 폰 상단에 뜨면 정상입니다 · ${normalizeLot(lot).toFixed(2)} Lot`,
+    title: '[테스트] COTA 시그널 알림 감지',
+    body: '이 알림이 폰 상단에 뜨면 정상입니다 · COTA 실시간 시그널',
   };
 }
 
@@ -214,7 +208,8 @@ export async function sendNtfy(msg: NotifyMessage, topic: string): Promise<boole
   if (!endpoint) return false;
   try {
     const url = new URL(endpoint);
-    url.searchParams.set('title', msg.title);
+    // ntfy 알림 제목에도 앱 브랜드를 붙인다.
+    url.searchParams.set('title', `[COTA] ${msg.title}`);
     const res = await fetch(url.toString(), {
       method: 'POST',
       body: msg.body,
@@ -281,16 +276,16 @@ export function useSignalNotifications({ signals, ready, settings }: NotifyHookI
 
     const toAlert = fresh.slice(-MAX_ALERTS_PER_BATCH);
     for (const signal of toAlert) {
-      const msg = buildSignalMessage(signal, { lot: current.fxLot });
+      const msg = buildSignalMessage(signal);
       void showPhoneNotification(msg, signalKey(signal));
       if (current.notifyNtfy.trim()) void sendNtfy(msg, current.notifyNtfy);
     }
   }, [signals, ready]);
 
   /** 설정 화면에서 직접 쓰는 테스트 전송 */
-  const sendTest = useCallback(async (gold?: Signal | null) => {
+  const sendTest = useCallback(async (signal?: Signal | null) => {
     const current = settingsRef.current;
-    const msg = buildTestMessage(current.fxLot, gold);
+    const msg = buildTestMessage(signal);
     const permission = await requestNotificationPermission();
     const shown = await showPhoneNotification(msg, `test-${Date.now()}`);
     const ntfy = current.notifyNtfy.trim() ? await sendNtfy(msg, current.notifyNtfy) : false;

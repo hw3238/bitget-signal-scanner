@@ -6,10 +6,15 @@ interface Props {
   signal: Pick<Signal, 'target' | 'stop' | 'entry' | 'eq' | 'side' | 'detectedIdx' | 'state'>;
   height?: number;
   showLabels?: boolean;
+  /** 토스풍 라이트 차트가 기본. dark=true 면 어두운 배경용 팔레트를 쓴다. */
   dark?: boolean;
 }
 
-export function MiniCandles({ candles, signal, height = 116, dark = true }: Props) {
+/**
+ * 카드 안 미니 캔들 차트 — 토스증권 차트처럼 흰/연회색 바탕에
+ * 상승 빨강(#F04452) · 하락 파랑(#3182F6)만 쓴다. 네온 글로우는 쓰지 않는다.
+ */
+export function MiniCandles({ candles, signal, height = 116, dark = false }: Props) {
   const rawId = useId();
   const uid = `mc${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
 
@@ -36,15 +41,15 @@ export function MiniCandles({ candles, signal, height = 116, dark = true }: Prop
   const bw = (W - padX * 2) / candles.length;
   const bodyW = Math.max(1.6, bw * 0.58);
 
-  /* 네온 팔레트 */
-  const up = '#00F5A0';
-  const down = '#FF2E63';
-  const gridLine = dark ? 'rgba(0, 229, 255, 0.075)' : 'rgba(15,23,35,0.05)';
-  const gridVert = dark ? 'rgba(122, 158, 255, 0.05)' : 'rgba(15,23,35,0.03)';
-  const targetColor = dark ? '#00F5A0' : '#12b886cc';
-  const stopColor = dark ? '#FF2E63' : '#f03e3e';
-  const eqColor = dark ? '#FFD166' : 'rgba(214,138,0,0.75)';
-  const entryColor = dark ? 'rgba(200, 220, 255, 0.38)' : 'rgba(15,23,35,0.28)';
+  /* 한국 증권 앱 팔레트 — 상승 빨강, 하락 파랑 */
+  const up = dark ? '#FF6B7A' : '#F04452';
+  const down = dark ? '#4C8DFF' : '#3182F6';
+  const gridLine = dark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(25, 31, 40, 0.06)';
+  const gridVert = dark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(25, 31, 40, 0.035)';
+  const targetColor = dark ? 'rgba(255, 107, 122, 0.8)' : 'rgba(240, 68, 82, 0.55)';
+  const stopColor = dark ? 'rgba(76, 141, 255, 0.8)' : 'rgba(49, 130, 246, 0.55)';
+  const eqColor = dark ? 'rgba(255, 209, 102, 0.7)' : 'rgba(139, 149, 161, 0.6)';
+  const entryColor = dark ? 'rgba(200, 220, 255, 0.3)' : 'rgba(25, 31, 40, 0.22)';
 
   const highlightX = padX + bw * Math.min(signal.detectedIdx, candles.length - 1);
   const highlightW = Math.max(bw * 1.6, 6);
@@ -60,60 +65,33 @@ export function MiniCandles({ candles, signal, height = 116, dark = true }: Prop
       aria-label="캔들 차트"
     >
       <defs>
-        <filter
-          id={`${uid}-glow`}
-          filterUnits="userSpaceOnUse"
-          x={-8}
-          y={-8}
-          width={W + 16}
-          height={H + 16}
-        >
-          <feGaussianBlur stdDeviation="2.2" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-        <filter
-          id={`${uid}-soft`}
-          filterUnits="userSpaceOnUse"
-          x={-8}
-          y={-8}
-          width={W + 16}
-          height={H + 16}
-        >
-          <feGaussianBlur stdDeviation="3.6" />
-        </filter>
         <linearGradient id={`${uid}-band`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="rgba(157, 78, 221, 0.05)" />
-          <stop offset="48%" stopColor="rgba(157, 78, 221, 0.28)" />
-          <stop offset="100%" stopColor="rgba(0, 229, 255, 0.1)" />
+          <stop offset="0%" stopColor="rgba(49, 130, 246, 0.02)" />
+          <stop offset="50%" stopColor="rgba(49, 130, 246, 0.09)" />
+          <stop offset="100%" stopColor="rgba(49, 130, 246, 0.02)" />
         </linearGradient>
       </defs>
 
-      {/* 다크 캔버스 */}
-      <rect x={0} y={0} width={W} height={H} fill={dark ? '#060A17' : 'transparent'} />
+      <rect x={0} y={0} width={W} height={H} fill={dark ? '#111827' : 'transparent'} />
 
-      {/* 은은한 사이버 그리드 */}
-      {[0.2, 0.4, 0.6, 0.8].map((r) => (
+      {/* 가로·세로 안내선 */}
+      {[0.25, 0.5, 0.75].map((r) => (
         <line key={`h${r}`} x1={0} x2={W} y1={H * r} y2={H * r} stroke={gridLine} strokeWidth={1} />
       ))}
-      {[0.2, 0.4, 0.6, 0.8].map((r) => (
+      {[0.25, 0.5, 0.75].map((r) => (
         <line key={`v${r}`} x1={W * r} x2={W * r} y1={0} y2={H} stroke={gridVert} strokeWidth={1} />
       ))}
 
-      {/* 시그널 발생봉 네온 하이라이트 */}
+      {/* 시그널 발생봉 표시 */}
       <rect x={highlightX - highlightW / 2} y={0} width={highlightW} height={H} fill={`url(#${uid}-band)`} />
-      <rect
-        x={highlightX - highlightW / 2}
-        y={0.5}
-        width={highlightW}
-        height={H - 1}
-        fill="none"
-        stroke="rgba(157, 78, 221, 0.75)"
+      <line
+        x1={highlightX}
+        x2={highlightX}
+        y1={0}
+        y2={H}
+        stroke={dark ? 'rgba(255,255,255,0.22)' : 'rgba(49, 130, 246, 0.35)'}
         strokeWidth={1}
-        rx={3}
-        filter={`url(#${uid}-glow)`}
+        strokeDasharray="3 3"
       />
 
       {/* 캔들 */}
@@ -125,7 +103,7 @@ export function MiniCandles({ candles, signal, height = 116, dark = true }: Prop
         const bodyBottom = y(Math.min(c.o, c.c));
         return (
           <g key={c.t}>
-            <line x1={x} x2={x} y1={y(c.h)} y2={y(c.l)} stroke={color} strokeWidth={1} opacity={0.9} />
+            <line x1={x} x2={x} y1={y(c.h)} y2={y(c.l)} stroke={color} strokeWidth={1} opacity={0.85} />
             <rect
               x={x - bodyW / 2}
               y={bodyTop}
@@ -138,38 +116,21 @@ export function MiniCandles({ candles, signal, height = 116, dark = true }: Prop
         );
       })}
 
-      {/* 목표선 — 네온 그린 */}
-      <line
-        x1={0}
-        x2={W}
-        y1={y(signal.target)}
-        y2={y(signal.target)}
-        stroke={targetColor}
-        strokeWidth={1.7}
-        filter={dark ? `url(#${uid}-glow)` : undefined}
-      />
-      {/* 무효선 — 네온 레드 */}
-      <line
-        x1={0}
-        x2={W}
-        y1={y(signal.stop)}
-        y2={y(signal.stop)}
-        stroke={stopColor}
-        strokeWidth={1.7}
-        filter={dark ? `url(#${uid}-glow)` : undefined}
-      />
-      {/* EQ 점선 — 네온 골드 */}
+      {/* 목표가선 */}
+      <line x1={0} x2={W} y1={y(signal.target)} y2={y(signal.target)} stroke={targetColor} strokeWidth={1.4} />
+      {/* 손절가선 */}
+      <line x1={0} x2={W} y1={y(signal.stop)} y2={y(signal.stop)} stroke={stopColor} strokeWidth={1.4} />
+      {/* 본전(EQ) 점선 */}
       <line
         x1={0}
         x2={W}
         y1={y(signal.eq)}
         y2={y(signal.eq)}
         stroke={eqColor}
-        strokeWidth={1.3}
+        strokeWidth={1.1}
         strokeDasharray="5 4"
-        filter={dark ? `url(#${uid}-glow)` : undefined}
       />
-      {/* 진입 점선 */}
+      {/* 진입가 점선 */}
       <line
         x1={0}
         x2={W}
@@ -180,15 +141,14 @@ export function MiniCandles({ candles, signal, height = 116, dark = true }: Prop
         strokeDasharray="2 4"
       />
 
-      {/* 현재가 점 — 발광 */}
-      {dark && <circle cx={lastX} cy={y(last.c)} r={6} fill={signal.side === 'long' ? up : down} opacity={0.35} filter={`url(#${uid}-soft)`} />}
+      {/* 현재가 점 */}
       <circle
         cx={lastX}
         cy={y(last.c)}
         r={3.2}
         fill={signal.side === 'long' ? up : down}
-        stroke={dark ? '#04060F' : '#fff'}
-        strokeWidth={1.4}
+        stroke={dark ? '#111827' : '#FFFFFF'}
+        strokeWidth={1.6}
       />
     </svg>
   );

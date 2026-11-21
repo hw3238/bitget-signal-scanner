@@ -144,6 +144,13 @@ const run = async () => {
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
   });
+  // 첫 실행 온보딩을 건너뛰도록 투자 프로필을 미리 저장한다.
+  await mobile.addInitScript(() => {
+    localStorage.setItem(
+      'cota.profile.v1',
+      JSON.stringify({ seed: 1000, style: 'conservative', updatedAt: Date.now() }),
+    );
+  });
   const page = await mobile.newPage();
   attach(page, 'mobile');
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
@@ -243,6 +250,9 @@ const run = async () => {
   // ---------------- 이전 시그널 더보기 / 검색 ----------------
   await page.locator('.fav-toggle').click();
   await page.waitForTimeout(300);
+  // 코인 기본 필터 → 전체(코인+주식선물)로 넓혀 이전 시그널까지 충분히 노출
+  await page.locator('.segmented[aria-label="자산 구분"] button', { hasText: '전체' }).click();
+  await page.waitForTimeout(300);
   // 진행중만 → 종료 포함으로 넓혀 이전 시그널까지 노출
   await page.locator('.ghost-toggle').click();
   await page.waitForTimeout(500);
@@ -267,10 +277,11 @@ const run = async () => {
     const closedStates = await page.evaluate(() =>
       [...document.querySelectorAll('.signal-card .badge.state')].map((b) => b.textContent),
     );
+    // 상태 배지는 한글 표기 — 진행 중 / 목표 달성 / 손절 종료
     check(
-      '종료(적중/무효) 시그널 수집',
-      closedStates.some((t) => t === '적중' || t === '무효'),
-      `표시 ${closedStates.length}건 중 진행중 ${closedStates.filter((t) => t === '진행중').length}`,
+      '종료(목표 달성/손절 종료) 시그널 수집',
+      closedStates.some((t) => t === '목표 달성' || t === '손절 종료'),
+      `표시 ${closedStates.length}건 중 진행 중 ${closedStates.filter((t) => t === '진행 중').length}`,
     );
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(350);
@@ -377,6 +388,12 @@ const run = async () => {
     deviceScaleFactor: 1,
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
+  });
+  await desktop.addInitScript(() => {
+    localStorage.setItem(
+      'cota.profile.v1',
+      JSON.stringify({ seed: 1000, style: 'conservative', updatedAt: Date.now() }),
+    );
   });
   const dpage = await desktop.newPage();
   attach(dpage, 'desktop');

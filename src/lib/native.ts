@@ -26,7 +26,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-/** 안드로이드 앱: 갤러리(Pictures/CRT-Scanner)에 PNG 저장 */
+/** 안드로이드 앱: 갤러리(Pictures/COTA)에 PNG 저장 */
 export async function saveImageToDevice(blob: Blob, fileName: string): Promise<void> {
   const base64 = await blobToDataUrl(blob);
   await AppShell.saveImage({ base64, fileName });

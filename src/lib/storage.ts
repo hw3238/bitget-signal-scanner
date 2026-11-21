@@ -1,34 +1,26 @@
 export interface Settings {
+  /** 'auto' = 시그널마다 COTA 추천 배율, 'manual' = 아래 leverage 고정 */
+  leverageMode: 'auto' | 'manual';
   leverage: number;
-  /** FX 탭 랏(Lot) — 1 Lot 계약 크기 기준 달러 손익 계산 */
-  fxLot: number;
   minRR: number;
   refreshSec: number;
-  scanPairs: boolean;
   sound: boolean;
-  /** 벤티지 호가 보정: 카드 표시 이름(XAUUSD+, EURUSD+ …) → 가격 오프셋 */
-  fxOffsets: Record<string, number>;
-  /** 선택: Twelve Data 무료 API 키(추가 FX 페어 스캔) */
-  twelveDataKey: string;
   /** 핸드폰 알림 ON/OFF (기본 ON) */
   notifyEnabled: boolean;
-  /** 알림 대상: 주력 3종목 / FX·금 전체 / 전체 종목 */
-  notifyTarget: 'priority' | 'fx' | 'all';
+  /** 알림 대상: 비트·이더·솔 / 주요 코인 / 전체 종목 */
+  notifyTarget: 'top3' | 'majors' | 'all';
   /** 선택: ntfy.sh 토픽 이름 또는 URL (비어 있으면 외부 푸시 안 함) */
   notifyNtfy: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  leverageMode: 'auto',
   leverage: 10,
-  fxLot: 0.1,
   minRR: 1.5,
   refreshSec: 60,
-  scanPairs: true,
   sound: false,
-  fxOffsets: {},
-  twelveDataKey: '',
   notifyEnabled: true,
-  notifyTarget: 'priority',
+  notifyTarget: 'majors',
   /** 기본 전용 토픽 — 사용자가 바꾸거나 비울 수 있다 */
   notifyNtfy: 'bgss-hw3238-9f4k2m',
 };
@@ -58,7 +50,17 @@ function readArray<T>(key: string): T[] {
   }
 }
 
-export const loadSettings = () => read<Settings>(SETTINGS_KEY, DEFAULT_SETTINGS);
+/** 저장된 설정을 읽고, FX 시절 값(주력 3종목·FX 대상)은 코인 기준으로 옮긴다. */
+export const loadSettings = (): Settings => {
+  const merged = read<Settings>(SETTINGS_KEY, DEFAULT_SETTINGS);
+  const rawTarget = merged.notifyTarget as string;
+  if (rawTarget === 'priority') merged.notifyTarget = 'top3';
+  else if (rawTarget === 'fx') merged.notifyTarget = 'majors';
+  if (!['top3', 'majors', 'all'].includes(merged.notifyTarget)) {
+    merged.notifyTarget = DEFAULT_SETTINGS.notifyTarget;
+  }
+  return merged;
+};
 export const saveSettings = (s: Settings) => localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
 
 export const loadHistory = () => readArray<HistoryRecord>(HISTORY_KEY);
