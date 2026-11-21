@@ -1,5 +1,15 @@
+import { useEffect, useState } from 'react';
 import type { Settings } from '../lib/storage';
 import { MIN_RR, MIN_WINRATE } from '../engine/backtest';
+import { isNativeApp, nativeAppInfo, openExternalUrl } from '../lib/native';
+import {
+  APP_VERSION,
+  checkForUpdate,
+  hardReload,
+  PAGES_URL,
+  RELEASES_PAGE,
+  type UpdateCheckResult,
+} from '../lib/update';
 
 interface Props {
   settings: Settings;
@@ -11,8 +21,93 @@ interface Props {
 }
 
 export function SettingsTab({ settings, onChange, onClearHistory, onClearSwapLog, historyCount, swapCount }: Props) {
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<UpdateCheckResult | null>(null);
+  const [apkVersion, setApkVersion] = useState<string | null>(null);
+  const native = isNativeApp();
+
+  const runCheck = async (auto = false) => {
+    if (!auto) setChecking(true);
+    const next = await checkForUpdate();
+    setResult(next);
+    if (!auto) setChecking(false);
+  };
+
+  useEffect(() => {
+    void runCheck(true);
+    if (native) {
+      void nativeAppInfo().then((info) => setApkVersion(info?.versionName ?? null));
+    }
+  }, [native]);
+
+  const openDownload = () => {
+    void openExternalUrl(result?.apkUrl || result?.htmlUrl || RELEASES_PAGE);
+  };
+
   return (
     <div className="tab settings-tab">
+      <section className="panel">
+        <header className="panel-head">
+          <h3>앱 · 업데이트</h3>
+          <span className="panel-note">{native ? '안드로이드 앱' : '웹 버전'}</span>
+        </header>
+
+        {result?.updateAvailable && (
+          <div className="update-banner">
+            <div className="update-banner-text">
+              <b>새 버전 v{result.latest} 배포됨</b>
+              <span>APK를 내려받아 설치하면 최신 기능이 적용됩니다.</span>
+            </div>
+            <button className="update-banner-btn" onClick={openDownload}>
+              업데이트
+            </button>
+          </div>
+        )}
+
+        <div className="setting-row compact">
+          <div>
+            <div className="setting-name">현재 버전</div>
+            <div className="setting-desc">
+              앱 v{APP_VERSION}
+              {apkVersion ? ` · 설치된 APK v${apkVersion}` : ''}
+            </div>
+          </div>
+          <button className="ghost-btn" onClick={() => void runCheck(false)} disabled={checking}>
+            {checking ? '확인 중…' : '🔄 업데이트 확인'}
+          </button>
+        </div>
+
+        <div className="setting-row compact">
+          <div>
+            <div className="setting-name">웹/로직 최신화</div>
+            <div className="setting-desc">실행할 때마다 GitHub Pages 최신 배포본을 불러옵니다. 강제로 새로 받을 때 사용하세요.</div>
+          </div>
+          <button className="ghost-btn" onClick={() => void hardReload()}>
+            새로고침(캐시 갱신)
+          </button>
+        </div>
+
+        <div className={`update-status ${result?.updateAvailable ? 'on' : ''}`}>
+          {result ? result.message : '최신 릴리즈를 확인하는 중…'}
+          {result?.updateAvailable && (
+            <button className="ghost-btn small" onClick={openDownload}>
+              ⬇︎ APK 다운로드
+            </button>
+          )}
+        </div>
+
+        <ul className="api-list">
+          <li>
+            <span>최신 배포본</span>
+            <code>{PAGES_URL}</code>
+          </li>
+          <li>
+            <span>릴리즈(APK)</span>
+            <code>{RELEASES_PAGE}</code>
+          </li>
+        </ul>
+      </section>
+
       <section className="panel">
         <header className="panel-head">
           <h3>스캐너 설정</h3>

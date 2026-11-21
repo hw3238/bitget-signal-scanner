@@ -10,6 +10,8 @@ import type { Signal } from './engine/types';
 import { useFavorites } from './hooks/useFavorites';
 import { useScanner } from './hooks/useScanner';
 import { fmtTime } from './lib/format';
+import { openExternalUrl } from './lib/native';
+import { checkForUpdate, RELEASES_PAGE } from './lib/update';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from './lib/storage';
 
 type Tab = 'scanner' | 'market' | 'engine' | 'history' | 'settings';
@@ -26,10 +28,30 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>(() => ({ ...DEFAULT_SETTINGS, ...loadSettings() }));
   const [tab, setTab] = useState<Tab>('scanner');
   const [shareSignal, setShareSignal] = useState<Signal | null>(null);
+  const [update, setUpdate] = useState<{ version: string; apkUrl: string | null; htmlUrl: string } | null>(
+    null,
+  );
+  const [updateDismissed, setUpdateDismissed] = useState(false);
   const { state, history, swapLog, scan, clearHistory, clearSwapLog } = useScanner({
     refreshSec: settings.refreshSec,
   });
   const favorites = useFavorites();
+
+  // 새 APK 릴리즈가 있으면 상단 배너로 알린다.
+  useEffect(() => {
+    let cancelled = false;
+    void checkForUpdate().then((res) => {
+      if (cancelled || !res.updateAvailable || !res.latest) return;
+      setUpdate({
+        version: res.latest,
+        apkUrl: res.apkUrl ?? null,
+        htmlUrl: res.htmlUrl ?? RELEASES_PAGE,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const patchSettings = useCallback((patch: Partial<Settings>) => {
     setSettings((prev) => {
@@ -124,6 +146,23 @@ export default function App() {
       </header>
 
       <main className="app-main">
+        {update && !updateDismissed && (
+          <div className="update-banner app-wide">
+            <div className="update-banner-text">
+              <b>새 버전 v{update.version}</b>
+              <span>최신 APK로 업데이트할 수 있어요.</span>
+            </div>
+            <button
+              className="update-banner-btn"
+              onClick={() => void openExternalUrl(update.apkUrl || update.htmlUrl)}
+            >
+              업데이트
+            </button>
+            <button className="update-banner-x" onClick={() => setUpdateDismissed(true)} aria-label="알림 닫기">
+              ✕
+            </button>
+          </div>
+        )}
         {tab === 'scanner' && (
           <ScannerTab
             state={state}

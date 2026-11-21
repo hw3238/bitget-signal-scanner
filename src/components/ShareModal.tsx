@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Signal } from '../engine/types';
 import { drawShareCard } from './shareCard';
 import { CloseIcon, DownloadIcon, ShareIcon, StarIcon } from './Icons';
+import { isNativeApp, saveImageToDevice, shareImageFromDevice } from '../lib/native';
 
 interface Props {
   signal: Signal;
@@ -15,6 +16,7 @@ export function ShareModal({ signal, leverage, isFavorite, onToggleFavorite, onC
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [ready, setReady] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,22 +47,41 @@ export function ShareModal({ signal, leverage, isFavorite, onToggleFavorite, onC
     };
   }, [onClose]);
 
-  const save = () => {
+  const fileName = `CRT-${signal.base}-${signal.tf}-${signal.side}.png`;
+
+  const flash = (state: 'saved' | 'failed') => {
+    setSaved(state === 'saved');
+    setFailed(state === 'failed');
+    setTimeout(() => {
+      setSaved(false);
+      setFailed(false);
+    }, 2200);
+  };
+
+  const save = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `CRT-${signal.base}-${signal.tf}-${signal.side}.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2200);
-    }, 'image/png');
+    const blob: Blob | null = await new Promise((res) => canvas.toBlob((b) => res(b), 'image/png'));
+    if (!blob) return;
+    if (isNativeApp()) {
+      // WebView에서는 blob 다운로드가 막히므로 네이티브 저장(갤러리)으로 처리
+      try {
+        await saveImageToDevice(blob, fileName);
+        flash('saved');
+      } catch {
+        flash('failed');
+      }
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    flash('saved');
   };
 
   const share = async () => {
@@ -69,12 +90,16 @@ export function ShareModal({ signal, leverage, isFavorite, onToggleFavorite, onC
     try {
       const blob: Blob | null = await new Promise((res) => canvas.toBlob((b) => res(b), 'image/png'));
       if (!blob) return;
-      const file = new File([blob], `CRT-${signal.base}.png`, { type: 'image/png' });
+      const file = new File([blob], fileName, { type: 'image/png' });
+      if (isNativeApp()) {
+        await shareImageFromDevice(blob, fileName);
+        return;
+      }
       const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
       if (nav.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: `${signal.base} ${signal.tf} CRT 시그널` });
       } else {
-        save();
+        await save();
       }
     } catch {
       /* 사용자가 공유를 취소한 경우 */
@@ -97,9 +122,9 @@ export function ShareModal({ signal, leverage, isFavorite, onToggleFavorite, onC
             <StarIcon size={16} filled={isFavorite} />
             {isFavorite ? '즐겨찾기됨' : '즐겨찾기'}
           </button>
-          <button className="primary" onClick={save}>
+          <button className="primary" onClick={() => void save()}>
             <DownloadIcon size={17} />
-            {saved ? '저장됨' : 'PNG 저장'}
+            {saved ? '저장됨' : failed ? '저장 실패' : 'PNG 저장'}
           </button>
           <button onClick={share}>
             <ShareIcon size={17} />
