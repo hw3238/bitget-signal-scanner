@@ -448,6 +448,25 @@ const run = async () => {
         Math.max(0.05, Math.abs(num(btc010.target.usd)) * 0.02),
     `${btc010?.cap} ${btc010?.target.usd} → ${btc100?.cap} ${btc100?.target.usd}`,
   );
+  // BTCUSD+ 공유 카드도 배수 없이 랏·달러 손익으로 그려지는지 확인
+  await page.evaluate(() => {
+    window.__drawn = [];
+  });
+  await page.locator('.fx-tab .signal-card:not(.skeleton)').first().click();
+  await page.waitForSelector('.share-canvas.in', { timeout: 30000 });
+  await page.waitForTimeout(800);
+  const btcShare = await page.evaluate(() => ({ drawn: window.__drawn.slice() }));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+  check(
+    'BTCUSD+ 공유 카드 랏·달러 손익(배수 없음, 1 Lot = 1 BTC)',
+    btcShare.drawn.some((t) => /0\.10 Lot/.test(t)) &&
+      btcShare.drawn.some((t) => /1 Lot = 1 BTC/.test(t)) &&
+      btcShare.drawn.some((t) => /^[+-]?\$/.test(t)) &&
+      !btcShare.drawn.some((t) => /레버리지|\b\d+x\b/.test(t)),
+    btcShare.drawn.filter((t) => /Lot|\$/.test(t)).slice(0, 6).join(' | '),
+  );
+
   // 카드 전체(랏 스트립 포함)가 한 장에 담기도록 촬영할 때만 세로를 늘린다(레이아웃은 390px 폭 그대로).
   await page.setViewportSize({ width: 390, height: 1240 });
   await page.waitForTimeout(400);
