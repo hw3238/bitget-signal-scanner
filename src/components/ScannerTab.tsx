@@ -133,6 +133,15 @@ export function ScannerTab({
   const marketCount = state.analyses.filter((a) => a.asset !== 'fx').length;
   const scanning = state.status === 'scanning';
   const pct = state.progress.total ? Math.round((state.progress.done / state.progress.total) * 100) : 0;
+  /** 마지막 스캔 소요 — 캐시만 반영했는지 새로 받았는지 함께 보여준다. */
+  const speedLabel = (() => {
+    if (state.status === 'error' || !state.elapsedMs) return null;
+    // 새로 받는 중에는 진행률을 보여주고, 캐시로 끝난 경우엔 바로 캐시 표시
+    if (state.status === 'scanning' && state.candleFetches > 0) return null;
+    const sec = state.elapsedMs >= 1000 ? (state.elapsedMs / 1000).toFixed(1) : (state.elapsedMs / 1000).toFixed(2);
+    if (!state.candleFetches) return `⚡ 캐시 ${sec}초`;
+    return `⚡ ${sec}초 완료`;
+  })();
 
   const leverageFor = (signal: Signal): number =>
     settings.leverageMode === 'auto' && profile
@@ -154,10 +163,17 @@ export function ScannerTab({
               비트겟 USDT-M 코인·주식선물 · {marketCount}개 마켓 · {qualified}개 고승률 전략 채택
             </div>
           </div>
-          <button className={`rescan ${scanning ? 'busy' : ''}`} onClick={onRescan} disabled={scanning}>
-            <RefreshIcon size={16} />
-            {scanning ? `${pct}%` : '실시간 갱신'}
-          </button>
+          <div className="scan-actions">
+            <button className={`rescan ${scanning ? 'busy' : ''}`} onClick={onRescan} disabled={scanning}>
+              <RefreshIcon size={16} />
+              {scanning ? `${pct}%` : '실시간 갱신'}
+            </button>
+            {speedLabel && (
+              <span className="speed-chip" data-scan-speed title={`캔들 ${state.candleFetches}건 새로 받음 · 캐시 ${state.cacheHits}건 재사용 · 실패 ${state.progress.failed}건`}>
+                {speedLabel}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="counter-row">

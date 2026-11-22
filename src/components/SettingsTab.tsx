@@ -12,6 +12,7 @@ import {
   type NotifyPermission,
 } from '../lib/notify';
 import { isNativeApp, nativeAppInfo, openExternalUrl } from '../lib/native';
+import { useApkUpdate } from '../lib/useApkUpdate';
 import { STYLE_META, fmtSeed, type Profile } from '../lib/profile';
 import {
   APP_VERSION,
@@ -64,6 +65,7 @@ export function SettingsTab({
   const [testing, setTesting] = useState(false);
   const [testNote, setTestNote] = useState('');
   const native = isNativeApp();
+  const apkUpdate = useApkUpdate();
 
   useEffect(() => {
     void notificationPermission().then(setPermission);
@@ -128,6 +130,17 @@ export function SettingsTab({
     void openExternalUrl(result?.apkUrl || result?.htmlUrl || RELEASES_PAGE);
   };
 
+  // 앱 안에서 바로 업데이트 — 다운로드 진행률 → 설치 화면
+  const startUpdate = () => {
+    if (!native) {
+      openDownload();
+      return;
+    }
+    void apkUpdate.start(result?.apkUrl || APK_DOWNLOAD_URL);
+  };
+
+  const apk = apkUpdate.state;
+
   const style = profile ? STYLE_META[profile.style] : null;
 
   return (
@@ -188,11 +201,48 @@ export function SettingsTab({
           <div className="update-banner">
             <div className="update-banner-text">
               <b>새 버전 v{result.latest} 배포됨</b>
-              <span>APK를 내려받아 설치하면 최신 기능이 적용됩니다.</span>
+              <span>
+                {native
+                  ? '앱을 나가지 않고 바로 내려받아 설치할 수 있습니다.'
+                  : 'APK를 내려받아 설치하면 최신 기능이 적용됩니다.'}
+              </span>
             </div>
-            <button className="update-banner-btn" onClick={openDownload}>
-              업데이트
+            <button className="update-banner-btn" onClick={startUpdate} disabled={apk.phase === 'downloading'}>
+              {apk.phase === 'downloading' ? `${apk.pct}%` : native ? `바로 업데이트 (v${result.latest})` : '업데이트'}
             </button>
+          </div>
+        )}
+
+        {apk.phase !== 'idle' && (
+          <div className={`apk-update ${apk.phase}`}>
+            <div className="apk-update-row">
+              <b>
+                {apk.phase === 'downloading'
+                  ? `APK 내려받는 중 ${apk.pct}%`
+                  : apk.phase === 'installed'
+                    ? '설치 화면을 열었습니다'
+                    : apk.phase === 'permission'
+                      ? '앱 설치 허용이 필요합니다'
+                      : '업데이트 실패'}
+              </b>
+              {apk.phase === 'downloading' && <span className="apk-pct">{apk.pct}%</span>}
+            </div>
+            {apk.phase === 'downloading' && (
+              <div className="apk-progress">
+                <div className="apk-progress-fill" style={{ width: `${apk.pct}%` }} />
+              </div>
+            )}
+            <div className="apk-note">{apk.note}</div>
+            <div className="apk-actions">
+              {(apk.phase === 'permission' || apk.phase === 'error') && (
+                <button className="ghost-btn small" onClick={startUpdate}>
+                  다시 시도
+                </button>
+              )}
+              <button className="ghost-btn small" onClick={apkUpdate.reset}>
+                닫기
+              </button>
+            </div>
           </div>
         )}
 
@@ -215,7 +265,7 @@ export function SettingsTab({
             <div className="setting-desc">실행할 때마다 GitHub Pages 최신 배포본을 불러옵니다. 강제로 새로 받을 때 사용하세요.</div>
           </div>
           <button className="ghost-btn" onClick={() => void hardReload()}>
-            새로고침(캐시 갱신)
+            웹 화면 즉시 새로고침
           </button>
         </div>
 

@@ -202,4 +202,6 @@ export interface SymbolAnalysis {
   signals: Signal[];
   replacement: Replacement | null;
   candlesLoaded: number;
+  /** 이 분석을 만든 캔들을 받아온 시각(ms) — 캐시 유효기간 판정에 쓴다 */
+  candleAt?: number;
 }

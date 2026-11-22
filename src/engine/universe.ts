@@ -108,6 +108,9 @@ export const STOCK_WATCHLIST = [
 
 export const CRYPTO_TOP_N = 36;
 
+/** 1차 우선 스캔 대상 시장 수 — 즐겨찾기 + 주력 3종 + 거래대금 상위 */
+export const PRIORITY_MARKET_COUNT = 25;
+
 export function isStockSymbol(symbol: string): boolean {
   const base = symbol.replace(/USDT$/, '');
   if (base.endsWith('STOCK')) return true;
@@ -144,4 +147,40 @@ export function pickUniverse(contracts: Contract[], tickers: Ticker[]): Contract
     .slice(0, CRYPTO_TOP_N);
 
   return [...picked, ...cryptos];
+}
+
+/**
+ * 2단계 스캔의 1차 큐.
+ *  - tier0: 즐겨찾기 종목 + 비트·이더·솔 (가장 먼저 → 0.5~1초 안에 핵심 시그널)
+ *  - tier1: 주요 코인 · 거래대금 상위 25개 마켓 (2~3초 안에 화면에 표시)
+ *  - 나머지 마켓은 2차 큐로 이어서 스캔한다.
+ */
+export function pickPrioritySymbols(
+  contracts: Contract[],
+  tickers: Ticker[],
+  favorites: string[] = [],
+): { tier0: string[]; tier1: string[] } {
+  const known = new Set(contracts.map((c) => c.symbol));
+  const vol = new Map(tickers.map((t) => [t.symbol, t.quoteVolume]));
+  const tier0: string[] = [];
+  const seen = new Set<string>();
+  const push = (list: string[], symbol: string | undefined) => {
+    if (!symbol || seen.has(symbol) || !known.has(symbol)) return;
+    seen.add(symbol);
+    list.push(symbol);
+  };
+
+  for (const symbol of favorites) push(tier0, symbol.endsWith('USDT') ? symbol : `${symbol}USDT`);
+  for (const symbol of PRIORITY_COINS) push(tier0, symbol);
+
+  const tier1: string[] = [];
+  for (const symbol of MAJOR_COINS) push(tier1, symbol);
+  const byVolume = contracts
+    .filter((c) => c.asset === 'crypto')
+    .sort((a, b) => (vol.get(b.symbol) ?? 0) - (vol.get(a.symbol) ?? 0));
+  for (const c of byVolume) {
+    if (tier1.length + tier0.length >= PRIORITY_MARKET_COUNT) break;
+    push(tier1, c.symbol);
+  }
+  return { tier0, tier1 };
 }

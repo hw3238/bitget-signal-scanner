@@ -13,6 +13,31 @@ interface AppShellPlugin {
   requestNotificationPermission(): Promise<{ granted: boolean; supported: boolean }>;
   /** 상단 알림바에 시그널 알림 표시 (탭하면 앱 열림) */
   notifySignal(options: { title: string; body: string; id?: number }): Promise<void>;
+  /** Android 8.0+ '출처를 알 수 없는 앱 설치' 허용 여부 */
+  canInstallPackages(): Promise<{ allowed: boolean; sdk?: number }>;
+  /** 설치 허용 설정 화면으로 이동 */
+  openInstallPermissionSettings(): Promise<{ opened: boolean }>;
+  /** APK를 앱 캐시에 받아 설치 화면을 연다 */
+  downloadAndInstallApk(options: { url: string; fileName?: string }): Promise<ApkInstallResult>;
+  /** 네이티브 → 웹 진행률 이벤트 */
+  addListener(
+    eventName: 'apkProgress',
+    listener: (data: ApkProgress) => void,
+  ): Promise<{ remove: () => Promise<void> }>;
+}
+
+export interface ApkProgress {
+  /** 0~100 */
+  progress: number;
+  bytes?: number;
+  total?: number;
+}
+
+export interface ApkInstallResult {
+  started: boolean;
+  needsPermission?: boolean;
+  bytes?: number;
+  path?: string;
 }
 
 const AppShell = registerPlugin<AppShellPlugin>('AppShell');
@@ -98,5 +123,59 @@ export async function nativeAppInfo(): Promise<{ versionName: string; versionCod
     return { versionName: info.versionName, versionCode: info.versionCode };
   } catch {
     return null;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * 앱 안에서 바로 업데이트 (v1.4.0+)
+ * ------------------------------------------------------------------ */
+
+/** Android 8.0+ 에서 패키지 설치 허용 여부. 웹에서는 false. */
+export async function canInstallApk(): Promise<boolean> {
+  if (!isNativeApp()) return false;
+  try {
+    const res = await AppShell.canInstallPackages();
+    return !!res?.allowed;
+  } catch {
+    return false;
+  }
+}
+
+/** '출처를 알 수 없는 앱 설치' 허용 설정 화면 열기 */
+export async function openInstallPermissionSettings(): Promise<void> {
+  if (!isNativeApp()) return;
+  try {
+    await AppShell.openInstallPermissionSettings();
+  } catch {
+    /* 설정 화면을 열 수 없는 기기 */
+  }
+}
+
+/**
+ * 앱 안에서 APK 다운로드 → 설치 화면.
+ * 진행률(0~100%)은 onProgress 로 흘려보낸다. 설치 권한이 없으면 needsPermission=true 로 돌아온다.
+ */
+export async function downloadAndInstallApk(
+  url: string,
+  onProgress?: (pct: number) => void,
+): Promise<ApkInstallResult> {
+  if (!isNativeApp()) {
+    window.open(url, '_blank', 'noopener');
+    return { started: false };
+  }
+  let handle: { remove: () => Promise<void> } | null = null;
+  if (onProgress) {
+    try {
+      handle = await AppShell.addListener('apkProgress', (data) => {
+        if (typeof data?.progress === 'number') onProgress(Math.max(0, Math.min(100, data.progress)));
+      });
+    } catch {
+      handle = null;
+    }
+  }
+  try {
+    return await AppShell.downloadAndInstallApk({ url, fileName: 'bitget-crt-scanner.apk' });
+  } finally {
+    if (handle) void handle.remove();
   }
 }

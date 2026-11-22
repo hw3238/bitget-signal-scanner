@@ -47,4 +47,6 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 시그널 알림 진동 -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- 앱 안에서 새 APK를 내려받아 바로 설치(v1.4.0+) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

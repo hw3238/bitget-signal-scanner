@@ -16,6 +16,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.util.Base64;
 import android.widget.Toast;
 
@@ -34,7 +35,10 @@ import com.getcapacitor.annotation.PermissionCallback;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.Locale;
 
 /**
@@ -46,6 +50,7 @@ import java.util.Locale;
  * - appInfo: 설치된 APK의 버전 확인
  * - notifySignal: 시그널을 안드로이드 상단 알림바에 표시(소리·진동, 탭하면 앱 열림)
  * - notificationPermission / requestNotificationPermission: Android 13+ 알림권한
+ * - canInstallPackages / openInstallPermissionSettings / downloadAndInstallApk: 앱 안에서 APK 다운로드 → 설치 화면
  */
 @CapacitorPlugin(
     name = "AppShell",
@@ -366,6 +371,168 @@ public class AppShellPlugin extends Plugin {
         } catch (Exception e) {
             call.reject(e.getMessage());
         }
+    }
+
+    /* ------------------------------------------------------------------ *
+     * 앱 안에서 바로 업데이트 — APK 다운로드(진행률) → 안드로이드 설치 화면
+     * ------------------------------------------------------------------ */
+
+    /** Android 8.0+ 에서 "출처를 알 수 없는 앱 설치" 허용 여부 */
+    private boolean isInstallAllowed() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return getContext().getPackageManager().canRequestPackageInstalls();
+        }
+        return true;
+    }
+
+    @PluginMethod
+    public void canInstallPackages(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("allowed", isInstallAllowed());
+        ret.put("sdk", Build.VERSION.SDK_INT);
+        call.resolve(ret);
+    }
+
+    /** 설정 → 앱 → 출처를 알 수 없는 앱 설치 허용 화면으로 이동 */
+    private void startInstallPermissionSettings() {
+        Intent intent;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+            intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+        } else {
+            intent = new Intent(Settings.ACTION_SECURITY_SETTINGS);
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(intent);
+    }
+
+    @PluginMethod
+    public void openInstallPermissionSettings(PluginCall call) {
+        try {
+            startInstallPermissionSettings();
+            JSObject ret = new JSObject();
+            ret.put("opened", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("설정 화면을 열지 못했습니다: " + e.getMessage());
+        }
+    }
+
+    /**
+     * APK를 앱 캐시에 내려받아 설치 화면을 연다.
+     *  - 진행률은 'apkProgress' 이벤트(0~100)로 웹에 전달한다.
+     *  - Android 8.0+ 에서 설치 권한이 없으면 needsPermission=true 로 응답하고 설정 화면을 띄운다.
+     */
+    @PluginMethod
+    public void downloadAndInstallApk(PluginCall call) {
+        final String url = call.getString("url");
+        if (url == null || url.isEmpty()) {
+            call.reject("url required");
+            return;
+        }
+        final String fileName = call.getString("fileName", "cota-update.apk");
+        if (!isInstallAllowed()) {
+            try {
+                startInstallPermissionSettings();
+            } catch (Exception ignored) {
+                /* 설정 화면을 못 열어도 결과는 돌려준다 */
+            }
+            JSObject ret = new JSObject();
+            ret.put("started", false);
+            ret.put("needsPermission", true);
+            call.resolve(ret);
+            return;
+        }
+
+        new Thread(() -> {
+            HttpURLConnection conn = null;
+            try {
+                File dir = new File(getContext().getCacheDir(), "apk-update");
+                if (!dir.exists() && !dir.mkdirs()) {
+                    throw new Exception("다운로드 폴더를 만들 수 없습니다");
+                }
+                File target = new File(dir, fileName);
+
+                conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setInstanceFollowRedirects(true);
+                conn.setConnectTimeout(20000);
+                conn.setReadTimeout(60000);
+                conn.setRequestProperty("User-Agent", "COTA-Android");
+                conn.setRequestProperty("Accept", "application/vnd.android.package-archive,*/*");
+                int code = conn.getResponseCode();
+                // http → https 리다이렉트는 자동으로 따라가지 않으므로 몇 단계 직접 따라간다.
+                int hops = 0;
+                while (code >= 300 && code < 400 && hops < 4) {
+                    String location = conn.getHeaderField("Location");
+                    if (location == null) break;
+                    URL base = conn.getURL();
+                    conn.disconnect();
+                    conn = (HttpURLConnection) new URL(base, location).openConnection();
+                    conn.setInstanceFollowRedirects(true);
+                    conn.setConnectTimeout(20000);
+                    conn.setReadTimeout(60000);
+                    conn.setRequestProperty("User-Agent", "COTA-Android");
+                    code = conn.getResponseCode();
+                    hops += 1;
+                }
+                if (code != HttpURLConnection.HTTP_OK) {
+                    throw new Exception("HTTP " + code);
+                }
+                long total = conn.getContentLengthLong();
+                long downloaded = 0;
+                int lastPct = -1;
+                try (InputStream in = conn.getInputStream();
+                     FileOutputStream out = new FileOutputStream(target)) {
+                    byte[] buffer = new byte[64 * 1024];
+                    int read;
+                    while ((read = in.read(buffer)) > 0) {
+                        out.write(buffer, 0, read);
+                        downloaded += read;
+                        int pct = total > 0 ? (int) Math.min(100, downloaded * 100 / total) : -1;
+                        if (pct >= 0 && pct != lastPct) {
+                            lastPct = pct;
+                            notifyApkProgress(pct, downloaded, total);
+                        }
+                    }
+                    out.flush();
+                }
+                if (target.length() <= 0) {
+                    throw new Exception("내려받은 파일이 비어 있습니다");
+                }
+                notifyApkProgress(100, target.length(), target.length());
+
+                // 설치 화면 열기 — FileProvider URI + 패키지 설치 인텐트
+                Uri uri = FileProvider.getUriForFile(
+                    getContext(),
+                    getContext().getPackageName() + ".fileprovider",
+                    target
+                );
+                Intent install = new Intent(Intent.ACTION_VIEW);
+                install.setDataAndType(uri, "application/vnd.android.package-archive");
+                install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(install);
+
+                JSObject ret = new JSObject();
+                ret.put("started", true);
+                ret.put("needsPermission", false);
+                ret.put("bytes", target.length());
+                ret.put("path", target.getAbsolutePath());
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("APK 다운로드 실패: " + e.getMessage());
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        }).start();
+    }
+
+    /** 진행률 이벤트(0~100%) */
+    private void notifyApkProgress(int pct, long bytes, long total) {
+        JSObject data = new JSObject();
+        data.put("progress", pct);
+        data.put("bytes", bytes);
+        data.put("total", total);
+        notifyListeners("apkProgress", data);
     }
 
     private void toast(final String message) {

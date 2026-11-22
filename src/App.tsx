@@ -13,9 +13,10 @@ import type { Signal } from './engine/types';
 import { useFavorites } from './hooks/useFavorites';
 import { useScanner } from './hooks/useScanner';
 import { fmtTime } from './lib/format';
-import { openExternalUrl } from './lib/native';
+import { isNativeApp, openExternalUrl } from './lib/native';
+import { useApkUpdate } from './lib/useApkUpdate';
 import { useSignalNotifications } from './lib/notify';
-import { checkForUpdate, RELEASES_PAGE } from './lib/update';
+import { APK_DOWNLOAD_URL, checkForUpdate, RELEASES_PAGE } from './lib/update';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from './lib/storage';
 import { loadProfile, recommendLeverage, saveProfile, type Profile } from './lib/profile';
 
@@ -29,13 +30,21 @@ export default function App() {
     null,
   );
   const [updateDismissed, setUpdateDismissed] = useState(false);
+  // 상단 배너에서도 앱을 나가지 않고 APK 다운로드 → 설치 화면으로 이어진다.
+  const apkUpdate = useApkUpdate();
   // 첫 실행 온보딩 — cota.profile.v1 이 없으면 시드·매매 성향을 먼저 받는다.
   const [profile, setProfile] = useState<Profile | null>(() => loadProfile());
   const [onboarding, setOnboarding] = useState<boolean>(() => loadProfile() === null);
+  const favorites = useFavorites();
+  // 즐겨찾기 종목은 1차 우선 스캔 큐에 들어가 가장 먼저 시그널로 뜬다.
+  const favoriteSymbols = useMemo(
+    () => [...new Set(favorites.entries.map((f) => f.signal.symbol))],
+    [favorites.entries],
+  );
   const { state, history, swapLog, scan, clearHistory, clearSwapLog } = useScanner({
     refreshSec: settings.refreshSec,
+    favoriteSymbols,
   });
-  const favorites = useFavorites();
 
   // 🔔 새 시그널 → 핸드폰 알림 (첫 스캔 결과는 기준선으로만 기록)
   const { sendTest } = useSignalNotifications({
@@ -165,7 +174,7 @@ export default function App() {
             <span className="status-text">{statusText}</span>
             <button
               className="icon-btn"
-              onClick={() => void scan()}
+              onClick={() => void scan(true)}
               disabled={state.status === 'scanning'}
               aria-label="새로고침"
             >
@@ -180,13 +189,36 @@ export default function App() {
           <div className="update-banner app-wide">
             <div className="update-banner-text">
               <b>새 버전 v{update.version}</b>
-              <span>최신 APK로 업데이트할 수 있어요.</span>
+              <span>
+                {apkUpdate.state.phase === 'downloading'
+                  ? `APK 내려받는 중 ${apkUpdate.state.pct}%`
+                  : apkUpdate.state.phase === 'installed'
+                    ? '설치 화면을 열었습니다. "설치"를 눌러 마무리하세요.'
+                    : apkUpdate.state.phase === 'permission'
+                      ? '설정에서 COTA의 "앱 설치 허용"을 켠 뒤 다시 눌러주세요.'
+                      : isNativeApp()
+                        ? '앱을 나가지 않고 바로 설치할 수 있어요.'
+                        : '최신 APK로 업데이트할 수 있어요.'}
+              </span>
+              {apkUpdate.state.phase === 'downloading' && (
+                <div className="apk-progress slim">
+                  <div className="apk-progress-fill" style={{ width: `${apkUpdate.state.pct}%` }} />
+                </div>
+              )}
             </div>
             <button
               className="update-banner-btn"
-              onClick={() => void openExternalUrl(update.apkUrl || update.htmlUrl)}
+              onClick={() => {
+                if (isNativeApp()) void apkUpdate.start(update.apkUrl || APK_DOWNLOAD_URL);
+                else void openExternalUrl(update.apkUrl || update.htmlUrl);
+              }}
+              disabled={apkUpdate.state.phase === 'downloading'}
             >
-              업데이트
+              {apkUpdate.state.phase === 'downloading'
+                ? `${apkUpdate.state.pct}%`
+                : isNativeApp()
+                  ? `바로 업데이트 (v${update.version})`
+                  : '업데이트'}
             </button>
             <button className="update-banner-x" onClick={() => setUpdateDismissed(true)} aria-label="알림 닫기">
               ✕
@@ -202,18 +234,18 @@ export default function App() {
             onToggleFavorite={favorites.toggle}
             onSettings={patchSettings}
             onOpen={setShareSignal}
-            onRescan={() => void scan()}
+            onRescan={() => void scan(true)}
             profile={profile}
           />
         )}
-        {tab === 'market' && <MarketTab state={state} onRescan={() => void scan()} />}
+        {tab === 'market' && <MarketTab state={state} onRescan={() => void scan(true)} />}
         {tab === 'menu' && (
           <MenuTab
             state={state}
             profile={profile}
             leverage={repLeverage}
             swapLog={swapLog}
-            onRescan={() => void scan()}
+            onRescan={() => void scan(true)}
             onClearLog={clearSwapLog}
           />
         )}

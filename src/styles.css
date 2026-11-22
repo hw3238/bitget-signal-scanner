@@ -383,6 +383,91 @@ textarea {
   background: #d9ecff;
 }
 
+.scan-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+
+.speed-chip {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-2);
+  background: var(--line-soft);
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* 앱 안에서 바로 업데이트 — 진행률 */
+.apk-update {
+  background: var(--blue-soft);
+  border-radius: 14px;
+  padding: 13px 14px;
+  margin: 10px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.apk-update.installed {
+  background: #eafaf1;
+}
+
+.apk-update.error {
+  background: #fdecec;
+}
+
+.apk-update-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.apk-pct {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--blue-2);
+}
+
+.apk-progress {
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(49, 130, 246, 0.16);
+  overflow: hidden;
+}
+
+.apk-progress.slim {
+  height: 4px;
+  margin-top: 2px;
+  background: rgba(49, 130, 246, 0.2);
+}
+
+.apk-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--blue);
+  transition: width 0.2s ease;
+}
+
+.apk-note {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.apk-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .rescan.busy {
   background: var(--line-soft);
   color: var(--ink-2);

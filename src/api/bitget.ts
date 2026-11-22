@@ -1,5 +1,6 @@
 import type { AssetClass, Candle, Contract, TF, Ticker } from '../engine/types';
 import { isFxSymbol, isStockSymbol } from '../engine/universe';
+import { requestGate, sleep } from './rateLimiter';
 
 const BASE = 'https://api.bitget.com';
 const PRODUCT = 'USDT-FUTURES';
@@ -10,26 +11,62 @@ interface ApiEnvelope<T> {
   data: T;
 }
 
-async function getJson<T>(path: string, attempt = 0): Promise<T> {
+/** 한 번의 HTTP 호출 — 모든 요청은 전역 요청 게이트를 지나 간격·동시성이 조절된다. */
+async function rawGet(path: string): Promise<Response> {
+  await requestGate.acquire();
   try {
-    const res = await fetch(`${BASE}${path}`, { headers: { accept: 'application/json' } });
-    if (res.status === 429) {
-      const wait = 700 + 550 * attempt + Math.random() * 250;
-      await new Promise((r) => setTimeout(r, wait));
-      if (attempt < 4) return getJson<T>(path, attempt + 1);
-      throw new Error('요청 한도 초과(429)');
-    }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const body = (await res.json()) as ApiEnvelope<T>;
-    if (body.code !== '00000') throw new Error(body.msg || `code ${body.code}`);
-    return body.data;
+    return await fetch(`${BASE}${path}`, { headers: { accept: 'application/json' } });
+  } finally {
+    requestGate.release();
+  }
+}
+
+const isRateLimitBody = (code: string, msg: string): boolean =>
+  code === '429' || code === '40034' || /rate ?limit|too many requests/i.test(msg || '');
+
+async function getJson<T>(path: string, attempt = 0): Promise<T> {
+  let res: Response;
+  try {
+    res = await rawGet(path);
   } catch (err) {
     if (attempt < 2) {
-      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+      await sleep(320 * (attempt + 1));
       return getJson<T>(path, attempt + 1);
     }
     throw err;
   }
+
+  if (res.status === 429) {
+    const retryAfter = Number(res.headers.get('retry-after'));
+    requestGate.onThrottle(Number.isFinite(retryAfter) ? retryAfter * 1000 : 0);
+    if (attempt < 4) {
+      await sleep(Math.min(2600, 320 * (attempt + 1)) + Math.random() * 160);
+      return getJson<T>(path, attempt + 1);
+    }
+    throw new Error('요청 한도 초과(429)');
+  }
+
+  if (!res.ok) {
+    if (attempt < 2 && res.status >= 500) {
+      await sleep(300 * (attempt + 1));
+      return getJson<T>(path, attempt + 1);
+    }
+    throw new Error(`HTTP ${res.status}`);
+  }
+
+  const body = (await res.json()) as ApiEnvelope<T>;
+  if (body.code !== '00000') {
+    if (isRateLimitBody(String(body.code), String(body.msg ?? ''))) {
+      requestGate.onThrottle();
+      if (attempt < 4) {
+        await sleep(Math.min(2600, 320 * (attempt + 1)) + Math.random() * 160);
+        return getJson<T>(path, attempt + 1);
+      }
+    }
+    throw new Error(body.msg || `code ${body.code}`);
+  }
+  requestGate.onSuccess();
+  return body.data;
 }
 
 export function classifyContract(symbol: string, isRwa: boolean): AssetClass {
