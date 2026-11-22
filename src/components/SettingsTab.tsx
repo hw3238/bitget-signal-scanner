@@ -14,6 +14,7 @@ import {
 import { isNativeApp, nativeAppInfo, openExternalUrl } from '../lib/native';
 import { useApkUpdate } from '../lib/useApkUpdate';
 import { STYLE_META, fmtSeed, type Profile } from '../lib/profile';
+import { RISK_PRESETS, defaultRiskPct } from '../lib/orderCockpit';
 import {
   APP_VERSION,
   APK_DOWNLOAD_URL,
@@ -179,6 +180,35 @@ export function SettingsTab({
               직접 고정
             </button>
           </div>
+        </div>
+        <div className="setting-row">
+          <div>
+            <div className="setting-name">실전 주문 리스크</div>
+            <div className="setting-desc">
+              카드의 주문 수량은 손절가에 닿았을 때 시드의 이 비율만큼만 잃도록 자동 계산됩니다.
+              {profile ? ` 지금 설정은 시드의 ${defaultRiskPct(profile.style)}% 기준입니다.` : ''}
+            </div>
+          </div>
+          <label className="select-pill risk-pill">
+            <span>리스크</span>
+            <select
+              value={settings.riskPct == null ? 'auto' : String(settings.riskPct)}
+              onChange={(e) => {
+                const v = e.target.value;
+                onChange({ riskPct: v === 'auto' ? null : Number(v) });
+              }}
+              aria-label="1회 허용 손실률"
+            >
+              <option value="auto">
+                성향 추천 ({profile ? defaultRiskPct(profile.style) : 1.5}%)
+              </option>
+              {RISK_PRESETS.map((v) => (
+                <option key={v} value={v}>
+                  시드의 {v}%
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         <div className="setting-row compact">
           <div>

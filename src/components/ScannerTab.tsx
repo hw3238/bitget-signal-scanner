@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Signal } from '../engine/types';
+import type { Contract, Signal } from '../engine/types';
 import type { ScanState } from '../hooks/useScanner';
 import { favoriteKey, type FavoriteEntry } from '../lib/favorites';
 import { fmtPct, tfLabel } from '../lib/format';
@@ -91,6 +91,13 @@ export function ScannerTab({
     for (const s of state.signals) map.set(favoriteKey(s), s);
     return map;
   }, [state.signals]);
+
+  /** 종목별 거래소 계약 정보 — 주문 수량을 비트겟 주문 단위(volumePlace)에 맞춘다. */
+  const contractBySymbol = useMemo(() => {
+    const map = new Map<string, Contract>();
+    for (const c of state.contracts) map.set(c.symbol, c);
+    return map;
+  }, [state.contracts]);
 
   const favoriteSignals = useMemo(() => {
     return scanFavorites
@@ -358,6 +365,8 @@ export function ScannerTab({
             leverage={settings.leverage}
             leverageMode={settings.leverageMode}
             profile={profile}
+            riskPct={settings.riskPct}
+            contract={contractBySymbol.get(signal.symbol) ?? null}
             onOpen={onOpen}
             isFavorite={isFavorite(signal)}
             onToggleFavorite={onToggleFavorite}

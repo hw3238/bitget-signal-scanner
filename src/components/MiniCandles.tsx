@@ -1,10 +1,14 @@
 import { useId } from 'react';
 import type { Candle, Signal } from '../engine/types';
+import { fmtPrice } from '../lib/format';
+import { layoutPriceLabels, type PriceLabelKey } from '../lib/chartLabels';
 
 interface Props {
   candles: Candle[];
-  signal: Pick<Signal, 'target' | 'stop' | 'entry' | 'eq' | 'side' | 'detectedIdx' | 'state'>;
+  signal: Pick<Signal, 'target' | 'stop' | 'entry' | 'eq' | 'side' | 'detectedIdx' | 'state'> &
+    Partial<Pick<Signal, 'decimals'>>;
   height?: number;
+  /** 목표가·진입가·손절가 가격 라벨을 차트 오른쪽에 표시 */
   showLabels?: boolean;
   /** 토스풍 라이트 차트가 기본. dark=true 면 어두운 배경용 팔레트를 쓴다. */
   dark?: boolean;
@@ -13,8 +17,9 @@ interface Props {
 /**
  * 카드 안 미니 캔들 차트 — 토스증권 차트처럼 흰/연회색 바탕에
  * 상승 빨강(#F04452) · 하락 파랑(#3182F6)만 쓴다. 네온 글로우는 쓰지 않는다.
+ * showLabels 면 목표/진입/손절 가격을 오른쪽 라벨로 붙여, 라인과 숫자를 한눈에 맞춘다.
  */
-export function MiniCandles({ candles, signal, height = 116, dark = false }: Props) {
+export function MiniCandles({ candles, signal, height = 116, showLabels = false, dark = false }: Props) {
   const rawId = useId();
   const uid = `mc${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
 
@@ -56,100 +61,152 @@ export function MiniCandles({ candles, signal, height = 116, dark = false }: Pro
   const last = candles[candles.length - 1];
   const lastX = padX + bw * (candles.length - 1) + bw / 2;
 
+  const priceOf: Record<PriceLabelKey, number> = {
+    target: signal.target,
+    entry: signal.entry,
+    stop: signal.stop,
+  };
+  const labelClass: Record<PriceLabelKey, string> = {
+    target: 'target',
+    entry: 'entry',
+    stop: 'stop',
+  };
+  const labels = showLabels
+    ? layoutPriceLabels(
+        (['target', 'entry', 'stop'] as PriceLabelKey[]).map((key) => ({ key, y: y(priceOf[key]) })),
+        { height: H },
+      )
+    : [];
+
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      className="mini-candles"
-      preserveAspectRatio="none"
-      role="img"
-      aria-label="캔들 차트"
-    >
-      <defs>
-        <linearGradient id={`${uid}-band`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="rgba(49, 130, 246, 0.02)" />
-          <stop offset="50%" stopColor="rgba(49, 130, 246, 0.09)" />
-          <stop offset="100%" stopColor="rgba(49, 130, 246, 0.02)" />
-        </linearGradient>
-      </defs>
+    <div className={`mini-chart${showLabels ? ' labeled' : ''}`}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="mini-candles"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={`캔들 차트 · 목표 ${fmtPrice(signal.target, signal.decimals)} · 진입 ${fmtPrice(
+          signal.entry,
+          signal.decimals,
+        )} · 손절 ${fmtPrice(signal.stop, signal.decimals)}`}
+      >
+        <defs>
+          <linearGradient id={`${uid}-band`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="rgba(49, 130, 246, 0.02)" />
+            <stop offset="50%" stopColor="rgba(49, 130, 246, 0.09)" />
+            <stop offset="100%" stopColor="rgba(49, 130, 246, 0.02)" />
+          </linearGradient>
+        </defs>
 
-      <rect x={0} y={0} width={W} height={H} fill={dark ? '#111827' : 'transparent'} />
+        <rect x={0} y={0} width={W} height={H} fill={dark ? '#111827' : 'transparent'} />
 
-      {/* 가로·세로 안내선 */}
-      {[0.25, 0.5, 0.75].map((r) => (
-        <line key={`h${r}`} x1={0} x2={W} y1={H * r} y2={H * r} stroke={gridLine} strokeWidth={1} />
-      ))}
-      {[0.25, 0.5, 0.75].map((r) => (
-        <line key={`v${r}`} x1={W * r} x2={W * r} y1={0} y2={H} stroke={gridVert} strokeWidth={1} />
-      ))}
+        {/* 가로·세로 안내선 */}
+        {[0.25, 0.5, 0.75].map((r) => (
+          <line key={`h${r}`} x1={0} x2={W} y1={H * r} y2={H * r} stroke={gridLine} strokeWidth={1} />
+        ))}
+        {[0.25, 0.5, 0.75].map((r) => (
+          <line key={`v${r}`} x1={W * r} x2={W * r} y1={0} y2={H} stroke={gridVert} strokeWidth={1} />
+        ))}
 
-      {/* 시그널 발생봉 표시 */}
-      <rect x={highlightX - highlightW / 2} y={0} width={highlightW} height={H} fill={`url(#${uid}-band)`} />
-      <line
-        x1={highlightX}
-        x2={highlightX}
-        y1={0}
-        y2={H}
-        stroke={dark ? 'rgba(255,255,255,0.22)' : 'rgba(49, 130, 246, 0.35)'}
-        strokeWidth={1}
-        strokeDasharray="3 3"
-      />
+        {/* 시그널 발생봉 표시 */}
+        <rect x={highlightX - highlightW / 2} y={0} width={highlightW} height={H} fill={`url(#${uid}-band)`} />
+        <line
+          x1={highlightX}
+          x2={highlightX}
+          y1={0}
+          y2={H}
+          stroke={dark ? 'rgba(255,255,255,0.22)' : 'rgba(49, 130, 246, 0.35)'}
+          strokeWidth={1}
+          strokeDasharray="3 3"
+        />
 
-      {/* 캔들 */}
-      {candles.map((c, i) => {
-        const isUp = c.c >= c.o;
-        const color = isUp ? up : down;
-        const x = padX + bw * i + bw / 2;
-        const bodyTop = y(Math.max(c.o, c.c));
-        const bodyBottom = y(Math.min(c.o, c.c));
-        return (
-          <g key={c.t}>
-            <line x1={x} x2={x} y1={y(c.h)} y2={y(c.l)} stroke={color} strokeWidth={1} opacity={0.85} />
-            <rect
-              x={x - bodyW / 2}
-              y={bodyTop}
-              width={bodyW}
-              height={Math.max(1.1, bodyBottom - bodyTop)}
-              fill={color}
-              rx={0.6}
-            />
-          </g>
-        );
-      })}
+        {/* 캔들 */}
+        {candles.map((c, i) => {
+          const isUp = c.c >= c.o;
+          const color = isUp ? up : down;
+          const x = padX + bw * i + bw / 2;
+          const bodyTop = y(Math.max(c.o, c.c));
+          const bodyBottom = y(Math.min(c.o, c.c));
+          return (
+            <g key={c.t}>
+              <line x1={x} x2={x} y1={y(c.h)} y2={y(c.l)} stroke={color} strokeWidth={1} opacity={0.85} />
+              <rect
+                x={x - bodyW / 2}
+                y={bodyTop}
+                width={bodyW}
+                height={Math.max(1.1, bodyBottom - bodyTop)}
+                fill={color}
+                rx={0.6}
+              />
+            </g>
+          );
+        })}
 
-      {/* 목표가선 */}
-      <line x1={0} x2={W} y1={y(signal.target)} y2={y(signal.target)} stroke={targetColor} strokeWidth={1.4} />
-      {/* 손절가선 */}
-      <line x1={0} x2={W} y1={y(signal.stop)} y2={y(signal.stop)} stroke={stopColor} strokeWidth={1.4} />
-      {/* 본전(EQ) 점선 */}
-      <line
-        x1={0}
-        x2={W}
-        y1={y(signal.eq)}
-        y2={y(signal.eq)}
-        stroke={eqColor}
-        strokeWidth={1.1}
-        strokeDasharray="5 4"
-      />
-      {/* 진입가 점선 */}
-      <line
-        x1={0}
-        x2={W}
-        y1={y(signal.entry)}
-        y2={y(signal.entry)}
-        stroke={entryColor}
-        strokeWidth={1}
-        strokeDasharray="2 4"
-      />
+        {/* 목표가선 — 점선 + 우측 라벨 */}
+        <line
+          x1={0}
+          x2={W}
+          y1={y(signal.target)}
+          y2={y(signal.target)}
+          stroke={targetColor}
+          strokeWidth={1.4}
+          strokeDasharray="5 3"
+        />
+        {/* 손절가선 */}
+        <line
+          x1={0}
+          x2={W}
+          y1={y(signal.stop)}
+          y2={y(signal.stop)}
+          stroke={stopColor}
+          strokeWidth={1.4}
+          strokeDasharray="5 3"
+        />
+        {/* 본전(EQ) 점선 */}
+        <line
+          x1={0}
+          x2={W}
+          y1={y(signal.eq)}
+          y2={y(signal.eq)}
+          stroke={eqColor}
+          strokeWidth={1.1}
+          strokeDasharray="2 4"
+        />
+        {/* 진입가 점선 */}
+        <line
+          x1={0}
+          x2={W}
+          y1={y(signal.entry)}
+          y2={y(signal.entry)}
+          stroke={entryColor}
+          strokeWidth={1}
+          strokeDasharray="2 3"
+        />
 
-      {/* 현재가 점 */}
-      <circle
-        cx={lastX}
-        cy={y(last.c)}
-        r={3.2}
-        fill={signal.side === 'long' ? up : down}
-        stroke={dark ? '#111827' : '#FFFFFF'}
-        strokeWidth={1.6}
-      />
-    </svg>
+        {/* 현재가 점 */}
+        <circle
+          cx={lastX}
+          cy={y(last.c)}
+          r={3.2}
+          fill={signal.side === 'long' ? up : down}
+          stroke={dark ? '#111827' : '#FFFFFF'}
+          strokeWidth={1.6}
+        />
+      </svg>
+
+      {showLabels && (
+        <div className="mini-label-col">
+          {labels.map((l) => (
+            <span
+              key={l.key}
+              className={`mini-label ${labelClass[l.key]}`}
+              style={{ top: `${(l.top / H) * 100}%` }}
+            >
+              {fmtPrice(priceOf[l.key], signal.decimals)}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

@@ -114,6 +114,19 @@ export const ArrowUpRightIcon = ({ size = 13, className }: IconProps) => (
   </svg>
 );
 
+export const CopyIcon = ({ size = 13, className }: IconProps) => (
+  <svg {...base(size)} className={className}>
+    <rect x="9" y="9" width="11" height="11" rx="2.4" />
+    <path d="M15 5.6A2.6 2.6 0 0 0 12.4 3H6.6A2.6 2.6 0 0 0 4 5.6v5.8A2.6 2.6 0 0 0 6.6 14" />
+  </svg>
+);
+
+export const CheckIcon = ({ size = 13, className }: IconProps) => (
+  <svg {...base(size)} className={className}>
+    <path d="M4.5 12.4 9.6 17.5 19.5 6.9" />
+  </svg>
+);
+
 export const BoltIcon = ({ size = 14, className }: IconProps) => (
   <svg {...base(size)} className={className}>
     <path d="M13 2 5 13h5l-1 9 8-11h-5l1-9Z" />

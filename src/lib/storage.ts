@@ -11,6 +11,8 @@ export interface Settings {
   notifyTarget: 'top3' | 'majors' | 'all';
   /** 선택: ntfy.sh 토픽 이름 또는 URL (비어 있으면 외부 푸시 안 함) */
   notifyNtfy: string;
+  /** 1회 허용 손실률(%). null = 매매 성향 기본값(보수적 1.5% · 공격적 3%) */
+  riskPct: number | null;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -23,6 +25,7 @@ export const DEFAULT_SETTINGS: Settings = {
   notifyTarget: 'majors',
   /** 기본 전용 토픽 — 사용자가 바꾸거나 비울 수 있다 */
   notifyNtfy: 'bgss-hw3238-9f4k2m',
+  riskPct: null,
 };
 
 const SETTINGS_KEY = 'bgss.settings.v1';

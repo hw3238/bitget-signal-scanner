@@ -77,7 +77,9 @@ const ui = await page.evaluate(() => {
     labels: [...c.querySelectorAll('.lvl-label')].map((l) => clean(l.textContent)),
     price: clean(c?.querySelector('.price')?.textContent),
     rec: clean(c?.querySelector('.badge.rec')?.textContent),
-    seedCells: [...c.querySelectorAll('.seed-cell b')].map((b) => clean(b.textContent)),
+    cockpitCells: [...c.querySelectorAll('.cockpit-cell b')].map((b) => clean(b.textContent)),
+    cockpitRisk: clean(c?.querySelector('.cockpit-risk')?.textContent),
+    chartLabels: [...c.querySelectorAll('.mini-label')].map((l) => clean(l.textContent)),
     scripts: [...document.querySelectorAll('script[src]')].map((s) => s.getAttribute('src')),
     fxLeft: /FX|벤티지|Lot|랏/.test(document.querySelector('.scanner-tab')?.innerText || ''),
   };
@@ -90,7 +92,12 @@ check(!ui.fxLeft, '라이브 FX·랏 UI 없음');
 check(/^(롱 · 매수|숏 · 매도)$/.test(ui.side), '라이브 방향 배지 한글', ui.side);
 check(ui.labels.join('|') === '목표가|진입가|본전 (EQ)|손절가', '라이브 가격 박스 한글', ui.labels.join(' / '));
 check(/^COTA 추천 \d+x$/.test(ui.rec), '라이브 COTA 추천 배지', ui.rec);
-check(ui.seedCells.length === 2 && ui.seedCells.every((v) => /^[+-]?\$/.test(v)), '라이브 시드 예상 손익', ui.seedCells.join(' / '));
+check(
+  ui.cockpitCells.length === 4 && /^시드 \$1,000의 1\.5%/.test(ui.cockpitRisk),
+  '라이브 실전 주문 콕핏(수량·증거금·손절·목표)',
+  `${ui.cockpitRisk} · ${ui.cockpitCells.join(' / ')}`,
+);
+check(ui.chartLabels.length === 3, '라이브 차트 목표·진입·손절 라벨', ui.chartLabels.join(' / '));
 check(
   (ui.price || '').includes(',') || Number((ui.price || '').replace(/,/g, '')) < 1000,
   '라이브 천단위 콤마 가격',

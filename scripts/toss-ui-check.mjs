@@ -59,6 +59,7 @@ const check = (name, ok, detail) => {
   checks.push({ name, ok: !!ok, detail });
   console.log(`${ok ? '✅' : '❌'} ${name}${detail ? ` — ${detail}` : ''}`);
 };
+const cleanText = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
 const run = async () => {
   await waitForServer(URL);
@@ -75,6 +76,7 @@ const run = async () => {
     hasTouch: true,
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
+    permissions: ['clipboard-read', 'clipboard-write'],
   });
   await mobile.addInitScript(() => {
     window.clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
@@ -239,10 +241,10 @@ const run = async () => {
   const card = await page.evaluate(() => {
     const c = document.querySelector('.scanner-tab .signal-card:not(.skeleton)');
     const lvls = [...c.querySelectorAll('.lvl')];
-    const seedCells = [...c.querySelectorAll('.seed-cell')].map((s) => ({
+    const cells = [...c.querySelectorAll('.cockpit-cell')].map((s) => ({
       label: clean(s.querySelector('span')?.textContent),
-      usd: clean(s.querySelector('b')?.textContent),
-      pct: clean(s.querySelector('i')?.textContent),
+      value: clean(s.querySelector('b')?.textContent),
+      sub: clean(s.querySelector('i')?.textContent),
     }));
     return {
       sym: clean(c.querySelector('.sym')?.textContent),
@@ -259,8 +261,12 @@ const run = async () => {
       priceCap: clean(c.querySelector('.price-cap')?.textContent),
       rr: clean(c.querySelector('.rr-row .rr-pill')?.textContent),
       winRate: clean(c.querySelectorAll('.rr-pill')[2]?.textContent),
-      seedCap: clean(c.querySelector('.seed-cap')?.textContent),
-      seedCells,
+      cockpitTitle: clean(c.querySelector('.cockpit-title')?.textContent),
+      cockpitRisk: clean(c.querySelector('.cockpit-risk')?.textContent),
+      cockpitCells: cells,
+      cockpitFoot: clean(c.querySelector('.cockpit-foot')?.textContent),
+      chartLabels: [...c.querySelectorAll('.mini-label')].map((l) => clean(l.textContent)),
+      copyBtns: [...c.querySelectorAll('.copy-btn')].map((b) => clean(b.textContent)),
       english: /\b(ENTRY|Entry|TARGET|Target|STOP|Stop|LONG|SHORT|WIN RATE|R:R)\b/.test(clean(c.textContent)),
       leverageOptions: [...document.querySelectorAll('.select-pill select')].map((s) =>
         [...s.options].map((o) => o.textContent?.trim()),
@@ -288,27 +294,89 @@ const run = async () => {
   check('레버리지 선택 = COTA 추천 기본 + 5/10/20/50 고정', card.leverageOptions.some((o) => o.includes('COTA 추천')) && card.leverageOn === 'COTA 추천', card.leverageOn || '');
   const recLev = Number((card.rec.match(/(\d+)x/) || [])[1]);
   check('COTA 추천 배지 = 보수적 2x~5x', /^COTA 추천 \d+x$/.test(card.rec) && recLev >= 2 && recLev <= 5, card.rec);
-  check('시드 예상 손익 표시(내 시드 $5,000)', /내 시드 \$5,000/.test(card.seedCap) && card.seedCells.length === 2, card.seedCap);
+
+  /* ---------- 4-1) 실전 주문 콕핏 ---------- */
   check(
-    '목표 시 예상 수익·손절 시 손실 금액/비율',
-    /^목표 시 예상 수익$/.test(card.seedCells[0]?.label) &&
-      /^\+\$/.test(card.seedCells[0]?.usd) &&
-      /^\+[\d.]+%$/.test(card.seedCells[0]?.pct) &&
-      /^손절 시 손실$/.test(card.seedCells[1]?.label) &&
-      /^-\$/.test(card.seedCells[1]?.usd) &&
-      /^-[\d.]+%$/.test(card.seedCells[1]?.pct),
-    JSON.stringify(card.seedCells),
+    '실전 주문 콕핏 4칸 = 주문 수량·필요 증거금·손절·목표',
+    card.cockpitTitle === '🎯 실전 주문' &&
+      card.cockpitCells.map((x) => x.label).join('|') === '주문 수량|필요 증거금|손절 도달 시|목표 도달 시',
+    `${card.cockpitTitle} · ${card.cockpitCells.map((x) => x.label).join(' / ')}`,
   );
-  // 시드 5,000 × 추천 배율 × (목표가−진입가)/진입가 = 예상 수익금
+  check(
+    '콕핏 리스크 = 시드 $5,000의 보수적 1.5% · COTA 추천 배율',
+    /^시드 \$5,000의 1\.5% · \d+x$/.test(card.cockpitRisk),
+    card.cockpitRisk,
+  );
   const entryVal = Number(card.values[1].replace(/,/g, ''));
   const targetVal = Number(card.values[0].replace(/,/g, ''));
-  const expectProfit = (5000 * recLev * Math.abs(targetVal - entryVal)) / entryVal;
-  const gotProfit = Number(card.seedCells[0].usd.replace(/[^0-9.]/g, ''));
+  const stopVal = Number(card.values[3].replace(/,/g, ''));
+  const shownQty = Number((card.cockpitCells[0]?.value || '').replace(/[^0-9.]/g, ''));
+  const expectQty = (5000 * 0.015) / Math.abs(entryVal - stopVal);
   check(
-    '예상 수익금 = 시드 × 추천 배율 × 목표 거리',
-    Math.abs(expectProfit - gotProfit) <= Math.max(0.6, expectProfit * 0.005),
-    `${expectProfit.toFixed(2)} vs ${gotProfit}`,
+    '주문 수량 = (시드 × 1.5%) ÷ |진입가 − 손절가| (거래소 단위 내림)',
+    Number.isFinite(shownQty) &&
+      shownQty > 0 &&
+      shownQty <= expectQty * (1 + 1e-6) &&
+      shownQty >= expectQty - Math.max(0.0001, expectQty * 0.04),
+    `표시 ${card.cockpitCells[0]?.value} · 계산 ${expectQty.toFixed(6)}`,
   );
+  const shownMargin = Number((card.cockpitCells[1]?.value || '').replace(/[^0-9.]/g, ''));
+  const expectMargin = (shownQty * entryVal) / recLev;
+  check(
+    '필요 증거금 = 수량 × 진입가 ÷ 추천 배율',
+    Math.abs(shownMargin - expectMargin) <= Math.max(1, expectMargin * 0.01),
+    `표시 $${shownMargin} · 계산 $${expectMargin.toFixed(2)} @ ${recLev}x`,
+  );
+  const shownProfit = Number((card.cockpitCells[3]?.value || '').replace(/[^0-9.]/g, ''));
+  const expectProfit = shownQty * Math.abs(targetVal - entryVal);
+  check(
+    '손절 손실 = —$75 (시드의 1.5%) · 목표 수익 = 수량 × 목표 거리',
+    card.cockpitCells[2]?.value === '-$75.00' &&
+      card.cockpitCells[2]?.sub === '-1.50%' &&
+      Math.abs(shownProfit - expectProfit) <= Math.max(3, expectProfit * 0.03),
+    `${card.cockpitCells[2]?.value} · ${card.cockpitCells[3]?.value} (계산 $${expectProfit.toFixed(2)})`,
+  );
+  check(
+    '차트 우측 가격 라벨 = 목표/진입/손절 3개가 가격 박스와 일치',
+    card.chartLabels.join('|') === [card.values[0], card.values[1], card.values[3]].join('|'),
+    card.chartLabels.join(' / '),
+  );
+  check('원클릭 복사 버튼 = 진입가·수량', card.copyBtns.join('|') === '진입가|수량', card.copyBtns.join(' / '));
+
+  // 진입가 복사 → 클립보드에 콤마 없는 원본 가격
+  const copyBtn = page.locator('.scanner-tab .signal-card:not(.skeleton) .copy-btn').first();
+  await copyBtn.scrollIntoViewIfNeeded();
+  await copyBtn.click();
+  await page.waitForTimeout(150);
+  const clipEntry = await page.evaluate(() => navigator.clipboard.readText());
+  const copyLabel = cleanText(await copyBtn.innerText());
+  check(
+    '진입가 복사 → 클립보드 값 = 콤마 없는 진입가',
+    clipEntry === card.values[1].replace(/,/g, ''),
+    `${clipEntry} vs ${card.values[1]}`,
+  );
+  check('복사 직후 버튼 피드백', copyLabel === '복사됨', copyLabel);
+  await page.waitForTimeout(1600);
+
+  // 수량 복사 → 숫자만(지수·콤마 없음)
+  const qtyBtn = page.locator('.scanner-tab .signal-card:not(.skeleton) .copy-btn').nth(1);
+  await qtyBtn.click();
+  await page.waitForTimeout(150);
+  const clipQty = await page.evaluate(() => navigator.clipboard.readText());
+  check(
+    '수량 복사 → 콤마·지수 없는 주문 수량',
+    /^[0-9]+(\.[0-9]+)?$/.test(clipQty) && Math.abs(Number(clipQty) - shownQty) <= Math.max(1e-8, shownQty * 1e-6),
+    clipQty,
+  );
+  await page.waitForTimeout(1600);
+
+  // 대표 스크린샷 — 실전 주문 콕핏이 한 장에 보이게
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const firstCard = page.locator('.scanner-tab .signal-card:not(.skeleton)').first();
+  await firstCard.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(400);
+  await firstCard.screenshot({ path: `${OUT}/45-signal-cockpit.png` });
+
   check(
     '현재 수익률·발송 시각 표기',
     /^(현재|최종) 수익률 \(진입가 기준\)$/.test(card.cap) &&
@@ -418,6 +486,13 @@ const run = async () => {
       version: [...document.querySelectorAll('.setting-desc')].map((d) => d.textContent).find((t) => t?.includes('앱 v')),
       overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
       lotSection: /랏\(Lot\)|벤티지 호가|트웰브 데이터/.test(document.querySelector('.settings-tab').innerText),
+      risk: (() => {
+        const s = document.querySelector('#settings-profile .risk-pill select');
+        return {
+          value: s?.value,
+          options: s ? [...s.options].map((o) => clean(o.textContent)) : [],
+        };
+      })(),
     };
   });
   check('설정 최상단 내 투자 프로필 카드', /^💼 내 투자 프로필$/.test(settings.headings[0]) && settings.profileSeed === '$5,000', `${settings.headings[0]} · ${settings.profileSeed} · ${settings.profileStyle}`);
@@ -425,6 +500,14 @@ const run = async () => {
   check('🔔 핸드폰 알림 유지 · 코인 알림 3택', settings.heading === '🔔 핸드폰 알림' && settings.targets.join('|') === '비트·이더·솔|주요 코인|전체 종목' && settings.targetOn === '주요 코인', settings.targets.join(' / '));
   check('ntfy 토픽 유지 · 앱 버전 v1.4.0', settings.ntfy === 'bgss-hw3238-9f4k2m' && /COTA · 앱 v1\.4\.0/.test(settings.version || ''), `${settings.ntfy} · ${settings.version}`);
   check('설정에 FX 랏·벤티지·트웰브 데이터 없음', !settings.lotSection);
+  check(
+    '실전 주문 리스크 설정 = 성향 추천 + 1/1.5/2/3/5%',
+    settings.risk.value === 'auto' &&
+      settings.risk.options.length === 6 &&
+      /성향 추천 \(1\.5%\)/.test(settings.risk.options[0]) &&
+      settings.risk.options.slice(1).join('|') === '시드의 1%|시드의 1.5%|시드의 2%|시드의 3%|시드의 5%',
+    `${settings.risk.value} · ${settings.risk.options.join(' / ')}`,
+  );
   check('설정 탭 가로 오버플로 0건', !settings.overflow);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(300);
@@ -446,20 +529,24 @@ const run = async () => {
   await page.waitForTimeout(700);
   const aggressive = await page.evaluate(() => {
     const rec = document.querySelector('.scanner-tab .badge.rec')?.textContent || '';
-    const seedCells = [...document.querySelectorAll('.scanner-tab .seed-cell')].map((s) => ({
-      usd: clean(s.querySelector('b')?.textContent),
-      pct: clean(s.querySelector('i')?.textContent),
+    const cells = [...document.querySelectorAll('.scanner-tab .cockpit-cell')].map((s) => ({
+      label: clean(s.querySelector('span')?.textContent),
+      value: clean(s.querySelector('b')?.textContent),
+      sub: clean(s.querySelector('i')?.textContent),
     }));
+    const risk = clean(document.querySelector('.scanner-tab .cockpit-risk')?.textContent);
     const stored = JSON.parse(localStorage.getItem('cota.profile.v1') || '{}');
-    return { rec: clean(rec), seedCells, stored };
+    return { rec: clean(rec), cells, risk, stored };
   });
   const agLev = Number((aggressive.rec.match(/(\d+)x/) || [])[1]);
   check('공격적 저장 · 추천 배율 10x~25x', aggressive.stored.style === 'aggressive' && agLev >= 10 && agLev <= 25, aggressive.rec);
   check('성향 변경 시 추천 배율 상승(보수적 < 공격적)', agLev > recLev, `${recLev}x → ${agLev}x`);
   check(
-    '공격적 예상 손익도 시드 기준으로 갱신',
-    /^\+\$/.test(aggressive.seedCells[0]?.usd || '') && /^-\$/.test(aggressive.seedCells[1]?.usd || ''),
-    JSON.stringify(aggressive.seedCells),
+    '공격적 리스크 3%로 갱신 · 손절 손실 −$150',
+    /^시드 \$5,000의 3% · \d+x$/.test(aggressive.risk) &&
+      aggressive.cells[2]?.value === '-$150.00' &&
+      aggressive.cells[2]?.sub === '-3.00%',
+    `${aggressive.risk} · ${aggressive.cells[2]?.value}`,
   );
 
   /* ---------- 8) 메뉴 > 전략엔진 · 나머지 탭 ---------- */

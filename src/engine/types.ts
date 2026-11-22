@@ -19,6 +19,12 @@ export interface Contract {
   isRwa: boolean;
   /** 소수점 자리수(거래소 pricePlace). FX·금 표기 정밀도에 사용 */
   decimals?: number;
+  /** 최소 주문 수량(코인 단위 · minTradeNum) */
+  minTradeNum?: number;
+  /** 주문 수량 소수 자리(거래소 volumePlace) */
+  volumePlace?: number;
+  /** 최소 주문 금액(USDT · minTradeUSDT) */
+  minTradeUsdt?: number;
 }
 
 export interface Ticker {

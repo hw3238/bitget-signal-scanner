@@ -89,12 +89,18 @@ export async function fetchContracts(): Promise<Contract[]> {
       const symbol = String(c.symbol);
       const isRwa = c.isRwa === 'YES';
       const decimals = Number(c.pricePlace);
+      const minTradeNum = Number(c.minTradeNum);
+      const volumePlace = Number(c.volumePlace);
+      const minTradeUsdt = Number(c.minTradeUSDT);
       return {
         symbol,
         base: String(c.baseCoin ?? symbol.replace(/USDT$/, '')),
         asset: classifyContract(symbol, isRwa),
         isRwa,
         decimals: Number.isFinite(decimals) ? decimals : undefined,
+        minTradeNum: Number.isFinite(minTradeNum) && minTradeNum > 0 ? minTradeNum : undefined,
+        volumePlace: Number.isFinite(volumePlace) ? volumePlace : undefined,
+        minTradeUsdt: Number.isFinite(minTradeUsdt) && minTradeUsdt > 0 ? minTradeUsdt : undefined,
       } satisfies Contract;
     });
 }

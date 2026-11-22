@@ -1,5 +1,7 @@
-import type { Signal } from '../engine/types';
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import type { Contract, Signal } from '../engine/types';
 import { assetClass, assetLabel } from '../lib/asset';
+import { copyToClipboard } from '../lib/clipboard';
 import { bitgetFuturesUrl } from '../lib/coinLogo';
 import { openBitgetFutures } from '../lib/native';
 import { fmtPct, fmtPrice, fmtRR, fmtSendTime, sideFullLabel, stateLabel, tfLabel } from '../lib/format';
@@ -8,12 +10,19 @@ import {
   fmtSeed,
   fmtUsdAmount,
   recommendLeverage,
-  seedPnl,
   type Profile,
 } from '../lib/profile';
+import {
+  copyPriceText,
+  copyQtyText,
+  fmtUsd,
+  formatQty,
+  planOrderForSignal,
+  resolveRiskPct,
+} from '../lib/orderCockpit';
 import { MiniCandles } from './MiniCandles';
 import { CoinLogo } from './CoinLogo';
-import { ArrowUpRightIcon, StarIcon } from './Icons';
+import { ArrowUpRightIcon, CheckIcon, CopyIcon, StarIcon } from './Icons';
 
 interface Props {
   signal: Signal;
@@ -22,6 +31,10 @@ interface Props {
   /** 'auto' 면 시그널마다 COTA 추천 배율을 쓴다 */
   leverageMode?: 'auto' | 'manual';
   profile?: Profile | null;
+  /** 설정에서 지정한 1회 허용 손실률(%). null/미지정이면 성향 기본값 */
+  riskPct?: number | null;
+  /** 거래소 계약 정보 — 주문 수량을 비트겟 주문 단위에 맞춘다 */
+  contract?: Contract | null;
   onOpen: (signal: Signal) => void;
   isFavorite: boolean;
   onToggleFavorite: (signal: Signal) => void;
@@ -34,6 +47,8 @@ export function SignalCard({
   leverage,
   leverageMode = 'manual',
   profile = null,
+  riskPct = null,
+  contract = null,
   onOpen,
   isFavorite,
   onToggleFavorite,
@@ -46,7 +61,6 @@ export function SignalCard({
   const rec = profile ? recommendLeverage(signal, profile.style) : null;
   const lev = auto && rec ? rec.leverage : leverage;
   const roi = changePct * lev;
-  const pnl = auto && profile ? seedPnl(signal, lev, profile.seed) : null;
   /** 내 시드 기준 실시간 평가손익 — 현재가가 진입가에서 얼마나 움직였는지 × 레버리지 */
   const livePnl = profile ? (profile.seed * roi) / 100 : null;
   /** 목표가·손절가까지 남은 변동률(현재가 기준, 방향 반영) */
@@ -57,10 +71,56 @@ export function SignalCard({
   const progress = Math.max(0, Math.min(1, signal.progress));
   const dec = signal.decimals;
 
+  /** 실전 주문 콕핏 — 내 시드·리스크 기준 수량·증거금·손익 */
+  const appliedRisk = profile ? resolveRiskPct(profile.style, riskPct) : null;
+  const plan =
+    profile && appliedRisk != null
+      ? planOrderForSignal(signal, {
+          seed: profile.seed,
+          riskPct: appliedRisk,
+          leverage: lev,
+          spec: contract ?? undefined,
+        })
+      : null;
+
+  const [copied, setCopied] = useState<'entry' | 'qty' | null>(null);
+  const copyTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (copyTimer.current) window.clearTimeout(copyTimer.current);
+    },
+    [],
+  );
+
+  const copyField = async (kind: 'entry' | 'qty', text: string) => {
+    if (!text) return;
+    const ok = await copyToClipboard(text);
+    if (!ok) return;
+    setCopied(kind);
+    if (copyTimer.current) window.clearTimeout(copyTimer.current);
+    copyTimer.current = window.setTimeout(() => setCopied(null), 1500);
+  };
+
   /** 비트겟 선물 화면을 연다 — 앱에서는 비트겟 안드로이드 앱, 웹에서는 새 탭. 카드의 공유 모달은 열리지 않는다. */
   const openBitget = () => {
     void openBitgetFutures(signal.symbol, bitgetFuturesUrl(signal.symbol));
   };
+  const copyProps = (kind: 'entry' | 'qty', text: string, label: string) => ({
+    type: 'button' as const,
+    className: `copy-btn ${copied === kind ? 'done' : ''}`,
+    'aria-label': `${label} 복사`,
+    title: `${label} 복사 — 비트겟 주문 화면에 붙여넣기`,
+    onClick: (e: MouseEvent) => {
+      e.stopPropagation();
+      void copyField(kind, text);
+    },
+    onKeyDown: (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+    },
+  });
+  const entryCopy = copyPriceText(entry, dec);
+  const qtyCopy = plan?.valid ? copyQtyText(plan.qty, plan.qtyDecimals) : '';
+  const minNotionalUsd = Math.round(contract?.minTradeUsdt ?? 5);
 
   return (
     <article
@@ -128,28 +188,6 @@ export function SignalCard({
         </div>
       </div>
 
-      {auto && pnl && profile && (
-        <div className="seed-strip">
-          <span className="seed-cap">
-            내 시드 <b>${fmtSeed(profile.seed)}</b> · {STYLE_META[profile.style].emoji}{' '}
-            {STYLE_META[profile.style].label}
-          </span>
-          <div className="seed-cells">
-            <div className="seed-cell">
-              <span>목표 시 예상 수익</span>
-              <b className="up">{fmtUsdAmount(pnl.profitUsd)}</b>
-              <i className="up">{fmtPct(pnl.profitPct)}</i>
-            </div>
-            <div className="seed-cell">
-              <span>손절 시 손실</span>
-              <b className="down">{fmtUsdAmount(pnl.lossUsd)}</b>
-              <i className="down">{fmtPct(pnl.lossPct)}</i>
-            </div>
-          </div>
-          <span className="seed-note">시드 전액을 한 포지션에 넣는 기준</span>
-        </div>
-      )}
-
       <div className="rr-row">
         <span className="rr-pill">
           손익비 <b>{fmtRR(signal.rr, 1)}</b>
@@ -166,7 +204,7 @@ export function SignalCard({
       </div>
 
       <div className="chart-wrap">
-        <MiniCandles candles={signal.candles} signal={signal} />
+        <MiniCandles candles={signal.candles} signal={signal} showLabels />
       </div>
 
       <div className="levels">
@@ -201,6 +239,53 @@ export function SignalCard({
         <span className="progress-pct">{Math.round(progress * 100)}%</span>
       </div>
 
+      {profile && plan?.valid && (
+        <section className="cockpit" aria-label="내 시드를 지키는 실전 주문">
+          <header className="cockpit-head">
+            <span className="cockpit-title">🎯 실전 주문</span>
+            <span className="cockpit-risk">
+              시드 ${fmtSeed(profile.seed)}의 {plan.riskPct}% · {lev}x
+            </span>
+          </header>
+          <div className="cockpit-grid">
+            <div className="cockpit-cell">
+              <span>주문 수량</span>
+              <b>
+                {formatQty(plan.qty, plan.qtyDecimals)} <i className="unit">{signal.base}</i>
+              </b>
+            </div>
+            <div className="cockpit-cell">
+              <span>필요 증거금</span>
+              <b>{fmtUsd(plan.margin)}</b>
+            </div>
+            <div className="cockpit-cell">
+              <span>손절 도달 시</span>
+              <b className="down">{fmtUsdAmount(plan.stopLossUsd)}</b>
+              <i className="down">{fmtPct(plan.lossRoiPct, 2)}</i>
+            </div>
+            <div className="cockpit-cell">
+              <span>목표 도달 시</span>
+              <b className="up">{fmtUsdAmount(plan.profitUsd)}</b>
+              <i className="up">{fmtPct(plan.profitRoiPct, 2)}</i>
+            </div>
+          </div>
+          <div className="cockpit-foot">
+            <span>포지션 {fmtUsd(plan.notional)}</span>
+            <span>손익비 {fmtRR(plan.rr, 1)}</span>
+            <span>{STYLE_META[profile.style].emoji} {STYLE_META[profile.style].label}</span>
+            {plan.overSeed && <span className="cockpit-warn">⚠️ 증거금이 시드보다 큽니다</span>}
+            {plan.belowMinQty && (
+              <span className="cockpit-warn">
+                ⚠️ 최소 주문 수량 {formatQty(plan.minQty ?? 0, plan.qtyDecimals)} {signal.base}보다 작습니다
+              </span>
+            )}
+            {plan.belowMinNotional && (
+              <span className="cockpit-warn">⚠️ 비트겟 최소 주문 금액 ${minNotionalUsd} 미만</span>
+            )}
+          </div>
+        </section>
+      )}
+
       <div className="card-actions">
         <button
           type="button"
@@ -218,6 +303,18 @@ export function SignalCard({
           비트겟 바로가기
           <ArrowUpRightIcon size={12} />
         </button>
+        <div className="copy-group">
+          <button {...copyProps('entry', entryCopy, '진입가')}>
+            {copied === 'entry' ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
+            {copied === 'entry' ? '복사됨' : '진입가'}
+          </button>
+          {qtyCopy && (
+            <button {...copyProps('qty', qtyCopy, '주문 수량')}>
+              {copied === 'qty' ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
+              {copied === 'qty' ? '복사됨' : '수량'}
+            </button>
+          )}
+        </div>
         <span className={`share-hint${stale ? ' stale-hint' : ''}`}>
           {stale ? '보관된 스냅샷 · 탭하여 공유 카드' : '탭하여 공유 카드'}
         </span>
