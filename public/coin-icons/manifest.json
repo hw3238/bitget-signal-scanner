@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-11-22T09:44:43.900Z",
- "count": 160,
+ "generatedAt": "2026-11-22T13:13:39.146Z",
+ "count": 164,
  "sources": {
-  "okx": 0,
+  "okx": 4,
   "binance": 0,
   "coincap": 0
  },
@@ -27,6 +27,7 @@
   "BCH": "BCH.png",
   "BEAM": "BEAM.png",
   "BEAT": "BEAT.png",
+  "BERA": "BERA.png",
   "BGB": "BGB.png",
   "BILL": "BILL.png",
   "BLUR": "BLUR.png",
@@ -65,6 +66,7 @@
   "GPS": "GPS.png",
   "GRAM": "GRAM.png",
   "GRASS": "GRASS.png",
+  "GRVT": "GRVT.png",
   "H": "H.png",
   "HBAR": "HBAR.png",
   "HOT": "HOT.png",
@@ -126,6 +128,7 @@
   "RARE": "RARE.png",
   "RAVE": "RAVE.png",
   "RAY": "RAY.png",
+  "RE": "RE.png",
   "RENDER": "RENDER.png",
   "RESOLV": "RESOLV.png",
   "SAND": "SAND.png",
@@ -164,6 +167,7 @@
   "XPL": "XPL.png",
   "XRP": "XRP.png",
   "YB": "YB.png",
+  "ZAMA": "ZAMA.png",
   "ZEC": "ZEC.png",
   "ZK": "ZK.png",
   "ZRO": "ZRO.png"
