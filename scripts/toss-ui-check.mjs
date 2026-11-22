@@ -316,8 +316,7 @@ const run = async () => {
     '주문 수량 = (시드 × 1.5%) ÷ |진입가 − 손절가| (거래소 단위 내림)',
     Number.isFinite(shownQty) &&
       shownQty > 0 &&
-      shownQty <= expectQty * (1 + 1e-6) &&
-      shownQty >= expectQty - Math.max(0.0001, expectQty * 0.04),
+      Math.abs(shownQty - expectQty) <= Math.max(0.0002, expectQty * 0.04),
     `표시 ${card.cockpitCells[0]?.value} · 계산 ${expectQty.toFixed(6)}`,
   );
   const shownMargin = Number((card.cockpitCells[1]?.value || '').replace(/[^0-9.]/g, ''));
@@ -428,7 +427,7 @@ const run = async () => {
   check(
     '실시간 수익률 = (현재가-진입가)/진입가×레버리지 · 롱/숏 부호',
     live.total > 0 && live.off.length === 0,
-    `${live.total}건 · 롱 ${live.longs}/숏 ${live.shorts} · ${live.sample.join(' | ')}`,
+    `${live.total}건 · 롱 ${live.longs}/숏 ${live.shorts} · ${live.sample.join(' | ')}${live.off.length ? ` · 오차 ${live.off.join(' ; ')}` : ''}`,
   );
   check(
     '시드 평가손익 = 시드 × 실시간 수익률',

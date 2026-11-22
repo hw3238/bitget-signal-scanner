@@ -239,7 +239,7 @@ export function SignalCard({
         <span className="progress-pct">{Math.round(progress * 100)}%</span>
       </div>
 
-      {profile && plan?.valid && (
+      {profile && plan?.valid && signal.state === 'open' && (
         <section className="cockpit" aria-label="내 시드를 지키는 실전 주문">
           <header className="cockpit-head">
             <span className="cockpit-title">🎯 실전 주문</span>
