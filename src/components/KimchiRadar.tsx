@@ -53,12 +53,14 @@ export function KimchiRadar({ state }: { state: ScanState }) {
     setLoading(true);
     setError(null);
     try {
-      const [rate, upbit] = await Promise.all([fetchUsdKrw(), fetchUpbitPrices(KIMCHI_COINS).catch(() => null)]);
-      let quotes = upbit;
-      let src: '업비트' | '빗썸' = '업비트';
+      // 빗썸이 먼저 — GitHub Pages(github.io) 오리진에서도 CORS가 통과하는 것을 라이브에서 확인했다.
+      // 업비트는 오리진에 따라 CORS가 막히므로 빗썸이 실패했을 때만 시도한다.
+      const [rate, bithumb] = await Promise.all([fetchUsdKrw(), fetchBithumbPrices(KIMCHI_COINS).catch(() => null)]);
+      let quotes = bithumb;
+      let src: '업비트' | '빗썸' = '빗썸';
       if (!quotes || quotes.size === 0) {
-        quotes = await fetchBithumbPrices(KIMCHI_COINS);
-        src = '빗썸';
+        quotes = await fetchUpbitPrices(KIMCHI_COINS);
+        src = '업비트';
       }
       if (!quotes || quotes.size === 0) throw new Error('국내 원화 시세를 불러오지 못했습니다');
       setFx(rate);
@@ -189,7 +191,7 @@ export function KimchiRadar({ state }: { state: ScanState }) {
       </section>
 
       <div className="feed-note">
-        업비트·빗썸 원화 시세 + 비트겟 USDT-M 실시간 가격 + open.er-api 환율로 계산합니다. 출금 수수료는 코인별
+        빗썸(또는 업비트) 원화 시세 + 비트겟 USDT-M 실시간 가격 + open.er-api 환율로 계산합니다. 출금 수수료는 코인별
         대표 네트워크 기준 예상치입니다.
         <button className="link-btn" onClick={() => void load()}>
           다시 계산
