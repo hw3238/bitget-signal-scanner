@@ -221,7 +221,7 @@ export function PositionSurvival({ state, profile }: { state: ScanState; profile
           </li>
           <li>
             <span>펀딩비 (8h / 일)</span>
-            <b className={fundingPerDay >= 0 ? 'up' : 'down'}>
+            <b className={fundingPerDay > 0 ? 'green' : fundingPerDay < 0 ? 'down' : ''}>
               {metrics
                 ? `${fmtUsdAmount(metrics.fundingPerInterval)} / ${fmtUsdAmount(fundingPerDay)}`
                 : '-'}

@@ -171,7 +171,7 @@ const run = async () => {
     };
   });
   check('시황: 공포·탐욕 실데이터 표시', Number(market.fear) === fngValue, `${market.fear} / API ${fngValue} · ${market.fearLabel}`);
-  check('시황: OI 변동률 안내 문구', /OI 변동률은 COTA/.test(market.squeezeNote));
+  check('시황: OI 변동률 안내 문구', /OI 변동률은/.test(market.squeezeNote));
   check('시황: 스퀴즈 레이더 렌더', market.squeeze.length > 0 || /과열 종목이 없습니다/.test(market.squeezeNote), `${market.squeeze.length}행`);
   check('시황: 390px 오버플로 0건', !market.overflow);
 
@@ -245,7 +245,7 @@ const run = async () => {
   const btcUsd = Number(bgTickers.find((t) => t.symbol === 'BTCUSDT').lastPr);
   const usdKrw = fx.rates.KRW;
   const expectPrem = (btcKrw / (btcUsd * usdKrw) - 1) * 100;
-  check('김프: BTC 프리미엄 = 업비트·비트겟·환율 계산', close(num(kimchi.big), expectPrem, 0.4), `${kimchi.big} vs ${expectPrem.toFixed(2)}% (시세 시차 허용)`);
+  check('김프: BTC 프리미엄 = 국내가·비트겟·환율 계산', close(num(kimchi.big), expectPrem, 0.4), `${kimchi.big} vs ${expectPrem.toFixed(2)}% (시세 시차 허용)`);
   check('김프: TOP 3 송금 후보', kimchi.routes.length === 3, kimchi.routes.map((r) => `${r.base} ${r.net}`).join(' / '));
   const nets = kimchi.routes.map((r) => num(r.net));
   check('김프: TOP3 순손익 내림차순', nets.every((v, i) => i === 0 || nets[i - 1] >= v), nets.join(' ≥ '));

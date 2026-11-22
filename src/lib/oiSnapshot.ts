@@ -4,7 +4,7 @@
  * (값 자체는 전부 거래소 실데이터 · 변동률만 COTA 관측 기준)
  */
 const KEY = 'cota.oi.snapshots.v1';
-const MIN_GAP_MS = 20 * 60_000;
+const MIN_GAP_MS = 5 * 60_000;
 const KEEP = 120;
 
 interface Snapshot {

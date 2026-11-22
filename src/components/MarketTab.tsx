@@ -300,8 +300,8 @@ export function MarketTab({ state, onRescan }: Props) {
             {view.squeeze.length === 0 && <li className="mv-empty">거래대금이 충분한 종목이 없습니다.</li>}
           </ul>
           <p className="panel-note squeeze-note">
-            8시간 펀딩비가 ±0.05%를 넘거나 연환산 ±50%를 넘으면 과열로 표시합니다. OI 변동률은 COTA가 화면에서 관측한
-            직전 기록 대비입니다.
+            8시간 펀딩비가 ±0.05%를 넘으면 과열 배지가 붙습니다. OI 변동률은 비트겟에 과거 OI API가 없어 COTA가
+            5분 이상 전에 관측한 기록과 비교한 값입니다.
             {baseline ? ` (기준 ${new Date(baseline.at).toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' })} KST)` : ''}
           </p>
         </section>
