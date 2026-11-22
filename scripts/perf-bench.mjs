@@ -14,6 +14,7 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { chromium } from 'playwright';
+import './lib/chromium-env.mjs';
 
 const PORT = 4179;
 const URL = `http://127.0.0.1:${PORT}/`;

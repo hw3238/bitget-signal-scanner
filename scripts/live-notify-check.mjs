@@ -8,6 +8,7 @@
  * 실행: LD_LIBRARY_PATH=... node scripts/live-notify-check.mjs
  */
 import { chromium } from 'playwright';
+import './lib/chromium-env.mjs';
 
 const URL = 'https://hw3238.github.io/bitget-signal-scanner/';
 const OUT = 'docs/screens/17-live-settings-notify.png';

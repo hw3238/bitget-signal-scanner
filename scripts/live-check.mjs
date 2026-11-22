@@ -8,6 +8,7 @@
  * 실행: node scripts/live-check.mjs
  */
 import { chromium } from 'playwright';
+import './lib/chromium-env.mjs';
 
 const URL = 'https://hw3238.github.io/bitget-signal-scanner/';
 const OUT = 'docs/screens';
@@ -145,6 +146,49 @@ const settings = await page.evaluate(() => ({
 check(settings.seed === '$1,000' && settings.headings[0] === '💼 내 투자 프로필', '라이브 내 투자 프로필 카드', `${settings.seed} · ${settings.headings[0]}`);
 check(settings.target === '주요 코인' && settings.ntfy === 'bgss-hw3238-9f4k2m', '라이브 알림 기본값', `${settings.target} · ${settings.ntfy}`);
 check(/앱 v1\.4\.0/.test(settings.version || ''), '라이브 앱 버전 v1.4.0', settings.version);
+
+// 내 진입 원탭 → 기록 대시보드
+await page.locator('.bottom-nav button[data-tab="scanner"]').click();
+await page.waitForTimeout(700);
+const pinBtn = page.locator('.scanner-tab .signal-card:not(.skeleton) .pin-btn').first();
+await pinBtn.scrollIntoViewIfNeeded();
+const pinLabel = (await pinBtn.innerText()).replace(/\s+/g, ' ').trim();
+await pinBtn.click();
+await page.waitForTimeout(500);
+const pinned = await page.evaluate(() => ({
+  label: clean(document.querySelector('.scanner-tab .signal-card:not(.skeleton) .pin-btn')?.textContent),
+  stored: JSON.parse(localStorage.getItem('bgss.mytrades.v1') || '[]').length,
+  shareOpen: !!document.querySelector('.share-canvas.in'),
+}));
+check(pinLabel === '📌 내 진입' && pinned.label === '✓ 진입함' && pinned.stored === 1, '라이브 카드 원탭 내 진입', `${pinLabel} → ${pinned.label} · ${pinned.stored}건`);
+check(!pinned.shareOpen, '내 진입 탭은 공유 모달을 열지 않음');
+
+await page.locator('.bottom-nav button[data-tab="history"]').click();
+await page.waitForSelector('.history-tab .equity-panel', { timeout: 30000 });
+await page.waitForTimeout(700);
+const dash = await page.evaluate(() => {
+  const tab = document.querySelector('.history-tab');
+  return {
+    modes: [...tab.querySelectorAll('.trade-mode button')].map((b) => clean(b.textContent)),
+    curve: !!tab.querySelector('.equity-svg') || !!tab.querySelector('.equity-empty'),
+    clip: tab.querySelectorAll('.equity-svg g[clip-path]').length,
+    above: (() => {
+      const el = tab.querySelector('.equity-line.above');
+      return el ? getComputedStyle(el).stroke : null;
+    })(),
+    strat: [...tab.querySelectorAll('.strat-chip')].map((s) => ({
+      name: s.querySelector('.sc-main b')?.textContent?.trim(),
+      r: s.querySelector('.sc-result b')?.textContent?.trim(),
+    })),
+    kpi: [...tab.querySelectorAll('.equity-kpi span')].map((s) => clean(s.textContent)),
+    overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+  };
+});
+check(dash.modes.length === 2 && /전체 시그널/.test(dash.modes[0]) && /내 진입 매매 1/.test(dash.modes[1]), '라이브 기록 세그먼트', dash.modes.join(' / '));
+check(dash.curve && (dash.clip === 2 || dash.clip === 0) && (dash.above === 'rgb(49, 130, 246)' || dash.above === null), '라이브 누적 R 수익곡선', `${dash.clip}클립 · ${dash.above}`);
+check(dash.strat.length > 0 && dash.strat.every((s) => /[+-]?\d+\.\d{2}R$/.test(s.r ?? '')), '라이브 전략별 성적', dash.strat.slice(0, 3).map((s) => `${s.name} ${s.r}`).join(' / '));
+check(dash.kpi.length >= 3 && !dash.overflow, '라이브 곡선 KPI · 390px 오버플로 0건', dash.kpi.join(' / '));
+await page.screenshot({ path: `${OUT}/52-live-history-dashboard.png`, fullPage: true });
 
 check(errors.length === 0, '라이브 콘솔·페이지 에러 0건', errors.slice(0, 3).join(' | '));
 

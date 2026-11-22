@@ -38,6 +38,9 @@ interface Props {
   onOpen: (signal: Signal) => void;
   isFavorite: boolean;
   onToggleFavorite: (signal: Signal) => void;
+  /** 내가 실제로 진입했다고 표시한 시그널 — 기록 탭에서 내 매매만 따로 집계 */
+  isMyTrade?: boolean;
+  onToggleMyTrade?: () => void;
   /** 현재 스캔 결과에 없는 즐겨찾기(저장된 스냅샷) */
   stale?: boolean;
 }
@@ -52,6 +55,8 @@ export function SignalCard({
   onOpen,
   isFavorite,
   onToggleFavorite,
+  isMyTrade = false,
+  onToggleMyTrade,
   stale = false,
 }: Props) {
   const { entry, target, stop, eq, price } = signal;
@@ -287,6 +292,28 @@ export function SignalCard({
       )}
 
       <div className="card-actions">
+        {onToggleMyTrade && (
+          <button
+            type="button"
+            className={`pin-btn ${isMyTrade ? 'on' : ''}`}
+            aria-pressed={isMyTrade}
+            aria-label={isMyTrade ? `${signal.base} 내 진입 기록 해제` : `${signal.base} 내 진입으로 기록`}
+            title={
+              isMyTrade
+                ? '내 진입 기록 해제'
+                : '내 진입으로 기록 — 기록 탭에서 내 실제 매매만 따로 복기'
+            }
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleMyTrade();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+            }}
+          >
+            {isMyTrade ? '✓ 진입함' : '📌 내 진입'}
+          </button>
+        )}
         <button
           type="button"
           className="bitget-link"
@@ -315,9 +342,6 @@ export function SignalCard({
             </button>
           )}
         </div>
-        <span className={`share-hint${stale ? ' stale-hint' : ''}`}>
-          {stale ? '보관된 스냅샷 · 탭하여 공유 카드' : '탭하여 공유 카드'}
-        </span>
       </div>
 
       <footer className="card-foot">
@@ -329,6 +353,9 @@ export function SignalCard({
           ))}
           <span className="tag sent">발송 {fmtSendTime(signal.detectedAt)}</span>
         </div>
+        <span className={`share-hint${stale ? ' stale-hint' : ''}`}>
+          {stale ? '보관된 스냅샷 · 탭하여 공유' : '탭하여 공유 카드'}
+        </span>
       </footer>
     </article>
   );

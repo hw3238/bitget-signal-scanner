@@ -2160,12 +2160,17 @@ textarea {
 }
 
 .history-list li {
-  display: flex;
-  gap: 10px;
-  justify-content: space-between;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 3px 8px;
+  align-items: start;
   padding: 12px 0;
   border-bottom: 1px solid var(--line-soft);
+}
+
+.history-list li.mine {
+  border-left: 2px solid var(--blue);
+  padding-left: 8px;
 }
 
 .history-list li:last-child {
@@ -2241,10 +2246,349 @@ textarea {
 }
 
 .h-empty {
+  grid-column: 1 / -1;
   color: var(--sub);
   font-size: 12px;
-  justify-content: center;
+  text-align: center;
+  line-height: 1.6;
   padding: 20px 0;
+}
+
+/* ---------- 내 진입 · 매매 복기 대시보드 (2026-11-23) ---------- */
+.pin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  border-radius: 10px;
+  padding: 7px 10px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.pin-btn:hover,
+.pin-btn:focus-visible {
+  border-color: var(--blue);
+  color: var(--blue-2);
+  outline: none;
+}
+
+.pin-btn.on {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue-2);
+}
+
+.pin-btn.sm {
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 10.5px;
+  align-self: start;
+}
+
+.counter.mine {
+  background: var(--blue-soft);
+  color: var(--blue-2);
+}
+
+.segmented.trade-mode {
+  display: flex;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.segmented.trade-mode button {
+  flex: 1;
+  padding: 9px 6px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.segmented.trade-mode b {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.segmented.trade-mode button.on b {
+  color: var(--blue);
+}
+
+.equity-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.equity-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.equity-zero {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.equity-area.above {
+  fill: rgba(49, 130, 246, 0.13);
+}
+
+.equity-area.below {
+  fill: rgba(240, 68, 82, 0.13);
+}
+
+.equity-line {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.equity-line.above {
+  stroke: var(--blue);
+}
+
+.equity-line.below {
+  stroke: var(--up);
+}
+
+.equity-dot.above {
+  fill: var(--blue);
+  opacity: 0.85;
+}
+
+.equity-dot.below {
+  fill: var(--up);
+  opacity: 0.85;
+}
+
+.equity-last.above {
+  fill: var(--blue);
+  stroke: #fff;
+  stroke-width: 1.4;
+}
+
+.equity-last.below {
+  fill: var(--up);
+  stroke: #fff;
+  stroke-width: 1.4;
+}
+
+.equity-label {
+  font-size: 8.5px;
+  font-weight: 700;
+  fill: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.equity-label.zero {
+  opacity: 0.75;
+}
+
+.equity-kpi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.equity-kpi span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sub);
+  background: var(--line-soft);
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.equity-kpi b {
+  font-weight: 800;
+  color: var(--ink);
+  margin-left: 2px;
+}
+
+.equity-legend {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--sub);
+}
+
+.equity-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.equity-legend i.above {
+  background: var(--blue);
+}
+
+.equity-legend i.below {
+  background: var(--up);
+  margin-left: 6px;
+}
+
+.equity-basis {
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--sub);
+}
+
+.equity-empty {
+  text-align: center;
+  padding: 20px 12px;
+  background: var(--card-2);
+  border-radius: 14px;
+}
+
+.equity-empty b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.equity-empty p {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--sub);
+}
+
+.equity-empty.slim {
+  padding: 14px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--sub);
+}
+
+.strat-board {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.strat-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--card-2);
+  border-radius: 12px;
+  padding: 9px 11px;
+}
+
+.sc-main {
+  min-width: 0;
+}
+
+.sc-main b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+  color: var(--ink);
+}
+
+.sc-main span {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--sub);
+}
+
+.sc-result {
+  text-align: right;
+  flex: 0 0 auto;
+}
+
+.sc-result b {
+  display: block;
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.strat-chip.up .sc-result b {
+  color: var(--up);
+}
+
+.strat-chip.down .sc-result b {
+  color: var(--down);
+}
+
+.strat-chip.flat .sc-result b {
+  color: var(--sub);
+}
+
+.sc-result span {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.h-memo {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.h-memo input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: var(--card-2);
+  border-radius: 9px;
+  padding: 7px 9px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.h-memo input::placeholder {
+  color: var(--sub);
+  font-weight: 500;
+}
+
+.h-memo input:focus {
+  outline: none;
+  border-color: var(--blue);
+  background: #fff;
+}
+
+.memo-cap {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--blue-2);
+  background: var(--blue-soft);
+  border-radius: 6px;
+  padding: 3px 6px;
 }
 
 /* ---------- 설정 ---------- */

@@ -31,6 +31,12 @@ export const DEFAULT_SETTINGS: Settings = {
 const SETTINGS_KEY = 'bgss.settings.v1';
 const HISTORY_KEY = 'bgss.history.v1';
 const LOG_KEY = 'bgss.swaplog.v1';
+const MY_TRADES_KEY = 'bgss.mytrades.v1';
+
+/** 내 진입 기록 보관 한도 */
+export const MY_TRADES_LIMIT = 200;
+/** 한 줄 복기 메모 최대 길이 */
+export const MEMO_MAX = 40;
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -72,6 +78,36 @@ export const saveHistory = (h: HistoryRecord[]) =>
 
 export const loadSwapLog = () => readArray<SwapLogEntry>(LOG_KEY);
 export const saveSwapLog = (l: SwapLogEntry[]) => localStorage.setItem(LOG_KEY, JSON.stringify(l.slice(0, 200)));
+
+/**
+ * 시그널 고유 키 — 같은 캔들에서 감지된 시그널은 스캔이 반복돼도 같은 키를 갖는다.
+ * 즐겨찾기(favoriteKey)·내 진입 기록·기록 탭 집계가 모두 이 키를 쓴다.
+ */
+export function signalKey(s: { symbol: string; tf: string; side: string; detectedAt: number }): string {
+  return `${s.symbol}|${s.tf}|${s.side}|${s.detectedAt}`;
+}
+
+/** 사용자가 "내가 실제로 진입했다"고 표시한 시그널 — 한 줄 복기 메모를 함께 보관 */
+export interface MyTrade {
+  /** signalKey(symbol|tf|side|detectedAt) */
+  key: string;
+  enteredAt: number;
+  memo: string;
+}
+
+export function loadMyTrades(): MyTrade[] {
+  return readArray<MyTrade>(MY_TRADES_KEY)
+    .filter((t) => !!t && typeof t.key === 'string' && t.key.length > 0)
+    .map((t) => ({
+      key: t.key,
+      enteredAt: Number(t.enteredAt) || 0,
+      memo: typeof t.memo === 'string' ? t.memo.slice(0, MEMO_MAX) : '',
+    }))
+    .slice(0, MY_TRADES_LIMIT);
+}
+
+export const saveMyTrades = (l: MyTrade[]) =>
+  localStorage.setItem(MY_TRADES_KEY, JSON.stringify(l.slice(0, MY_TRADES_LIMIT)));
 
 export interface HistoryRecord {
   id: string;

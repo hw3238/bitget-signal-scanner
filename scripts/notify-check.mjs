@@ -13,6 +13,7 @@ import { mkdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { build as esbuild } from 'esbuild';
 import { chromium } from 'playwright';
+import './lib/chromium-env.mjs';
 
 const PORT = 4174;
 const URL = `http://127.0.0.1:${PORT}/`;

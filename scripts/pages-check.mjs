@@ -5,6 +5,7 @@
 import { spawn } from 'node:child_process';
 import { cpSync, mkdirSync, rmSync } from 'node:fs';
 import { chromium } from 'playwright';
+import './lib/chromium-env.mjs';
 
 const ROOT = '.tmp/pagesroot';
 const SUB = 'bitget-signal-scanner';

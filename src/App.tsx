@@ -11,6 +11,7 @@ import logoUrl from './assets/cota-logo.png';
 import { RefreshIcon } from './components/Icons';
 import type { Signal } from './engine/types';
 import { useFavorites } from './hooks/useFavorites';
+import { useMyTrades } from './hooks/useMyTrades';
 import { useScanner } from './hooks/useScanner';
 import { fmtTime } from './lib/format';
 import { isNativeApp, openExternalUrl } from './lib/native';
@@ -36,6 +37,8 @@ export default function App() {
   const [profile, setProfile] = useState<Profile | null>(() => loadProfile());
   const [onboarding, setOnboarding] = useState<boolean>(() => loadProfile() === null);
   const favorites = useFavorites();
+  // 내가 실제로 진입한 시그널 — 기록 탭의 내 매매 복기·수익곡선 기준
+  const myTrades = useMyTrades();
   // 즐겨찾기 종목은 1차 우선 스캔 큐에 들어가 가장 먼저 시그널로 뜬다.
   const favoriteSymbols = useMemo(
     () => [...new Set(favorites.entries.map((f) => f.signal.symbol))],
@@ -236,6 +239,8 @@ export default function App() {
             onOpen={setShareSignal}
             onRescan={() => void scan(true)}
             profile={profile}
+            myTrades={myTrades.entries}
+            onToggleMyTrade={myTrades.toggle}
           />
         )}
         {tab === 'market' && <MarketTab state={state} onRescan={() => void scan(true)} />}
@@ -249,7 +254,19 @@ export default function App() {
             onClearLog={clearSwapLog}
           />
         )}
-        {tab === 'history' && <HistoryTab history={history} leverage={repLeverage} onClear={clearHistory} />}
+        {tab === 'history' && (
+          <HistoryTab
+            history={history}
+            leverage={repLeverage}
+            profile={profile}
+            riskPct={settings.riskPct}
+            myTrades={myTrades.entries}
+            onToggleMyTrade={myTrades.toggle}
+            onMemo={myTrades.setMemo}
+            onClearMyTrades={myTrades.clear}
+            onClear={clearHistory}
+          />
+        )}
         {tab === 'settings' && (
           <SettingsTab
             settings={settings}

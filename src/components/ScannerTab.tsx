@@ -4,6 +4,7 @@ import type { ScanState } from '../hooks/useScanner';
 import { favoriteKey, type FavoriteEntry } from '../lib/favorites';
 import { fmtPct, tfLabel } from '../lib/format';
 import type { Settings } from '../lib/storage';
+import { signalKey, type MyTrade } from '../lib/storage';
 import { recommendLeverage, type Profile } from '../lib/profile';
 import { SignalCard } from './SignalCard';
 import { CloseIcon, RefreshIcon, SearchIcon, StarIcon } from './Icons';
@@ -19,6 +20,9 @@ interface Props {
   onRescan: () => void;
   /** 시드·매매 성향 — COTA 추천 레버리지 계산에 쓴다 */
   profile: Profile | null;
+  /** 내 진입으로 표시한 시그널 */
+  myTrades: MyTrade[];
+  onToggleMyTrade: (key: string) => void;
 }
 
 type AssetFilter = 'crypto' | 'stock' | 'all';
@@ -50,6 +54,8 @@ export function ScannerTab({
   onOpen,
   onRescan,
   profile,
+  myTrades,
+  onToggleMyTrade,
 }: Props) {
   const [asset, setAsset] = useState<AssetFilter>('crypto');
   const [tf, setTf] = useState<TfFilter>('all');
@@ -59,6 +65,9 @@ export function ScannerTab({
   const [visible, setVisible] = useState(PAGE_SIZE);
 
   const terms = useMemo(() => query.trim().toLowerCase().split(/\s+/).filter(Boolean), [query]);
+
+  /** 내 진입으로 표시한 시그널 키 — 카드 버튼 표시에 쓴다 */
+  const mineKeys = useMemo(() => new Set(myTrades.map((t) => t.key)), [myTrades]);
 
   // 필터·검색이 바뀌면 목록을 다시 첫 페이지부터 보여준다.
   useEffect(() => {
@@ -193,6 +202,7 @@ export function ScannerTab({
             {tfLabel('4H')} {counts.h4}
           </span>
           <span className="counter alt">평균 {fmtPct(avgRoi)}</span>
+          {mineKeys.size > 0 && <span className="counter mine">📌 내 진입 {mineKeys.size}</span>}
         </div>
 
         <div className="search-row">
@@ -370,6 +380,8 @@ export function ScannerTab({
             onOpen={onOpen}
             isFavorite={isFavorite(signal)}
             onToggleFavorite={onToggleFavorite}
+            isMyTrade={mineKeys.has(signalKey(signal))}
+            onToggleMyTrade={() => onToggleMyTrade(signalKey(signal))}
             stale={stale}
           />
         ))}

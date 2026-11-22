@@ -64,7 +64,15 @@
   - **📐 포지션 사이징** — 시드·허용 손실률·진입/손절/목표가로 수량·권장 레버리지·손익비·손익분기 승률.
   - **🧾 수수료 & 페이백** — 지정가/시장가 비중, 거래 횟수, 할인·페이백으로 월·연 수수료와 절감액.
   - **⚙️ 전략엔진** — 기존 6개 매매법 실시간 백테스트 순위와 자동 교체 로그(메뉴 안으로 이동).
-- **기록** — 탐지 이후 실제 캔들로 목표 달성/손절 종료를 검증한 추적 기록.
+- **기록 (실전 복기 & 수익곡선)** — 탐지 이후 실제 캔들로 목표 달성/손절 종료를 검증한 추적 기록에 더해,
+  **내가 실제로 진입한 매매만** 따로 복기합니다.
+  - 스캐너 카드 · 기록 행의 `📌 내 진입` 원탭 → `✓ 진입함`(localStorage `bgss.mytrades.v1`). 스캔이 반복돼도 표시 유지
+  - `전체 시그널` ↔ `📌 내 진입 매매` 세그먼트 — 내 매매만의 승률 · 평균 R · 누적 R · **시드/리스크 기준 누적 손익($)**
+  - 내 매매마다 **한 줄 복기 메모**(예: `원칙 준수`, `추격 매수 주의`)를 바로 저장·수정
+  - **누적 R 수익곡선(SVG)** — 종료 매매 시간순, 0선 위 이익 구간은 토스 블루 · 아래 손실 구간은 빨강,
+    최대 낙폭(MDD) · 최장 연승/연패 · 최고 누적 표시(가짜 데이터 없이 기록만 사용)
+  - **전략별 성적** — 전략명·건수·승률·누적 R 을 누적 R 순으로. "요즘 어떤 전략이 먹히는지" 바로 확인
+  - 같은 캔들이 중복 기록돼도 한 건으로 정리해 승률·곡선이 부풀지 않습니다.
 - **설정** — 🔔 핸드폰 알림(비트·이더·솔 / 주요 코인 / 전체 종목), ntfy 외부 푸시(`bgss-hw3238-9f4k2m`),
   레버리지 모드·최소 손익비·자동 갱신, 앱 버전/업데이트.
 - **앱 안에서 바로 업데이트(v1.4.0)** — 새 APK가 있으면 상단 배너·설정의 `바로 업데이트 (vX.Y.Z)` 버튼이
@@ -89,6 +97,8 @@ npm run build
 npm run check:stops                 # 손절폭 상한(1H 3.5% / 4H 4.5%) 회귀
 npm run check:calc                  # 김프·청산가·물타기·사이징·수수료·피어슨·도플갱어·괴리 단위 검증(49건)
 npm run check:cockpit               # 실전 주문 콕핏(수량·증거금·거래소 주문 단위·가격 라벨 배치) 39건
+npm run check:journal               # 매매 복기 집계(승률·누적 R·MDD·연승/연패·전략별·중복 기록) 44건
+node scripts/journal-e2e.mjs        # 기록 대시보드 E2E — 세그먼트·곡선 색/클리핑·전략표·복기 메모·원탭 진입 (스크린샷 47~51)
 node scripts/features-check.mjs     # 메뉴 7도구·김프·생존·사이징·수수료·도플갱어·키맞추기·시황 카드 E2E (스크린샷 25~36)
 node scripts/toss-ui-check.mjs      # 5탭·코인 집중·한글화·가격·온보딩·COTA 추천·실전 주문 콕핏·공유카드 (스크린샷 45)
 node scripts/coin-logo-check.mjs    # 코인 로고·글자 아바타 폴백·비트겟 바로가기 URL (스크린샷 23)
@@ -99,8 +109,9 @@ node scripts/live-check.mjs         # 라이브 Pages 검증
 node scripts/live-notify-check.mjs  # 라이브 알림 UI 검증
 ```
 
-이 환경에서 헤드리스 Chromium은 추가 라이브러리가 필요합니다:
-`LD_LIBRARY_PATH=/workspace/.deps/root/usr/lib/x86_64-linux-gnu node scripts/coin-logo-check.mjs`
+이 환경에서 헤드리스 Chromium은 추가 라이브러리가 필요합니다. 검증 스크립트는
+`/workspace/.deps/root` 가 있으면 `LD_LIBRARY_PATH` 를 자동으로 앞에 붙입니다(`scripts/lib/chromium-env.mjs`).
+직접 띄울 때는 `LD_LIBRARY_PATH=/workspace/.deps/root/usr/lib/x86_64-linux-gnu node scripts/coin-logo-check.mjs`.
 
 ### APK 빌드 (로컬)
 
