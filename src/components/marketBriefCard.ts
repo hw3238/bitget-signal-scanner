@@ -103,11 +103,10 @@ export async function drawMarketBriefCard(canvas: HTMLCanvasElement, data: Marke
   fitTxt(ctx, mood, gx, 118, gw, { size: 11, weight: 600, color: K.ink2 });
 
   /* ---------- 주요 코인 ---------- */
-  let y = 232;
+  let y = 228;
   txt(ctx, '주요 코인', pad, y, { size: 11, weight: 700, color: K.sub });
-  y += 4;
-  data.coins.slice(0, 4).forEach((c) => {
-    y += 42;
+  data.coins.slice(0, 4).forEach((c, i) => {
+    y += i === 0 ? 30 : 42;
     const up = c.change24h >= 0;
     txt(ctx, c.base, pad, y + 16, { size: 16, weight: 800, color: K.ink });
     txt(ctx, `${up ? '▲' : '▼'} ${Math.abs(c.change24h).toFixed(2)}%`, pad + 92, y + 16, {
@@ -181,5 +180,5 @@ export async function drawMarketBriefCard(canvas: HTMLCanvasElement, data: Marke
     });
   });
 
-  cardFooter(ctx, HEIGHT, `비트겟·업비트·alternative.me 실데이터 · ${at} KST`);
+  cardFooter(ctx, HEIGHT, `비트겟·빗썸·alternative.me 실데이터 · ${at} KST`);
 }
