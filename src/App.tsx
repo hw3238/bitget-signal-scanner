@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BottomNav, NAV_TABS, type TabKey } from './components/BottomNav';
-import { EngineTab } from './components/EngineTab';
 import { HistoryTab } from './components/HistoryTab';
 import { MarketTab } from './components/MarketTab';
+import { MenuTab } from './components/MenuTab';
 import { ScannerTab } from './components/ScannerTab';
 import { SettingsTab } from './components/SettingsTab';
 import { OnboardingModal } from './components/OnboardingModal';
@@ -207,11 +207,12 @@ export default function App() {
           />
         )}
         {tab === 'market' && <MarketTab state={state} onRescan={() => void scan()} />}
-        {tab === 'engine' && (
-          <EngineTab
+        {tab === 'menu' && (
+          <MenuTab
             state={state}
-            swapLog={swapLog}
+            profile={profile}
             leverage={repLeverage}
+            swapLog={swapLog}
             onRescan={() => void scan()}
             onClearLog={clearSwapLog}
           />

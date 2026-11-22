@@ -83,7 +83,7 @@ const ui = await page.evaluate(() => {
   };
 });
 check(ui.brand === 'COTA' && ui.title === 'COTA · 실시간 트레이딩 시그널', '라이브 COTA 브랜드·제목', `${ui.brand} · ${ui.title}`);
-check(ui.tabs.join('|') === '스캐너|시황|전략엔진|기록|설정', '라이브 5탭', ui.tabs.join(' | '));
+check(ui.tabs.join('|') === '스캐너|시황|메뉴|기록|설정', '라이브 5탭', ui.tabs.join(' | '));
 check((ui.scripts || []).some((s) => /index-.*\.js/.test(s || '')), '새 빌드 자산 로드', (ui.scripts || []).join(','));
 check(ui.cards > 0 && ui.assets.every((a) => a === '코인'), '라이브 코인 시그널 카드', `${ui.cards}건 · ${ui.assets.join('/')}`);
 check(!ui.fxLeft, '라이브 FX·랏 UI 없음');

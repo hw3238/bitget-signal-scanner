@@ -43,8 +43,16 @@ export const EngineIcon = ({ size = 22, className }: IconProps) => (
   </svg>
 );
 
-export const HistoryIcon = ({ size = 22, className }: IconProps) => (
+export const MenuIcon = ({ size = 22, className }: IconProps) => (
   <svg {...base(size)} className={className}>
+    <rect x="3.4" y="3.4" width="7.2" height="7.2" rx="2" />
+    <rect x="13.4" y="3.4" width="7.2" height="7.2" rx="2" />
+    <rect x="3.4" y="13.4" width="7.2" height="7.2" rx="2" />
+    <rect x="13.4" y="13.4" width="7.2" height="7.2" rx="2" />
+  </svg>
+);
+
+export const HistoryIcon = ({ size = 22, className }: IconProps) => (  <svg {...base(size)} className={className}>
     <circle cx="12" cy="12" r="8.2" />
     <path d="M12 7.4V12l3.2 1.9" />
   </svg>

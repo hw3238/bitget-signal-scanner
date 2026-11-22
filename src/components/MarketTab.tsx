@@ -1,7 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ScanState } from '../hooks/useScanner';
-import type { AssetClass } from '../engine/types';
+import type { AssetClass, Ticker } from '../engine/types';
+import { fetchFearGreed, fetchFundingRates, type FearGreed, type FundingInfo } from '../api/publicMarket';
 import { fmtPct, fmtPrice, fmtVolume } from '../lib/format';
+import { recordOiSnapshot, oiChangePct, type OiBaseline } from '../lib/oiSnapshot';
+import { ImageCardModal } from './ImageCardModal';
+import { drawMarketBriefCard, type MarketBriefData } from './marketBriefCard';
+import { DownloadIcon } from './Icons';
 
 interface Props {
   state: ScanState;
@@ -10,20 +15,71 @@ interface Props {
 
 type Tab = 'crypto' | 'stock';
 
+interface Row extends Ticker {
+  asset: AssetClass;
+  decimals?: number;
+  label: string;
+  /** 미결제약정 USDT */
+  oiUsd: number;
+  /** 펀딩 연환산(%) */
+  annual: number;
+  oiChange: number | null;
+}
+
+const SQUEEZE_RATE = 0.05; // 8시간 0.05% (연 54.75%) 이상을 과열로 본다
+
 export function MarketTab({ state, onRescan }: Props) {
   const [tab, setTab] = useState<Tab>('crypto');
+  const [fearGreed, setFearGreed] = useState<FearGreed | null>(null);
+  const [funding, setFunding] = useState<Map<string, FundingInfo>>(new Map());
+  const [baseline, setBaseline] = useState<OiBaseline | null>(null);
+  const [briefing, setBriefing] = useState(false);
+  const [loadingExtra, setLoadingExtra] = useState(false);
+
+  /* 공포·탐욕 + 펀딩 정산 주기 — 실패해도 티커 데이터로 화면은 유지 */
+  const loadExtra = useCallback(async () => {
+    setLoadingExtra(true);
+    const [fg, fr] = await Promise.allSettled([fetchFearGreed(), fetchFundingRates()]);
+    if (fg.status === 'fulfilled') setFearGreed(fg.value);
+    if (fr.status === 'fulfilled') setFunding(fr.value);
+    setLoadingExtra(false);
+  }, []);
+
+  useEffect(() => {
+    void loadExtra();
+    const timer = setInterval(() => void loadExtra(), 120_000);
+    return () => clearInterval(timer);
+  }, [loadExtra]);
+
+  /** OI 스냅샷 — 티커가 갱신될 때마다 기록하고 비교 기준을 잡는다 */
+  useEffect(() => {
+    if (state.tickers.length === 0) return;
+    const oi: Record<string, number> = {};
+    for (const t of state.tickers) {
+      if (!t.openInterestBase || t.last <= 0) continue;
+      oi[t.symbol] = t.openInterestBase * t.last;
+    }
+    const base = recordOiSnapshot(oi);
+    if (base) setBaseline(base);
+  }, [state.tickersAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const data = useMemo(() => {
     const assetOf = new Map<string, AssetClass>(state.contracts.map((c) => [c.symbol, c.asset]));
     const decimalsOf = new Map<string, number | undefined>(state.contracts.map((c) => [c.symbol, c.decimals]));
-    const rows = state.tickers
+    const rows: Row[] = state.tickers
       .map((t) => {
         const asset = assetOf.get(t.symbol) ?? 'crypto';
+        const interval = funding.get(t.symbol)?.interval ?? 8;
+        const rate = Number.isFinite(t.fundingRate) ? t.fundingRate : 0;
+        const oiUsd = (t.openInterestBase ?? 0) * t.last;
         return {
           ...t,
           asset,
           decimals: decimalsOf.get(t.symbol),
           label: t.symbol.replace(/USDT$/, '').replace(/STOCK$/, ''),
+          oiUsd,
+          annual: rate * (24 / interval) * 365,
+          oiChange: oiChangePct(oiUsd, baseline?.oi[t.symbol]),
         };
       })
       .filter((t) => t.quoteVolume > 150_000 && Number.isFinite(t.change24h));
@@ -31,52 +87,88 @@ export function MarketTab({ state, onRescan }: Props) {
     const cryptos = rows.filter((r) => r.asset === 'crypto');
     const stocks = rows.filter((r) => r.asset === 'stock');
 
-    const summary = (list: typeof rows) => {
+    const summary = (list: Row[]) => {
       const up = list.filter((r) => r.change24h > 0).length;
       const down = list.filter((r) => r.change24h < 0).length;
       const volume = list.reduce((a, r) => a + r.quoteVolume, 0);
-      const funding = list.filter((r) => Number.isFinite(r.fundingRate) && r.fundingRate !== 0);
-      const avgFunding = funding.length ? funding.reduce((a, r) => a + r.fundingRate, 0) / funding.length : 0;
+      const fundingRows = list.filter((r) => r.fundingRate !== 0);
+      const avgFunding = fundingRows.length ? fundingRows.reduce((a, r) => a + r.fundingRate, 0) / fundingRows.length : 0;
       return { up, down, volume, avgFunding, count: list.length };
     };
 
-    const byChange = (list: typeof rows) => [...list].sort((a, b) => b.change24h - a.change24h);
-    const byVolume = (list: typeof rows) => [...list].sort((a, b) => b.quoteVolume - a.quoteVolume);
-    const byFunding = (list: typeof rows) =>
-      [...list].filter((r) => r.fundingRate !== 0).sort((a, b) => Math.abs(b.fundingRate) - Math.abs(a.fundingRate));
+    const byChange = (list: Row[]) => [...list].sort((a, b) => b.change24h - a.change24h);
+    const byVolume = (list: Row[]) => [...list].sort((a, b) => b.quoteVolume - a.quoteVolume);
+    // 펀딩·OI 레이더는 거래대금과 OI가 의미 있는 종목만 — 잡코인 이상치로 표가 덮이지 않게.
+    const liquid = (list: Row[]) => list.filter((r) => r.quoteVolume >= 20_000_000 && r.oiUsd >= 1_000_000);
+    const byFunding = (list: Row[]) =>
+      [...liquid(list)].filter((r) => r.fundingRate !== 0).sort((a, b) => Math.abs(b.annual) - Math.abs(a.annual));
+    // 과열이 없어도 항상 펀딩·OI 상위를 보여 준다(과열이면 배지가 경고로 바뀐다).
+    const squeeze = (list: Row[]) =>
+      [...liquid(list)].sort((a, b) => Math.abs(b.annual) - Math.abs(a.annual));
+
+    const view = (list: Row[]) => ({
+      summary: summary(list),
+      gainers: byChange(list).slice(0, 6),
+      losers: byChange(list).slice(-6).reverse(),
+      volume: byVolume(list).slice(0, 6),
+      funding: byFunding(list).slice(0, 5),
+      squeeze: squeeze(list).slice(0, 6),
+      count: list.length,
+    });
 
     return {
-      crypto: {
-        summary: summary(cryptos),
-        gainers: byChange(cryptos).slice(0, 6),
-        losers: byChange(cryptos).slice(-6).reverse(),
-        volume: byVolume(cryptos).slice(0, 6),
-        funding: byFunding(cryptos).slice(0, 5),
-        count: cryptos.length,
-      },
-      stock: {
-        summary: summary(stocks),
-        gainers: byChange(stocks).slice(0, 6),
-        losers: byChange(stocks).slice(-6).reverse(),
-        volume: byVolume(stocks).slice(0, 6),
-        funding: byFunding(stocks).slice(0, 5),
-        count: stocks.length,
-      },
+      crypto: view(cryptos),
+      stock: view(stocks),
+      longSqueeze: liquid(cryptos).filter((r) => r.fundingRate >= SQUEEZE_RATE).length,
+      shortSqueeze: liquid(cryptos).filter((r) => r.fundingRate <= -SQUEEZE_RATE).length,
+      majors: (['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT'] as const)
+        .map((s) => cryptos.find((r) => r.symbol === s))
+        .filter((r): r is Row => !!r),
     };
-  }, [state.tickers, state.contracts]);
+  }, [state.tickers, state.contracts, funding, baseline]);
 
   const view = data[tab];
-  const refreshed =
-    state.tickersAt > 0
-      ? new Date(state.tickersAt).toLocaleTimeString('ko-KR', {
-          hour12: false,
-          hour: '2-digit',
-          minute: '2-digit',
-          timeZone: 'Asia/Seoul',
-        })
-      : '-';
+  const refreshed = state.tickersAt
+    ? new Date(state.tickersAt).toLocaleTimeString('ko-KR', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Asia/Seoul',
+      })
+    : '-';
 
-  const list = (title: string, rows: typeof view.gainers, tone: 'up' | 'down' | 'flat') => (
+  const briefData: MarketBriefData = useMemo(
+    () => ({
+      at: state.tickersAt || Date.now(),
+      fearGreed,
+      coins: data.majors.map((m) => ({ base: m.label, price: m.last, change24h: m.change24h })),
+      upCount: data.crypto.summary.up,
+      downCount: data.crypto.summary.down,
+      totalVolume: data.crypto.summary.volume,
+      avgFunding: data.crypto.summary.avgFunding,
+      hotFunding: data.crypto.funding
+        .filter((f) => Math.abs(f.fundingRate) >= 0.01)
+        .slice(0, 3)
+        .map((f) => ({
+        base: f.label,
+        rate: f.fundingRate,
+          annual: f.annual,
+          oiUsd: f.oiUsd,
+        })),
+      longSqueeze: data.longSqueeze,
+      shortSqueeze: data.shortSqueeze,
+    }),
+    [state.tickersAt, fearGreed, data],
+  );
+
+  const drawBrief = useCallback(
+    async (canvas: HTMLCanvasElement) => {
+      await drawMarketBriefCard(canvas, briefData);
+    },
+    [briefData],
+  );
+
+  const list = (title: string, rows: Row[], tone: 'up' | 'down' | 'flat') => (
     <section className="panel">
       <header className="panel-head">
         <h3>{title}</h3>
@@ -88,9 +180,7 @@ export function MarketTab({ state, onRescan }: Props) {
               <span className="mv-base">{r.label}</span>
               <span className="mv-vol">{fmtVolume(r.quoteVolume)}</span>
             </div>
-            <div className="mv-price">
-              {fmtPrice(r.last, r.decimals)}
-            </div>
+            <div className="mv-price">{fmtPrice(r.last, r.decimals)}</div>
             <span className={`mv-change ${r.change24h >= 0 ? 'up' : 'down'}`}>{fmtPct(r.change24h, 2)}</span>
             {tone === 'flat' && <span className="mv-funding">{r.fundingRate.toFixed(3)}%</span>}
           </li>
@@ -100,6 +190,9 @@ export function MarketTab({ state, onRescan }: Props) {
     </section>
   );
 
+  const fgValue = fearGreed?.value ?? 50;
+  const fgTone = fgValue <= 45 ? 'down' : fgValue >= 55 ? 'up' : '';
+
   return (
     <div className="tab market-tab">
       <section className="summary-card">
@@ -107,16 +200,21 @@ export function MarketTab({ state, onRescan }: Props) {
           <div>
             <div className="summary-title">시황 · 비트겟 USDT-M</div>
             <div className="summary-sub">
-              {tab === 'crypto' ? `코인 ${view.count}종목` : `주식·ETF 선물 ${view.count}종목`} · 티커 갱신{' '}
-              {refreshed} KST
+              {tab === 'crypto' ? `코인 ${view.count}종목` : `주식·ETF 선물 ${view.count}종목`} · 티커 갱신 {refreshed}{' '}
+              KST
             </div>
           </div>
-          <div className="segmented">
-            <button className={tab === 'crypto' ? 'on' : ''} onClick={() => setTab('crypto')}>
-              코인
-            </button>
-            <button className={tab === 'stock' ? 'on' : ''} onClick={() => setTab('stock')}>
-              주식선물
+          <div className="market-actions">
+            <div className="segmented">
+              <button className={tab === 'crypto' ? 'on' : ''} onClick={() => setTab('crypto')}>
+                코인
+              </button>
+              <button className={tab === 'stock' ? 'on' : ''} onClick={() => setTab('stock')}>
+                주식선물
+              </button>
+            </div>
+            <button className="ghost-btn small" onClick={() => setBriefing(true)}>
+              <DownloadIcon size={14} /> 속보 카드
             </button>
           </div>
         </div>
@@ -143,7 +241,71 @@ export function MarketTab({ state, onRescan }: Props) {
             <span className="stat-sub">USDT</span>
           </div>
         </div>
+
+        {tab === 'crypto' && (
+          <div className="fear-row">
+            <div className="fear-gauge">
+              <span>공포·탐욕</span>
+              <b className={fgTone}>{fearGreed ? fearGreed.value : '—'}</b>
+              <i>{fearGreed ? fearGreed.label : loadingExtra ? '불러오는 중' : '데이터 없음'}</i>
+            </div>
+            <div className="fear-bar" aria-hidden>
+              <div className="fear-fill" style={{ width: `${Math.max(4, Math.min(100, fgValue))}%` }} />
+            </div>
+            <div className="fear-scale">
+              <span>공포</span>
+              <span>탐욕</span>
+            </div>
+          </div>
+        )}
       </section>
+
+      {tab === 'crypto' && (
+        <section className="panel squeeze-panel">
+          <header className="panel-head">
+            <h3>펀딩비 · OI 스퀴즈 레이더</h3>
+            <span className="panel-note">
+              롱 과열 {data.longSqueeze} · 숏 과열 {data.shortSqueeze}
+            </span>
+          </header>
+          <ul className="squeeze-list">
+            {view.squeeze.map((r) => {
+              const longHot = r.fundingRate >= SQUEEZE_RATE;
+              const shortHot = r.fundingRate <= -SQUEEZE_RATE;
+              return (
+                <li key={r.symbol}>
+                  <div className="squeeze-main">
+                    <b>{r.label}</b>
+                    <span>
+                      OI {fmtVolume(r.oiUsd)}
+                      {r.oiChange != null && (
+                        <i className={r.oiChange >= 0 ? 'up' : 'down'}>
+                          {' '}
+                          {r.oiChange >= 0 ? '+' : ''}
+                          {r.oiChange.toFixed(1)}%
+                        </i>
+                      )}
+                    </span>
+                  </div>
+                  <div className="squeeze-funding">
+                    <b className={longHot ? 'up' : shortHot ? 'down' : ''}>{r.fundingRate.toFixed(4)}%</b>
+                    <span>연 {r.annual.toFixed(1)}%</span>
+                  </div>
+                  <span className={`squeeze-badge ${longHot ? 'long' : shortHot ? 'short' : 'calm'}`}>
+                    {longHot ? '롱 스퀴즈 주의' : shortHot ? '숏 스퀴즈 주의' : '정상'}
+                  </span>
+                </li>
+              );
+            })}
+            {view.squeeze.length === 0 && <li className="mv-empty">거래대금이 충분한 종목이 없습니다.</li>}
+          </ul>
+          <p className="panel-note squeeze-note">
+            8시간 펀딩비가 ±0.05%를 넘거나 연환산 ±50%를 넘으면 과열로 표시합니다. OI 변동률은 COTA가 화면에서 관측한
+            직전 기록 대비입니다.
+            {baseline ? ` (기준 ${new Date(baseline.at).toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' })} KST)` : ''}
+          </p>
+        </section>
+      )}
 
       <div className="panel-grid">
         {list('상승 TOP', view.gainers, 'up')}
@@ -153,11 +315,22 @@ export function MarketTab({ state, onRescan }: Props) {
       </div>
 
       <div className="feed-note">
-        비트겟 공개 API 티커 실데이터 · 24h 변동률 · 화면 진입 시 자동 갱신
+        비트겟 공개 API 티커·펀딩비·미결제약정 실데이터 · 24h 변동률 · 화면 진입 시 자동 갱신
+        {fearGreed ? ` · 공포·탐욕 ${fearGreed.value} (${fearGreed.label})` : ''}
         <button className="link-btn" onClick={onRescan}>
           새로고침
         </button>
       </div>
+
+      {briefing && (
+        <ImageCardModal
+          title="시황 속보 카드"
+          fileName={`COTA-market-brief`}
+          draw={drawBrief}
+          onClose={() => setBriefing(false)}
+          hint="스레드·텔레그램 공유용 1080px PNG 카드입니다."
+        />
+      )}
     </div>
   );
 }

@@ -74,12 +74,14 @@ export async function fetchTickers(): Promise<Ticker[]> {
     fundingRate: Number(t.fundingRate ?? 0) * 100,
     high24h: Number(t.high24h),
     low24h: Number(t.low24h),
+    openInterestBase: Number(t.holdingAmount ?? 0) || undefined,
   }));
 }
 
-export async function fetchCandles(symbol: string, tf: TF): Promise<Candle[]> {
+export async function fetchCandles(symbol: string, tf: TF, limit = 200): Promise<Candle[]> {
+  const cap = Math.max(20, Math.min(500, Math.round(limit)));
   const raw = await getJson<string[][]>(
-    `/api/v2/mix/market/candles?productType=${PRODUCT}&symbol=${symbol}&granularity=${tf}&limit=200`,
+    `/api/v2/mix/market/candles?productType=${PRODUCT}&symbol=${symbol}&granularity=${tf}&limit=${cap}`,
   );
   return raw
     .map((row) => ({

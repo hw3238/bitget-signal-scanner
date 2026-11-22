@@ -29,6 +29,8 @@ export interface Ticker {
   fundingRate: number;
   high24h: number;
   low24h: number;
+  /** 미결제약정(코인 수량) — holdingAmount. USDT 환산은 last × 이 값 */
+  openInterestBase?: number;
 }
 
 export interface Setup {

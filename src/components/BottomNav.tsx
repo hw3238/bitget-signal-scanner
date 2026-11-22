@@ -1,6 +1,6 @@
-import { EngineIcon, HistoryIcon, MarketIcon, ScannerIcon, SettingsIcon } from './Icons';
+import { HistoryIcon, MarketIcon, MenuIcon, ScannerIcon, SettingsIcon } from './Icons';
 
-export type TabKey = 'scanner' | 'market' | 'engine' | 'history' | 'settings';
+export type TabKey = 'scanner' | 'market' | 'menu' | 'history' | 'settings';
 
 interface NavTab {
   key: TabKey;
@@ -8,11 +8,11 @@ interface NavTab {
   icon: (p: { size?: number }) => JSX.Element;
 }
 
-/** 하단·상단 공통 탭 정의 — 스캐너 | 시황 | 전략엔진 | 기록 | 설정 */
+/** 하단·상단 공통 탭 정의 — 스캐너 | 시황 | 메뉴 | 기록 | 설정 */
 export const NAV_TABS: NavTab[] = [
   { key: 'scanner', label: '스캐너', icon: ScannerIcon },
   { key: 'market', label: '시황', icon: MarketIcon },
-  { key: 'engine', label: '전략엔진', icon: EngineIcon },
+  { key: 'menu', label: '메뉴', icon: MenuIcon },
   { key: 'history', label: '기록', icon: HistoryIcon },
   { key: 'settings', label: '설정', icon: SettingsIcon },
 ];

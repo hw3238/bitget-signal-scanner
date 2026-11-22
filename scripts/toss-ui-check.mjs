@@ -4,11 +4,11 @@
  *
  *  1) 라이트 테마(#F2F4F6 · #FFFFFF · 네온 0건) · COTA 브랜드/로고/파비콘
  *  2) 첫 실행 온보딩(시드 프리셋·보수적/공격적) → 저장 → 메인 진입
- *  3) 하단 5탭(스캐너|시황|전략엔진|기록|설정) · 390px 가로 오버플로 0건
+ *  3) 하단 5탭(스캐너|시황|메뉴|기록|설정) · 390px 가로 오버플로 0건
  *  4) 코인 집중: 기본 자산 필터 '코인', FX·랏(Lot)·벤티지 호가 보정 UI 0건
  *  5) 카드 한글 라벨(진입가·목표가·손절가·본전·손익비·최근 승률) + 천단위 콤마
  *  6) COTA 추천 배지(보수적 2~5x · 공격적 10~25x) + 시드 예상 수익/손절 손실
- *  7) 공유 카드(캔버스) · 설정(프로필·알림) · 전략엔진 · 콘솔 에러 0건
+ *  7) 공유 카드(캔버스) · 설정(프로필·알림) · 메뉴>전략엔진 · 콘솔 에러 0건
  *  8) 스크린샷 5장: 18-toss-scanner · 19-toss-engine · 20-toss-share-card · 21-toss-settings · 22-toss-onboarding
  *
  * 실행: npm run build && node scripts/toss-ui-check.mjs
@@ -211,7 +211,7 @@ const run = async () => {
     };
   });
   check('하단 탭 5개', nav.count === 5 && nav.grid === 5, nav.labels.join(' | '));
-  check('탭 순서 = 스캐너|시황|전략엔진|기록|설정', nav.labels.join('|') === '스캐너|시황|전략엔진|기록|설정', nav.labels.join(' | '));
+  check('탭 순서 = 스캐너|시황|메뉴|기록|설정', nav.labels.join('|') === '스캐너|시황|메뉴|기록|설정', nav.labels.join(' | '));
   check('활성 탭 = 토스 블루 · 라벨 잘림 0건', nav.activeColor === 'rgb(49, 130, 246)' && !nav.clipped && !nav.docOverflow, nav.activeColor);
 
   const coin = await page.evaluate(() => {
@@ -462,8 +462,10 @@ const run = async () => {
     JSON.stringify(aggressive.seedCells),
   );
 
-  /* ---------- 8) 전략엔진 · 나머지 탭 ---------- */
-  await page.locator('.bottom-nav button[data-tab="engine"]').click();
+  /* ---------- 8) 메뉴 > 전략엔진 · 나머지 탭 ---------- */
+  await page.locator('.bottom-nav button[data-tab="menu"]').click();
+  await page.waitForTimeout(400);
+  await page.locator('.menu-row[data-menu="engine"]').click();
   await page.waitForTimeout(800);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(300);

@@ -36,8 +36,21 @@
   - 레버리지 선택: `COTA 추천`(기본) 또는 `5x · 10x · 20x · 50x` 고정
 - **첫 실행 온보딩** — 투자 시드($100/$500/$1,000/$5,000 프리셋)와 매매 성향(보수적/공격적)을 받아
   `localStorage('cota.profile.v1')`에 저장합니다. 설정 탭 `💼 내 투자 프로필`에서 언제든 다시 설정할 수 있습니다.
-- **시황** — 코인·주식선물 상승/하락/거래대금/펀딩비 TOP.
-- **전략엔진** — 6개 매매법 실시간 백테스트 순위, 자동 교체 로그.
+- **시황** — 코인·주식선물 상승/하락/거래대금/펀딩비 TOP에 더해
+  **공포·탐욕 지수**(alternative.me), **펀딩비·OI 스퀴즈 레이더**(8시간·연환산 펀딩, 미결제약정,
+  롱/숏 스퀴즈 경고 배지), **시황 속보 PNG 카드**(1080px, 스레드·텔레그램 공유용)를 제공합니다.
+- **메뉴(트레이더 올인원)** — 7가지 실전 도구를 모은 허브. 각 도구는 전용 화면으로 열리고 `← 메뉴`로 돌아옵니다.
+  - **🚀 김프 & 송금 레이더** — 업비트(또는 빗썸) 원화 시세 · 비트겟 USDT 가격 · USD/KRW 환율로
+    코인별 김치프리미엄을 계산하고, 예상 출금 수수료까지 반영해 **국내→해외 송금에 가장 유리한 TOP 3**를 뽑습니다.
+  - **🎯 키맞추기 레이더** — 24h 거래대금 상위 30종목 + BTC의 1시간봉 60개를 받아 BTC와의 수익률 상관계수와
+    최근 4·6시간 괴리를 계산, **상관은 높은데 아직 덜 움직인 후발주자**를 롱/숏으로 나눠 보여 줍니다.
+  - **🔮 차트 도플갱어** — 최근 18·24·36봉과 겹치지 않는 과거 구간을 **피어슨 상관**으로 비교해
+    가장 닮은 과거 TOP 3와 그 직후 12봉 실제 등락률·오버레이 SVG·PNG 카드를 제공합니다.
+  - **🩺 포지션 생존 성적표** — 유지증거금을 반영한 예상 청산가, 청산 여유, 물타기 후 평단·청산가,
+    펀딩비·왕복 수수료를 계산하고 **S~F 등급 + 촌평**과 PNG 카드를 만듭니다.
+  - **📐 포지션 사이징** — 시드·허용 손실률·진입/손절/목표가로 수량·권장 레버리지·손익비·손익분기 승률.
+  - **🧾 수수료 & 페이백** — 지정가/시장가 비중, 거래 횟수, 할인·페이백으로 월·연 수수료와 절감액.
+  - **⚙️ 전략엔진** — 기존 6개 매매법 실시간 백테스트 순위와 자동 교체 로그(메뉴 안으로 이동).
 - **기록** — 탐지 이후 실제 캔들로 목표 달성/손절 종료를 검증한 추적 기록.
 - **설정** — 🔔 핸드폰 알림(비트·이더·솔 / 주요 코인 / 전체 종목), ntfy 외부 푸시(`bgss-hw3238-9f4k2m`),
   레버리지 모드·최소 손익비·자동 갱신, 앱 버전/업데이트.
@@ -56,6 +69,9 @@ npm run build      # tsc + vite build → dist/
 
 ```bash
 npm run build
+npm run check:stops                 # 손절폭 상한(1H 3.5% / 4H 4.5%) 회귀
+npm run check:calc                  # 김프·청산가·물타기·사이징·수수료·피어슨·도플갱어·괴리 단위 검증(49건)
+node scripts/features-check.mjs     # 메뉴 7도구·김프·생존·사이징·수수료·도플갱어·키맞추기·시황 카드 E2E (스크린샷 25~36)
 node scripts/toss-ui-check.mjs      # 5탭·코인 집중·한글화·가격·온보딩·COTA 추천·공유카드 (스크린샷 18~22)
 node scripts/coin-logo-check.mjs    # 코인 로고·글자 아바타 폴백·비트겟 바로가기 URL (스크린샷 23)
 node scripts/notify-check.mjs       # 알림 로직 + 설정 UI
@@ -89,18 +105,24 @@ cd android && ./gradlew assembleDebug   # → app/build/outputs/apk/debug/app-de
 ```
 src/
   components/   SignalCard · CoinLogo · ScannerTab · MarketTab · EngineTab · HistoryTab · SettingsTab
+                MenuTab(허브) · KimchiRadar · KeyMatchRadar · Doppelganger · PositionSurvival
+                SizingCalc · FeeCalc · ImageCardModal · cardKit · marketBriefCard · survivalCard · doppelCard
                 ShareModal · OnboardingModal · MiniCandles · BottomNav · shareCard(canvas)
   engine/       backtest · strategies · indicators · universe(코인 주력+주식 워치리스트)
   hooks/        useScanner · useFavorites
   lib/          format(가격·손익비) · profile(시드·추천 레버리지) · coinLogo(로고 매니페스트·비트겟 URL)
-                notify · storage · update · native
-  api/          bitget(공개 USDT-M 계약·티커·캔들)
+                calc(김프·청산가·물타기·사이징·수수료·피어슨·도플갱어·괴리 순수 함수)
+                oiSnapshot(OI 관측 기록) · shareImage(PNG 저장/공유) · notify · storage · update · native
+  api/          bitget(공개 USDT-M 계약·티커·캔들) · publicMarket(펀딩·공포탐욕·환율·업비트·빗썸)
 public/coin-icons/  코인 로고 PNG + manifest.json (scripts/fetch-coin-icons.mjs 생성)
 ```
 
 ## 데이터
 
-- 비트겟 공개 API: `GET /api/v2/mix/market/contracts|tickers|candles?productType=USDT-FUTURES`
+- 비트겟 공개 API: `GET /api/v2/mix/market/contracts|tickers|candles|current-fund-rate|open-interest?productType=USDT-FUTURES`
+  (tickers의 `holdingAmount` = 미결제약정 수량 → USD 환산. OI 과거 시계열 API가 없어 변동률은 COTA가 관측한 직전 기록 대비)
+- 업비트 `GET /v1/ticker|/v1/market/all` · 빗썸 `GET /public/ticker/ALL_KRW` · 환율 `open.er-api.com` ·
+  공포·탐욕 `api.alternative.me/fng` — 모두 브라우저 CORS 통과를 헤드리스 Chromium으로 확인한 엔드포인트입니다.
 - 1H/4H 200봉 실데이터를 최근 60봉 기준으로 백테스트해 승률·손익비 미달 전략은 즉시 교체합니다.
 
 ## 주의
