@@ -8,7 +8,7 @@ export interface DoppelCardData {
   result: DoppelResult;
 }
 
-const HEIGHT = 840;
+const HEIGHT = 856;
 
 /** 닫힌 종가 시퀀스를 시작값=0% 로 정규화 */
 function pctPath(values: number[]): number[] {
@@ -136,7 +136,7 @@ export async function drawDoppelCard(canvas: HTMLCanvasElement, d: DoppelCardDat
   txt(ctx, '가장 닮은 과거 구간 TOP 3', pad, y, { size: 11, weight: 700, color: K.sub });
   y += 4;
   d.result.matches.forEach((m, i) => {
-    y += 62;
+    y += i === 0 ? 24 : 62;
     ctx.fillStyle = K.panel;
     roundRect(ctx, pad, y, inner, 54, 14);
     ctx.fill();
