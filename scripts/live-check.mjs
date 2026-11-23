@@ -1,5 +1,5 @@
 /**
- * 라이브 Pages 검증 — COTA (v1.5.2)
+ * 라이브 Pages 검증 — COTA (v1.5.3)
  *   - 배포본이 새 번들·COTA 브랜드·5탭 코인 스캐너를 실제로 내려주는지
  *   - 첫 실행 온보딩(프로필 없음) → 저장 → 메인 진입
  *   - 카드 한글 라벨·천단위 콤마·COTA 추천 배지·시드 예상 손익
@@ -145,7 +145,7 @@ const settings = await page.evaluate(() => ({
 }));
 check(settings.seed === '$1,000' && settings.headings[0] === '💼 내 투자 프로필', '라이브 내 투자 프로필 카드', `${settings.seed} · ${settings.headings[0]}`);
 check(settings.target === '주요 코인' && settings.ntfy === 'bgss-hw3238-9f4k2m', '라이브 알림 기본값', `${settings.target} · ${settings.ntfy}`);
-check(/앱 v1\.5\.2/.test(settings.version || ''), '라이브 앱 버전 v1.5.2', settings.version);
+check(/앱 v1\.5\.3/.test(settings.version || ''), '라이브 앱 버전 v1.5.3', settings.version);
 
 // 내 진입 원탭 → 기록 대시보드
 await page.locator('.bottom-nav button[data-tab="scanner"]').click();

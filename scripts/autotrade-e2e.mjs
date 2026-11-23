@@ -174,6 +174,8 @@ const NATIVE_MOCK = () => {
   const statusOf = () => ({
     running: window.__auto.running,
     service: window.__auto.running,
+    // 네이티브 설정의 enabled — 1일 손실 한도로 서비스가 스스로 끄면 웹도 같이 꺼진다(v1.5.3)
+    enabled: window.__auto.config ? window.__auto.config.enabled === true : false,
     mode: window.__auto.demo ? 'demo' : 'live',
     armed: window.__auto.plans.length,
     openPositions: window.__auto.positions.length,
@@ -202,6 +204,7 @@ const NATIVE_MOCK = () => {
     'bitgetTestConnection',
     'bitgetGetPositions',
     'bitgetPlaceOrder',
+    'bitgetClosePosition',
     'autoTradeStart',
     'autoTradeStop',
     'autoTradeSync',
@@ -260,6 +263,14 @@ const NATIVE_MOCK = () => {
       });
       return { ok: true, orderId: `ord-${window.__auto.orders.length}`, clientOid: o.clientOid };
     },
+    bitgetClosePosition: async (o) => {
+      window.__auto.closes = window.__auto.closes || [];
+      window.__auto.closes.push(o);
+      window.__auto.positions = (window.__auto.positions || []).filter(
+        (p) => !(p.symbol === o.symbol && p.holdSide === o.holdSide),
+      );
+      return { ok: true, orderId: `close-${window.__auto.closes.length}`, clientOid: o.clientOid };
+    },
     autoTradeStart: async (o) => {
       const config = JSON.parse(o.config);
       const plans = JSON.parse(o.plans);
@@ -280,11 +291,13 @@ const NATIVE_MOCK = () => {
     autoTradeSync: async (o) => {
       const plans = JSON.parse(o.plans);
       window.__auto.plans = plans;
+      window.__auto.config = JSON.parse(o.config);
       return statusOf();
     },
     autoTradeStop: async () => {
       window.__auto.calls.push({ method: 'autoTradeStop' });
       window.__auto.running = false;
+      if (window.__auto.config) window.__auto.config.enabled = false;
       return statusOf();
     },
     autoTradeStatus: async () => statusOf(),
@@ -455,6 +468,9 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   const logs = await text(page, '[data-auto-logs]');
   check(/BTC 롱 0\.025 주문 접수/.test(logs), '네이티브 체결 이벤트가 로그에 표시', logs.slice(0, 80));
   check(/손익비 1\.4R < 기준 1\.5R/.test(logs), '거부 사유 로그 표시');
+  // v1.5.3 — `0건 진입` 오해 방지: 오늘 실제 체결 수 + 감시 건수
+  const fillBadge = await text(page, '[data-auto-fillcount]');
+  check(/오늘 체결 1건/.test(fillBadge) && /감시 \d+건/.test(fillBadge), '로그 배지 = 오늘 체결 수 · 감시 건수', fillBadge);
 
   // 1일 손실 한도 → 자동 잠금
   await page.evaluate(() => window.__emitAuto({ dailyPnl: -61.7, dailyLocked: true }));
@@ -515,10 +531,16 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   await page.locator('[data-menu="auto"]').click();
   await page.waitForTimeout(400);
   await page.locator('[data-auto-mode="live"]').click();
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(400);
+  // v1.5.3 — 저장된 키가 모의투자 키면 `실거래`를 골라도 실제 주문은 모의 계좌로 나간다.
+  // 라벨을 실거래로 바꿔 버리면 사용자가 실제 돈이 나간다고 오해한다 — 키를 따른다.
+  const cfgMode = await page.evaluate(() => JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}').mode);
+  check(cfgMode === 'live', '실거래 선택이 설정에 저장', cfgMode);
+  const modeNote = await text(page, '[data-auto-mode-note]');
+  check(/모의투자 키/.test(modeNote), '모의 키 + 실거래 설정 → 안내 문구', modeNote.slice(0, 80));
   await page.evaluate(() => document.querySelector('.bottom-nav [data-tab="scanner"], [data-tab="scanner"]')?.click());
   await page.waitForTimeout(500);
-  check(/원클릭 실거래 주문/.test(await text(page, '[data-quick-order]')), '실거래 모드에서는 라벨이 실거래');
+  check(/원클릭 모의 주문/.test(await text(page, '[data-quick-order]')), '실거래를 골라도 키가 모의면 라벨은 모의');
   await page.locator('[data-quick-order]').first().click();
   await page.waitForTimeout(700);
   const orders2 = await page.evaluate(() => window.__auto.orders);
@@ -580,6 +602,95 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   check(/^(?!.*브라우저)/.test(note), '구버전 APK를 브라우저로 오해하지 않음');
   check(errors.length === 0, '구버전 APK 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
   await page.screenshot({ path: `${OUT}/62-autotrade-old-apk.png`, fullPage: true }).catch(() => {});
+  await ctx.close();
+}
+
+/* ================================================================== *
+ * 5) 실거래 키 — 라벨·경고가 실거래로 (v1.5.3)
+ * ================================================================== */
+{
+  const { ctx, page, errors } = await open();
+  await page.evaluate(() => document.querySelector('[data-tab="menu"]')?.click());
+  await page.waitForTimeout(300);
+  await page.locator('[data-menu="auto"]').click();
+  await page.waitForTimeout(400);
+  await page.locator('[data-auto-mode="live"]').click();
+  await page.waitForTimeout(200);
+  await page.locator('.auto-warn-check input').check();
+  await page.fill('[data-auto-input="key"]', 'bg_livekey_9f3k2m8d7c6b5a4n3m2c7d');
+  await page.fill('[data-auto-input="secret"]', 'secretsecretsecretsecretsecret12');
+  await page.fill('[data-auto-input="passphrase"]', 'cota-passphrase');
+  await page.locator('[data-auto-save]').click();
+  await page.waitForTimeout(1000);
+  const saved = await page.evaluate(() => window.__auto.calls.filter((c) => c.method === 'bitgetSaveKeys').pop());
+  check(saved?.demo === false, '실거래 키 저장 → 네이티브 demo=false', JSON.stringify(saved ?? {}));
+  const keyTag = await text(page, '[data-auto-keys] .auto-tag');
+  check(/연결됨 · 실거래/.test(keyTag), '실거래 키 연결 표시', keyTag);
+  const modeTag = JSON.parse(await page.evaluate(() => localStorage.getItem('cota.autotrade.config.v1') || '{}')).mode;
+  check(modeTag === 'live', '저장 후 설정 모드 = 실거래', modeTag);
+  await page.evaluate(() => document.querySelector('.bottom-nav [data-tab="scanner"], [data-tab="scanner"]')?.click());
+  await page.waitForTimeout(600);
+  check(/원클릭 실거래 주문/.test(await text(page, '[data-quick-order]')), '실거래 키 → 원클릭 라벨 실거래');
+  check(await page.locator('.quick-order-btn.live').count() >= 1, '실거래 버튼 스타일(live)');
+  await page.evaluate(() => document.querySelector('[data-tab="menu"]')?.click());
+  await page.waitForTimeout(300);
+  await page.locator('[data-menu="auto"]').click();
+  await page.waitForTimeout(400);
+  check((await text(page, '[data-auto-pill]')).includes('대기') || (await text(page, '[data-auto-pill]')).includes('OFF'), '가동 전 상태 표시', await text(page, '[data-auto-pill]'));
+  check(errors.length === 0, '실거래 키 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+/* ================================================================== *
+ * 6) 보유 포지션 시장가 청산 (v1.5.3)
+ * ================================================================== */
+{
+  const { ctx, page, errors } = await open();
+  await page.evaluate(() => document.querySelector('[data-tab="menu"]')?.click());
+  await page.waitForTimeout(300);
+  await page.locator('[data-menu="auto"]').click();
+  await page.waitForTimeout(400);
+  await page.fill('[data-auto-input="key"]', 'bg_demokey_1234567890abcdef');
+  await page.fill('[data-auto-input="secret"]', 'secretsecretsecretsecretsecret12');
+  await page.fill('[data-auto-input="passphrase"]', 'cota-passphrase');
+  await page.locator('[data-auto-save]').click();
+  await page.waitForTimeout(900);
+  // 보유 포지션을 네이티브 목록에 심고 새로고침으로 가져온다
+  await page.evaluate(() => {
+    window.__auto.positions = [
+      {
+        symbol: 'BTCUSDT',
+        holdSide: 'long',
+        total: 0.025,
+        openPriceAvg: 61100,
+        markPrice: 61200,
+        unrealizedPL: 2.5,
+        leverage: 10,
+        marginSize: 152.75,
+        liquidationPrice: 55000,
+        presetStopSurplusPrice: 67000,
+        presetStopLossPrice: 57950,
+        ctime: Date.now(),
+      },
+    ];
+  });
+  await page.locator('[data-auto-positions] button').first().click();
+  await page.waitForTimeout(700);
+  const posText = await text(page, '[data-auto-positions]');
+  check(/BTC/.test(posText) && /롱/.test(posText), '포지션 목록에 BTC 롱 표시', posText.slice(0, 80));
+  check(await page.locator('[data-auto-close="BTCUSDT"]').count() === 1, '포지션에 시장가 청산 버튼');
+  await page.locator('[data-auto-close="BTCUSDT"]').click();
+  await page.waitForTimeout(900);
+  const closes = await page.evaluate(() => window.__auto.closes ?? []);
+  check(closes.length === 1, '청산 클릭 → 네이티브 bitgetClosePosition 1건', JSON.stringify(closes[0] ?? {}));
+  const c = closes[0] ?? {};
+  check(c.symbol === 'BTCUSDT' && c.holdSide === 'long', '청산 대상: BTC 롱(포지션 방향 그대로)', `${c.symbol}/${c.holdSide}`);
+  check(Math.abs(Number(c.size) - 0.025) < 1e-9, '청산 수량 = 보유 수량', c.size);
+  check(!!c.clientOid, '청산 clientOid 전달(중복 청산 방지)', c.clientOid);
+  check(/청산/.test(await text(page, '[data-auto-logs]')), '청산 결과가 로그에 남는다');
+  await page.waitForTimeout(300);
+  check(/보유 중인 USDT-M 포지션이 없습니다/.test(await text(page, '[data-auto-positions]')), '청산 후 포지션 목록 갱신');
+  check(errors.length === 0, '청산 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
   await ctx.close();
 }
 

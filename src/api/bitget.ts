@@ -103,6 +103,10 @@ export async function fetchContracts(): Promise<Contract[]> {
           Number.isFinite(priceEndStep) && priceEndStep > 0 ? Math.round(priceEndStep) : undefined,
         minTradeNum: Number.isFinite(minTradeNum) && minTradeNum > 0 ? minTradeNum : undefined,
         volumePlace: Number.isFinite(volumePlace) ? volumePlace : undefined,
+        sizeMultiplier:
+          Number.isFinite(Number(c.sizeMultiplier)) && Number(c.sizeMultiplier) > 0
+            ? Math.round(Number(c.sizeMultiplier))
+            : undefined,
         minTradeUsdt: Number.isFinite(minTradeUsdt) && minTradeUsdt > 0 ? minTradeUsdt : undefined,
       } satisfies Contract;
     });

@@ -29,6 +29,8 @@ export interface Contract {
   minTradeNum?: number;
   /** 주문 수량 소수 자리(거래소 volumePlace) */
   volumePlace?: number;
+  /** 수량 배수(거래소 sizeMultiplier) — 보통 1, 일부 종목은 10 처럼 배수로만 주문된다 */
+  sizeMultiplier?: number;
   /** 최소 주문 금액(USDT · minTradeUSDT) */
   minTradeUsdt?: number;
 }

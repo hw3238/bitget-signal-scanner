@@ -130,6 +130,36 @@ function round(v: number, digits: number) {
   return Math.round(v * f) / f;
 }
 
+/**
+ * 실제 거래 모드 — 화면 설정(config.mode)이 아니라 **저장된 키가 어느 계좌의 키인지**가 기준이다.
+ *  · 모의투자 키를 넣고 `실거래`를 골라도 실제로는 모의 계좌로 나간다(라벨만 틀리면 위험한 쪽은 반대).
+ *  · 실거래 키를 넣고 `모의투자`를 골랐다면 **실제 돈이 나가므로** 실거래로 취급해 확인 절차를 태운다.
+ */
+export interface TradeModeState {
+  mode: AutoMode;
+  /** 설정과 키가 어긋났는가 */
+  mismatch: boolean;
+  note: string | null;
+}
+
+export function resolveTradeMode(
+  config: Pick<AutoTradeConfig, 'mode'>,
+  keys: { hasKeys: boolean; demo: boolean } | null | undefined,
+): TradeModeState {
+  const wanted: AutoMode = config.mode === 'live' ? 'live' : 'demo';
+  if (!keys || !keys.hasKeys) return { mode: wanted, mismatch: false, note: null };
+  const actual: AutoMode = keys.demo ? 'demo' : 'live';
+  if (actual === wanted) return { mode: actual, mismatch: false, note: null };
+  return {
+    mode: actual,
+    mismatch: true,
+    note:
+      actual === 'live'
+        ? '실거래 계좌 키가 저장되어 있어 실거래로 실행합니다. 실제 USDT가 나갑니다.'
+        : '모의투자 키가 저장되어 있어 모의투자로 실행합니다. 실거래는 실거래 계좌에서 만든 키를 넣어 주세요.',
+  };
+}
+
 export function isMajorSymbol(symbol: string): boolean {
   const s = (symbol ?? '').toUpperCase();
   return (MAJOR_SYMBOLS as readonly string[]).includes(s);
@@ -202,6 +232,7 @@ export type EntryVerdict =
   | 'winrate'
   | 'rr'
   | 'duplicate'
+  | 'same-symbol'
   | 'max-positions'
   | 'daily-locked'
   | 'stale'
@@ -221,6 +252,8 @@ export interface EntryContext {
   tradedKeys: string[];
   /** 현재 보유 포지션 수 */
   openPositions: number;
+  /** 이미 보유 중인 종목(코인) — 같은 종목에 또 진입하면 수량이 겁쳐 리스크가 두 배가 된다 */
+  openSymbols?: string[];
   /** 오늘 손실 한도 잠금 여부 */
   dailyLocked: boolean;
   /** 자동 진입용 주문 계획 (수량·최소주문 확인) */
@@ -280,6 +313,13 @@ export function evaluateEntry(ctx: EntryContext): EntryDecision {
   const key = signalKeyOf(signal);
   if (ctx.tradedKeys.includes(key)) {
     return { allowed: false, code: 'duplicate', reason: `${base} 같은 시그널에 이미 진입했습니다(중복 진입 방지).` };
+  }
+  if ((ctx.openSymbols ?? []).includes(signal.symbol)) {
+    return {
+      allowed: false,
+      code: 'same-symbol',
+      reason: `${base} 포지션을 이미 보유 중입니다 — 같은 종목 중복 진입은 리스크가 2배가 되어 막습니다.`,
+    };
   }
   if (ctx.openPositions >= config.maxPositions) {
     return {
@@ -401,6 +441,27 @@ export interface PlaceOrderParams {
   presetStopLossPrice?: string;
 }
 
+/**
+ * 수량 → 거래소 수량 단위(10^-volumePlace × sizeMultiplier)로 **내림**한 문자열.
+ *  · 지수 표기(1e-5) 없이 고정 소수로 쓴다 — 비트겟이 `1e-5` 문자열을 거절한다.
+ *  · 내림이므로 계획한 리스크를 넘기지 않는다(올림하면 손실이 커진다).
+ *    qtyToStep(40762.5, 0) → '40762'   qtyToStep(1.2345, 2) → '1.23'   qtyToStep(25, 0, 10) → '20'
+ * 네이티브 `BitgetApi.floorToStep` 과 같은 규칙이다.
+ */
+export function qtyToStep(qty: number, volumePlace?: number | null, sizeMultiplier?: number | null): string {
+  if (!Number.isFinite(qty) || qty <= 0) return '';
+  const vp = volumePlace != null && Number.isFinite(volumePlace) ? clamp(Math.round(volumePlace), 0, 8) : 8;
+  const mult =
+    sizeMultiplier != null && Number.isFinite(sizeMultiplier) && sizeMultiplier > 0 ? Math.round(sizeMultiplier) : 1;
+  const scale = 10 ** vp;
+  const units = Math.floor((qty * scale) / mult + 1e-9);
+  if (!(units > 0)) return '';
+  const fixed = ((units * mult) / scale).toFixed(vp);
+  if (vp === 0) return fixed;
+  const trimmed = fixed.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  return trimmed === '-0' ? '0' : trimmed;
+}
+
 /** 주문 가격·수량 문자열 — 지수 표기 없이, 거래소 자리수 이하로 반올림(정수는 그대로) */
 export function priceText(value: number, decimals?: number | null): string {
   if (!Number.isFinite(value) || value <= 0) return '';
@@ -471,6 +532,8 @@ export function buildOrderParams(input: {
   /** 계약 호가 정보 — 없으면 signal 의 decimals/priceEndStep 을 쓴다 */
   pricePlace?: number | null;
   priceEndStep?: number | null;
+  /** 계약 수량 배수(거래소 sizeMultiplier) */
+  sizeMultiplier?: number | null;
 }): PlaceOrderParams {
   const { signal, plan, posMode } = input;
   const orderType = input.orderType ?? 'market';
@@ -482,7 +545,7 @@ export function buildOrderParams(input: {
     productType: 'USDT-FUTURES',
     marginMode: 'isolated',
     marginCoin: 'USDT',
-    size: priceText(plan.qty, plan.qtyDecimals ?? 8),
+    size: qtyToStep(plan.qty, plan.qtyDecimals ?? 8, input.sizeMultiplier),
     side: dir.side,
     orderType,
     clientOid: input.clientOid ?? clientOidFor(signal.symbol),
@@ -567,23 +630,50 @@ export function toArmedPlan(input: {
   };
 }
 
-export type PlanTrigger = 'enter' | 'wait' | 'invalidated' | 'expired';
+export type PlanTrigger =
+  | 'enter'
+  | 'wait'
+  | 'invalidated'
+  | 'expired'
+  /** 현재가가 이미 목표가에 닿아(지나) 목표가를 걸 수 없다 — 거래소 25585/25587 */
+  | 'target-passed'
+  /** 현재가가 손절가에 너무 붙어(0.1% 이내) 시장가 체결 즉시 손절될 자리 */
+  | 'near-stop';
+
+/**
+ * 진입 직전 방어선 — 시장가 체결가가 목표가·손절가를 잠식하는 자리는 들어가지 않는다.
+ *  · 거래소는 TP/SL 을 **현재가(최근가·지정가) 기준**으로 검사해 방향이 틀리면
+ *    `25585`(롱 TP > 최근가) · `25586`(롱 SL < 최근가) · `25587`/`25588`(숏) 로 거절한다.
+ *  · 손절가에 0.1% 이내로 붙은 자리는 체결 직후 손절 → 수수료만 잃는다.
+ */
+export const MIN_STOP_DISTANCE = 0.001; // 현재가 대비 손절가 최소 거리 0.1%
+export const MIN_TARGET_GAP = 0.001; // 현재가 대비 목표가 최소 여유 0.1%
 
 /**
  * 지금 가격이 진입 조건을 만족하는가.
  *  - 롱: 진입가 이하로 내려오면 진입(되돌림 매수). 손절가를 먼저 깨면 셋업 무효.
  *  - 숏: 진입가 이상으로 올라오면 진입. 손절가를 먼저 깨면 무효.
  *  - 유효시간이 지나면 취소.
+ *  - 손절·목표가에 이미 붙었거나 지나쳤으면 진입하지 않는다(TP/SL 방향 오류·즉시 손절 방지).
  */
-export function planTrigger(plan: Pick<ArmedPlan, 'side' | 'entry' | 'stop' | 'expiresAt'>, price: number, now: number): PlanTrigger {
+export function planTrigger(
+  plan: Pick<ArmedPlan, 'side' | 'entry' | 'stop' | 'expiresAt'> & { target?: number },
+  price: number,
+  now: number,
+): PlanTrigger {
   if (!(price > 0)) return 'wait';
   if (now >= plan.expiresAt) return 'expired';
+  const target = Number(plan.target ?? 0);
   if (plan.side === 'long') {
     if (price <= plan.stop) return 'invalidated';
+    if (target > 0 && price >= target * (1 - MIN_TARGET_GAP)) return 'target-passed';
+    if (price <= plan.stop * (1 + MIN_STOP_DISTANCE)) return 'near-stop';
     if (price <= plan.entry * (1 + TOUCH_TOLERANCE)) return 'enter';
     return 'wait';
   }
   if (price >= plan.stop) return 'invalidated';
+  if (target > 0 && price <= target * (1 + MIN_TARGET_GAP)) return 'target-passed';
+  if (price >= plan.stop * (1 - MIN_STOP_DISTANCE)) return 'near-stop';
   if (price >= plan.entry * (1 - TOUCH_TOLERANCE)) return 'enter';
   return 'wait';
 }
@@ -674,6 +764,12 @@ export function fmtUsdt(v: number | null | undefined, digits = 2): string {
   const abs = Math.abs(v);
   const body = abs >= 1000 ? Math.round(abs).toLocaleString('en-US') : abs.toFixed(digits);
   return `${v < 0 ? '−' : ''}$${body}`;
+}
+
+/** 오늘(KST) 체결로 기록된 로그 수 — 화면의 `N건 진입` 배지가 실제 체결만 세도록 */
+export function todayFillCount(logs: AutoLogEntry[], now: number): number {
+  const key = dayKeyKst(now);
+  return logs.filter((l) => l.level === 'fill' && dayKeyKst(Number(l.at) || 0) === key).length;
 }
 
 export function fmtClock(ts: number): string {

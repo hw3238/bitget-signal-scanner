@@ -23,7 +23,9 @@ import {
   normalizePosMode,
   planAutoOrder,
   planSeed,
+  priceText,
   pushLog,
+  resolveTradeMode,
   rollDay,
   signalKeyOf,
   symbolAllowed,
@@ -44,6 +46,7 @@ import {
   autoTradeSync,
   bitgetClearKeys,
   bitgetBridgeAvailable,
+  bitgetClosePosition,
   bitgetKeyState,
   bitgetPlaceOrder,
   bitgetPositions,
@@ -117,6 +120,11 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
   const [tick, setTick] = useState(0);
 
   const supported = autoTradeSupported();
+  /**
+   * 실제 거래 모드 — 저장된 키가 기준이다. `config.mode` 는 사용자가 고른 희망값일 뿐이고,
+   * 모의투자 키로 실거래를 고르거나 실거래 키로 모의투자를 고르면 라벨과 다른 주문이 나간다.
+   */
+  const tradeMode = useMemo(() => resolveTradeMode(config, keys), [config, keys]);
   const contractBySymbol = useMemo(() => {
     const map = new Map<string, Contract>();
     for (const c of contracts) map.set(c.symbol, c);
@@ -127,7 +135,12 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
     (symbol: string) => {
       const c = contractBySymbol.get(symbol);
       if (!c) return null;
-      return { minTradeNum: c.minTradeNum, volumePlace: c.volumePlace, minTradeUsdt: c.minTradeUsdt };
+      return {
+        minTradeNum: c.minTradeNum,
+        volumePlace: c.volumePlace,
+        minTradeUsdt: c.minTradeUsdt,
+        sizeMultiplier: c.sizeMultiplier,
+      };
     },
     [contractBySymbol],
   );
@@ -262,6 +275,8 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
 
   const openPositions = native?.openPositions ?? positions.length;
   const running = supported ? native?.running === true : config.enabled;
+  /** 보유 중인 종목 — 같은 종목에 또 들어가면 수량이 겹쳐 리스크가 2배가 된다 */
+  const openSymbols = useMemo(() => positions.map((p) => p.symbol), [positions]);
 
   /* ---------------- 웹 → 서비스 감시 목록 ---------------- */
 
@@ -286,6 +301,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
           signal,
           tradedKeys: runtime.tradedKeys,
           openPositions,
+          openSymbols,
           dailyLocked: daily.locked,
           plan,
           now,
@@ -317,6 +333,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       keys.hasKeys,
       leverageFor,
       openPositions,
+      openSymbols,
       profile,
       runtime.tradedKeys,
       specFor,
@@ -365,6 +382,10 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
   const applyNative = useCallback((status: AutoTradeNativeStatus | null) => {
     setNative(status);
     if (!status) return;
+    // 1일 손실 한도로 서비스가 스스로 꺼졌으면 웹 설정도 같이 꺼야 배지·토글이 맞는다.
+    if (status.enabled === false) {
+      setConfig((prev) => (prev.enabled ? { ...prev, enabled: false } : prev));
+    }
     if (typeof status.openPositions === 'number') {
       setRuntime((prev) => ({ ...prev, openPositions: status.openPositions ?? prev.openPositions }));
     }
@@ -394,14 +415,16 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       setError('먼저 비트겟 API 키를 연결해 주세요.');
       return false;
     }
-    if (config.mode === 'live' && supported) {
+    // 실제 주문이 나가는 모드는 **키**가 정한다 — 실거래 키를 모의투자로 착각한 채 켜지지 않게 한다.
+    const mode = tradeMode.mode;
+    if (mode === 'live' && supported) {
       // 실거래는 이 한 번의 확인 없이는 시작되지 않는다.
       const ok = window.confirm(
         '실거래 자동매매를 켭니다.\n\n· 실제 USDT로 주문이 나갑니다.\n· 손절가·목표가가 주문에 함께 걸립니다.\n· 1일 손실 한도에 닿으면 오늘 자동 진입이 멈춥니다.\n\n계속할까요?',
       );
       if (!ok) return false;
     }
-    const next = { ...config, enabled: true };
+    const next = { ...config, enabled: true, mode };
     setConfig(next);
     const equity = account?.equity ?? null;
     setRuntime((prev) => rollDay({ ...prev, dayStartEquity: prev.dayStartEquity ?? equity }, Date.now(), equity));
@@ -416,7 +439,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       log({
         at: Date.now(),
         level: 'info',
-        text: `자동매매 시작 — ${next.mode === 'live' ? '실거래' : '모의투자'} · 감시 ${plans.length}건 · ${next.intervalSec}초 주기`,
+        text: `자동매매 시작 — ${mode === 'live' ? '실거래' : '모의투자'} · 감시 ${plans.length}건 · ${next.intervalSec}초 주기`,
       });
     } else {
       log({
@@ -427,7 +450,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       simulate(next);
     }
     return true;
-  }, [account?.equity, applyNative, buildPlans, config, keys.hasKeys, log, signals, simulate, supported]);
+  }, [account?.equity, applyNative, buildPlans, config, keys.hasKeys, log, signals, simulate, supported, tradeMode]);
 
   const stop = useCallback(
     async (reason = '사용자가 자동매매를 껐습니다.') => {
@@ -455,6 +478,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
         signal,
         tradedKeys: runtime.tradedKeys,
         openPositions,
+        openSymbols,
         dailyLocked: daily.locked,
         plan,
         now: Date.now(),
@@ -486,6 +510,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
         clientOid: clientOidFor(signal.symbol),
         pricePlace: contractBySymbol.get(signal.symbol)?.decimals ?? null,
         priceEndStep: contractBySymbol.get(signal.symbol)?.priceEndStep ?? 1,
+        sizeMultiplier: contractBySymbol.get(signal.symbol)?.sizeMultiplier ?? 1,
       });
       setBusy(`order:${signal.symbol}`);
       const res = await bitgetPlaceOrder({ ...params, leverage: plan.leverage, holdMode: account?.posMode });
@@ -503,15 +528,57 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       log({
         at: Date.now(),
         level: 'fill',
-        text: `${config.mode === 'live' ? '[실거래]' : '[모의]'} ${signal.base} ${signal.side === 'long' ? '롱' : '숏'} ${params.size} 주문 접수 · TP ${params.presetStopSurplusPrice} / SL ${params.presetStopLossPrice} · 주문 ${res.orderId ?? res.clientOid ?? ''}`,
+        text: `${tradeMode.mode === 'live' ? '[실거래]' : '[모의]'} ${signal.base} ${signal.side === 'long' ? '롱' : '숏'} ${params.size} 주문 접수 · TP ${params.presetStopSurplusPrice} / SL ${params.presetStopLossPrice} · 주문 ${res.orderId ?? res.clientOid ?? ''}`,
         symbol: signal.symbol,
         side: signal.side,
       });
       setRuntime((prev) => markTraded(prev, signalKeyOf(signal)));
       void refreshPositions();
-      return { ok: true, simulated: false, message: `${config.mode === 'live' ? '실거래' : '모의투자'} 주문을 넣었습니다.` };
+      return { ok: true, simulated: false, message: `${tradeMode.mode === 'live' ? '실거래' : '모의투자'} 주문을 넣었습니다.` };
     },
-    [account?.equity, account?.posMode, config, contractBySymbol, daily.locked, keys.hasKeys, leverageFor, log, openPositions, profile, refreshPositions, runtime.tradedKeys, specFor, supported],
+    [account?.equity, account?.posMode, config, contractBySymbol, daily.locked, keys.hasKeys, leverageFor, log, openPositions, openSymbols, profile, refreshPositions, runtime.tradedKeys, specFor, supported, tradeMode.mode],
+  );
+
+  /** 보유 포지션 청산 — 방향·축소 규칙은 네이티브가 계좌 모드(헤지/단방향)에 맞춰 만든다. */
+  const closePosition = useCallback(
+    async (pos: BitgetPosition): Promise<QuickOrderResult> => {
+      if (!supported) return { ok: false, simulated: false, message: '앱(APK)에서만 포지션을 청산할 수 있습니다.' };
+      if (!keys.hasKeys) return { ok: false, simulated: false, message: 'API 키가 연결되지 않았습니다.' };
+      if (!(pos.total > 0)) return { ok: false, simulated: false, message: '청산할 수량이 없습니다.' };
+      const place = contractBySymbol.get(pos.symbol)?.volumePlace;
+      const size = priceText(pos.total, place ?? 8);
+      if (!size || Number(size) <= 0) return { ok: false, simulated: false, message: '청산 수량을 계산하지 못했습니다.' };
+      setBusy(`close:${pos.symbol}`);
+      const res = await bitgetClosePosition({
+        symbol: pos.symbol,
+        holdSide: String(pos.holdSide ?? 'long'),
+        size,
+        holdMode: account?.posMode,
+        // 청산마다 다른 clientOid — 같으면 거래소가 25212(중복)로 거부한다.
+        clientOid: clientOidFor(`close${pos.symbol}`),
+      });
+      setBusy(null);
+      if (!res.ok) {
+        log({
+          at: Date.now(),
+          level: 'error',
+          text: `${pos.symbol.replace('USDT', '')} 청산 실패 — ${res.error ?? '알 수 없는 오류'}${res.code ? ` (${res.code})` : ''}`,
+          symbol: pos.symbol,
+          side: pos.holdSide === 'long' ? 'long' : 'short',
+        });
+        return { ok: false, simulated: false, message: res.error ?? '청산에 실패했습니다.' };
+      }
+      log({
+        at: Date.now(),
+        level: 'fill',
+        text: `${tradeMode.mode === 'live' ? '[실거래]' : '[모의]'} ${pos.symbol.replace('USDT', '')} ${pos.holdSide === 'long' ? '롱' : '숏'} 청산 ${size} · 주문 ${res.orderId ?? res.clientOid ?? ''}`,
+        symbol: pos.symbol,
+        side: pos.holdSide === 'long' ? 'long' : 'short',
+      });
+      void refreshPositions();
+      return { ok: true, simulated: false, message: '청산 주문을 넣었습니다.' };
+    },
+    [account?.posMode, contractBySymbol, keys.hasKeys, log, refreshPositions, supported, tradeMode.mode],
   );
 
   /* ---------------- 부팅 · 주기 동기화 ---------------- */
@@ -570,8 +637,10 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
     if (now - lastSyncRef.current < 15_000) return;
     lastSyncRef.current = now;
     const { plans } = buildPlans(signals, now);
-    armedRef.current = mergeArmedPlans(armedRef.current, plans);
-    void autoTradeSync(config, armedRef.current).then(applyNative);
+    // 설정(허용 종목·유효시간)이 바뀌면 이미 감시 중인 목록에서도 빠져야 한다 — 만료·제외 종목은 버린다.
+    const alive = armedRef.current.filter((p) => p.expiresAt > now && symbolAllowed(config, p.symbol));
+    armedRef.current = mergeArmedPlans(alive, plans);
+    void autoTradeSync({ ...config, mode: tradeMode.mode }, armedRef.current).then(applyNative);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signals, config, config.enabled, config.autoEntry, supported]);
 
@@ -592,6 +661,8 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
     supported,
     bridgeMissing,
     config,
+    /** 실제 주문이 나가는 모드(키 기준) */
+    tradeMode,
     runtime,
     keys,
     account,
@@ -602,6 +673,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
     error,
     daily,
     openPositions,
+    openSymbols,
     tick,
     patchConfig: (patch: Partial<AutoTradeConfig>) => setConfig((prev) => normalizeConfig({ ...prev, ...patch })),
     saveKeys,
@@ -611,6 +683,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
     start,
     stop,
     quickOrder,
+    closePosition,
     simulate,
     setError,
     reloadKeys: refreshKeys,

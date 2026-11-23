@@ -5,6 +5,7 @@ import type { Signal } from '../engine/types';
 import type { Profile } from '../lib/profile';
 import type { SwapLogEntry } from '../lib/storage';
 import { AutoTradeTab } from './AutoTradeTab';
+import { statusBadge } from '../lib/autotrade';
 import { EngineTab } from './EngineTab';
 import { KimchiRadar } from './KimchiRadar';
 import { KeyMatchRadar } from './KeyMatchRadar';
@@ -161,7 +162,7 @@ export function MenuTab({ state, profile, leverage, swapLog, onRescan, onClearLo
 
       <button
         type="button"
-        className={`menu-auto ${autoTrade.config.enabled ? (autoTrade.config.mode === 'live' ? 'live' : 'demo') : 'off'}`}
+        className={`menu-auto ${autoTrade.config.enabled ? (autoTrade.tradeMode.mode === 'live' ? 'live' : 'demo') : 'off'}`}
         onClick={() => setView('auto')}
         data-menu="auto"
       >
@@ -171,12 +172,9 @@ export function MenuTab({ state, profile, leverage, swapLog, onRescan, onClearLo
             비트겟 자동매매 <i className="menu-hot">NEW</i>
           </b>
           <span>시그널을 24시간 감시해 TP/SL 포함 자동 주문 · 1일 손실 한도</span>
-          <em className={`menu-auto-badge ${autoTrade.config.enabled ? (autoTrade.config.mode === 'live' ? 'live' : 'demo') : 'off'}`} data-auto-menu-badge>
-            {autoTrade.config.enabled
-              ? autoTrade.config.mode === 'live'
-                ? '실거래 가동 중'
-                : '모의투자 가동 중'
-              : '꺼짐'}
+          <em className={`menu-auto-badge ${autoTrade.config.enabled ? (autoTrade.tradeMode.mode === 'live' ? 'live' : 'demo') : 'off'}`} data-auto-menu-badge>
+            {/* 라벨은 저장된 키의 계좌(tradeMode)와 서비스 가동 여부를 함께 따른다 — 실거래 키를 모의로 착각하지 않게. */}
+            {statusBadge({ ...autoTrade.config, mode: autoTrade.tradeMode.mode }, autoTrade.running).label}
           </em>
         </span>
         <span className="menu-arrow">›</span>

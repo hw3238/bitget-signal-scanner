@@ -22,6 +22,12 @@ import type { PosMode } from './autotrade';
 export const UTA_MODE_ERROR = '40085';
 /** v3(통합) 엔드포인트가 클래식 계정에서 돌려주는 코드 — Classic 힌트 */
 export const CLASSIC_MODE_ERROR = '40084';
+/** 가격이 호가 단위의 배수가 아님(v2·v3 공통 문구, v3 는 25244 도 같은 의미) */
+export const PRICE_STEP_ERROR = '45115';
+/** v3 에서 같은 의미의 코드 */
+export const PRICE_STEP_ERROR_V3 = '25244';
+/** 같은 clientOid 로 이미 주문이 접수됨 — 재시도하면 중복 주문이 되므로 성공으로 본다 */
+export const DUPLICATE_CLIENT_OID = '25212';
 /** UTA 상품 구분 — USDT 무기한 선물 */
 export const V3_CATEGORY = 'USDT-FUTURES';
 
@@ -126,6 +132,79 @@ export function v3OrderBody(
     body.slOrderType = 'market';
   }
   if (p.orderType === 'limit') body.timeInForce = 'gtc';
+  return body;
+}
+
+/* ------------------------------------------------------------------ *
+ * 청산(close) — 주문 방향 규칙
+ * ------------------------------------------------------------------ */
+
+/**
+ * 비트겟 문서의 포지션 청산 규칙 (UTA v3 Place Order · Classic v2 동일)
+ *   헤지 모드 : 롱 청산 = side=sell + posSide=long · 숏 청산 = side=buy + posSide=short
+ *              (v2 는 posSide 대신 tradeSide=close 를 쓴다)
+ *   단방향    : 롱 청산 = side=sell + reduceOnly · 숏 청산 = side=buy + reduceOnly
+ * `posSide` 는 **청산할 포지션의 방향**이다 — 주문 side 로 추론하면 롱 청산이 숏 진입으로 뒤집힌다.
+ */
+export interface CloseIntent {
+  symbol: string;
+  /** 청산할 포지션 방향 */
+  holdSide: 'long' | 'short';
+  /** 청산 수량(코인 단위) */
+  size: string;
+  posMode: PosMode;
+  clientOid?: string;
+  marginMode?: string | null;
+}
+
+/** 청산 주문의 side/posSide/reduceOnly — 웹·네이티브가 같은 값을 쓴다 */
+export function closeOrderFields(input: Pick<CloseIntent, 'holdSide' | 'posMode'>): {
+  side: 'buy' | 'sell';
+  posSide?: 'long' | 'short';
+  tradeSide?: 'close';
+  reduceOnly: 'yes' | null;
+} {
+  const side: 'buy' | 'sell' = input.holdSide === 'long' ? 'sell' : 'buy';
+  if (input.posMode === 'hedge_mode') {
+    return { side, posSide: input.holdSide, tradeSide: 'close', reduceOnly: null };
+  }
+  return { side, reduceOnly: 'yes' };
+}
+
+/** v2(클래식) 청산 body — 헤지=tradeSide:close, 단방향=reduceOnly:true */
+export function v2CloseBody(p: CloseIntent): Record<string, string> {
+  const f = closeOrderFields(p);
+  const body: Record<string, string> = {
+    symbol: p.symbol,
+    productType: V3_CATEGORY,
+    marginMode: v3MarginMode(p.marginMode),
+    marginCoin: 'USDT',
+    size: p.size,
+    side: f.side,
+    orderType: 'market',
+  };
+  if (p.clientOid) body.clientOid = p.clientOid;
+  // 헤지 모드는 tradeSide=close, 단방향은 reduceOnly — 둘을 같이 보내면 25238 로 거절된다.
+  if (f.tradeSide) body.tradeSide = f.tradeSide;
+  else body.reduceOnly = 'true';
+  return body;
+}
+
+/** v3(통합) 청산 body — 헤지=posSide(청산할 포지션), 단방향=reduceOnly:yes */
+export function v3CloseBody(p: CloseIntent): Record<string, string> {
+  const f = closeOrderFields(p);
+  const body: Record<string, string> = {
+    category: V3_CATEGORY,
+    symbol: p.symbol,
+    qty: p.size,
+    side: f.side,
+    orderType: 'market',
+    marginMode: v3MarginMode(p.marginMode),
+  };
+  if (p.posMode === 'hedge_mode' && f.posSide) body.posSide = f.posSide;
+  else body.reduceOnly = 'yes';
+  // clientOid 는 있을 때만 — 빈 값으로 'cota' 를 넣으면 두 번째 청산이 25212(중복)로 거절된다.
+  if (p.clientOid) body.clientOid = clientOidV3(p.clientOid);
   return body;
 }
 

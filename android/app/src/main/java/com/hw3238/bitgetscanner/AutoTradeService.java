@@ -46,6 +46,10 @@ public class AutoTradeService extends Service {
     private static final int NOTIFICATION_ID = 4407;
     private static final long MIN_INTERVAL_MS = 30_000L;
     private static final double TOUCH_TOLERANCE = 0.0005;
+    /** 현재가가 손절가에 0.1% 이내로 붙으면 진입하지 않는다(즉시 손절 방지) */
+    private static final double MIN_STOP_DISTANCE = 0.001;
+    /** 목표가까지 0.1% 미만이면 진입하지 않는다(거래소 25585/25587 TP 방향 오류 방지) */
+    private static final double MIN_TARGET_GAP = 0.001;
 
     private HandlerThread workerThread;
     private Handler worker;
@@ -157,10 +161,19 @@ public class AutoTradeService extends Service {
             return;
         }
         acquireWake();
+        try {
+            tickBody(keys, config);
+        } finally {
+            if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        }
+    }
 
+    /** 한 주기 본체 — 어떤 경로로 끝나도 wake lock 은 tickOnce 의 finally 가 푼다. */
+    private void tickBody(BitgetApi.Keys keys, JSONObject config) {
         double equity = 0;
         String posMode = "one_way_mode";
         int openPositions = 0;
+        JSONArray heldPositions = new JSONArray();
         try {
             JSONObject account = BitgetApi.accounts(keys);
             equity = account.optDouble("equity", 0);
@@ -175,8 +188,8 @@ public class AutoTradeService extends Service {
             /* 포지션 모드를 못 읽으면 단방향으로 시도 */
         }
         try {
-            JSONArray positions = BitgetApi.positions(keys);
-            openPositions = positions.length();
+            heldPositions = BitgetApi.positions(keys);
+            openPositions = heldPositions.length();
         } catch (Exception e) {
             AutoTradeStore.addLog(this, "error", "포지션 조회 실패 — " + friendly(e));
         }
@@ -219,7 +232,21 @@ public class AutoTradeService extends Service {
         JSONArray keep = new JSONArray();
         int maxPositions = config.optInt("maxPositions", 2);
         boolean autoEntry = config.optBoolean("autoEntry", true);
+        boolean hedge = "hedge_mode".equals(posMode);
         long now = System.currentTimeMillis();
+
+        // 이미 보유한 종목 — 같은 종목에 또 진입하면 수량이 겹쳐 리스크가 두 배가 된다.
+        java.util.Set<String> heldSymbols = new java.util.HashSet<>();
+        java.util.Set<String> heldSides = new java.util.HashSet<>();
+        for (int i = 0; i < heldPositions.length(); i++) {
+            JSONObject p = heldPositions.optJSONObject(i);
+            if (p == null) continue;
+            String sym = p.optString("symbol", "").toUpperCase(Locale.ROOT);
+            if (sym.isEmpty()) continue;
+            heldSymbols.add(sym);
+            heldSides.add(sym + "|" + p.optString("holdSide", "").toLowerCase(Locale.ROOT));
+        }
+        boolean quoteFailed = false;
 
         for (int i = 0; i < plans.length(); i++) {
             JSONObject plan = plans.optJSONObject(i);
@@ -228,6 +255,7 @@ public class AutoTradeService extends Service {
             String symbol = plan.optString("symbol", "");
             String base = plan.optString("base", symbol.replace("USDT", ""));
             String side = plan.optString("side", "long");
+            boolean longSide = "long".equals(side);
             try {
                 if (now >= plan.optLong("expiresAt", 0)) {
                     AutoTradeStore.addLog(this, "info", base + " 진입 대기 만료 — 감시에서 제외했습니다.");
@@ -238,16 +266,48 @@ public class AutoTradeService extends Service {
                     keep.put(plan);
                     continue;
                 }
-                double price = BitgetApi.lastPrice(symbol);
-                if (price <= 0) {
+                String upperSymbol = symbol.toUpperCase(Locale.ROOT);
+                if (hedge ? heldSides.contains(upperSymbol + "|" + side) : heldSymbols.contains(upperSymbol)) {
+                    AutoTradeStore.addLog(this, "block", base + " " + (longSide ? "롱" : "숏")
+                            + " — 같은 종목 포지션을 이미 보유 중이라 중복 진입을 막았습니다.");
+                    continue;
+                }
+
+                double price;
+                try {
+                    price = BitgetApi.lastPriceCached(symbol);
+                } catch (Exception qe) {
+                    if (!quoteFailed) {
+                        quoteFailed = true;
+                        AutoTradeStore.addLog(this, "info", "시세 조회 실패 — 다음 주기에 다시 확인합니다. (" + friendly(qe) + ")");
+                    }
                     keep.put(plan);
                     continue;
                 }
+                if (!(price > 0)) {
+                    if (!quoteFailed) {
+                        quoteFailed = true;
+                        AutoTradeStore.addLog(this, "info", "시세를 받지 못했습니다 — 다음 주기에 다시 확인합니다.");
+                    }
+                    keep.put(plan);
+                    continue;
+                }
+
                 double entry = plan.optDouble("entry", 0);
                 double stop = plan.optDouble("stop", 0);
-                boolean longSide = "long".equals(side);
+                double target = plan.optDouble("target", 0);
+                // 손절가를 먼저 깨면 셋업 무효
                 if (longSide ? price <= stop : price >= stop) {
                     AutoTradeStore.addLog(this, "info", base + " 손절가 이탈 — 셋업 무효로 진입 취소");
+                    continue;
+                }
+                // 이미 목표가에 닿았거나 손절가에 붙은 자리는 들어가지 않는다(TP/SL 방향 오류·즉시 손절)
+                if (target > 0 && (longSide ? price >= target * (1 - MIN_TARGET_GAP) : price <= target * (1 + MIN_TARGET_GAP))) {
+                    AutoTradeStore.addLog(this, "info", base + " 이미 목표가에 닿은 자리 — 진입을 건너뜁니다.");
+                    continue;
+                }
+                if (longSide ? price <= stop * (1 + MIN_STOP_DISTANCE) : price >= stop * (1 - MIN_STOP_DISTANCE)) {
+                    AutoTradeStore.addLog(this, "info", base + " 손절가에 너무 붙은 자리 — 진입을 건너뜁니다.");
                     continue;
                 }
                 boolean touched = longSide ? price <= entry * (1 + TOUCH_TOLERANCE) : price >= entry * (1 - TOUCH_TOLERANCE);
@@ -263,13 +323,25 @@ public class AutoTradeService extends Service {
                 }
                 JSONObject order = buildOrder(plan, posMode, config);
                 String leverage = String.valueOf((int) Math.round(plan.optDouble("leverage", 1)));
-                BitgetApi.setLeverage(keys, symbol, leverage, "hedge_mode".equals(posMode) ? side : null);
-                JSONObject res = BitgetApi.placeOrder(keys, order);
+                BitgetApi.setLeverage(keys, symbol, leverage, hedge ? side : null);
+                JSONObject res;
+                try {
+                    res = BitgetApi.placeOrder(keys, order);
+                } catch (BitgetApi.ApiException oe) {
+                    if (oe.code != null && oe.code.startsWith(BitgetApi.GUARD_PREFIX)) {
+                        // 앱이 미리 막은 주문(최소 금액·TP/SL 방향) — 감시에서 빼고 이유를 남긴다.
+                        AutoTradeStore.addLog(this, "info", base + " 진입 취소 — " + oe.friendly());
+                        continue;
+                    }
+                    throw oe;
+                }
                 AutoTradeStore.markTraded(this, key);
                 openPositions += 1;
+                heldSymbols.add(upperSymbol);
+                heldSides.add(upperSymbol + "|" + side);
                 String text = String.format(Locale.US, "%s %s %s @ %s · TP %s / SL %s · 주문 %s",
                         AutoTradeStore.isDemo(this) ? "[모의]" : "[실거래]",
-                        base, longSide ? "롱" : "숏", trim(plan.optDouble("qty", 0)),
+                        base, longSide ? "롱" : "숏", order.optString("size", trim(plan.optDouble("qty", 0))),
                         // 실제로 보낸 호가 배수 가격을 남긴다(원본 target/stop 은 소수 꼬리가 있다).
                         order.optString("presetStopSurplusPrice", trim(plan.optDouble("target", 0))),
                         order.optString("presetStopLossPrice", trim(plan.optDouble("stop", 0))),
@@ -286,7 +358,6 @@ public class AutoTradeService extends Service {
         AutoTradeStore.savePlans(this, keep);
         AutoTradeStore.setSnapshot(this, now, equity, openPositions);
         notification("감시 중", statusText(config));
-        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
     }
 
     /** 감시 항목 → 비트겟 place-order body */
@@ -300,7 +371,7 @@ public class AutoTradeService extends Service {
         body.put("productType", BitgetApi.PRODUCT);
         body.put("marginMode", "isolated");
         body.put("marginCoin", BitgetApi.MARGIN_COIN);
-        body.put("size", trim(plan.optDouble("qty", 0)));
+        body.put("size", sizeText(plan));
         body.put("side", longSide ? "buy" : "sell");
         if (hedge) {
             // v2 는 tradeSide(open/close), v3(통합계정)는 posSide(long/short) — BitgetApi 가 골라 쓴다.
@@ -327,6 +398,15 @@ public class AutoTradeService extends Service {
         if (!target.isEmpty()) body.put("presetStopSurplusPrice", target);
         if (!stop.isEmpty()) body.put("presetStopLossPrice", stop);
         return body;
+    }
+
+    /** 감시 항목의 수량 문자열 — volumePlace·sizeMultiplier 배수로 내림(지수 표기 없이) */
+    private static String sizeText(JSONObject plan) {
+        double qty = plan.optDouble("qty", 0);
+        if (!(qty > 0)) return "";
+        int vp = plan.has("qtyDecimals") ? plan.optInt("qtyDecimals", 8) : 8;
+        String exact = BitgetApi.floorToStep(qty, vp);
+        return exact.isEmpty() ? trim(qty) : exact;
     }
 
     /** 이미 호가 배수로 맞춘 문자열 → 없으면 계약 호가로 반올림 → 호가 정보도 없으면 종전 표기 */

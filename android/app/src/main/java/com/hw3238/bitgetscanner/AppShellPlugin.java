@@ -670,10 +670,21 @@ public class AppShellPlugin extends Plugin {
             call.reject("API Key · Secret · Passphrase를 모두 입력해 주세요.");
             return;
         }
+        // 저장 전 상태와 비교 — 계좌(키)나 모의/실거래가 바뀌는지 판단한다.
+        BitgetApi.Keys before = AutoTradeStore.keys(getContext());
+        boolean changed = before != null
+            && (!before.apiKey.equals(apiKey.trim()) || before.demo != demo);
         AutoTradeStore.saveKeys(getContext(), apiKey, secret, passphrase, demo);
         // 새 키는 계정 모드(클래식/통합)를 다시 판별한다.
         BitgetApi.forgetAccountMode();
         AutoTradeStore.setAccountMode(getContext(), "unknown");
+        // 다른 계좌(모의↔실거래 포함) 키로 바뀌면 이전 계좌의 감시 목록·진입 키가 남아 있으면 안 된다.
+        if (changed) {
+            stopAutoTradeService();
+            AutoTradeStore.savePlans(getContext(), new org.json.JSONArray());
+            AutoTradeStore.clearTraded(getContext());
+            AutoTradeStore.addLog(getContext(), "info", "키가 바뀌어 이전 계좌의 감시 목록·중복 진입 기록을 비웠습니다.");
+        }
         AutoTradeStore.addLog(getContext(), "info", "API 키 저장 — " + (demo ? "모의투자" : "실거래") + " (기기 안에만 저장)");
         call.resolve(toJsObject(AutoTradeStore.keyState(getContext())));
     }
@@ -798,9 +809,16 @@ public class AppShellPlugin extends Plugin {
                 }
                 if (clientOid != null && !clientOid.isEmpty()) body.put("clientOid", clientOid);
                 if (hedge) {
+                    // v2 는 tradeSide(open/close), v3(통합계정)는 posSide(long/short) — BitgetApi 가 골라 쓴다.
                     body.put("tradeSide", tradeSideParam == null || tradeSideParam.isEmpty() ? "open" : tradeSideParam);
-                    // v3(통합계정)는 tradeSide 대신 posSide(long/short)를 쓴다 — BitgetApi 가 골라 쓴다.
-                    body.put("posSide", "buy".equals(requestedSide) ? "long" : "short");
+                    // ★ posSide 는 **대상 포지션의 방향**이다. 주문 side 로 추론하면 롱 청산(sell)이 숏 진입으로 뒤집힌다.
+                    String posSide = call.getString("posSide", "");
+                    if (posSide == null || posSide.isEmpty()) {
+                        boolean closing = "close".equalsIgnoreCase(tradeSideParam);
+                        if (closing) posSide = "buy".equals(requestedSide) ? "short" : "long";
+                        else posSide = "buy".equals(requestedSide) ? "long" : "short";
+                    }
+                    body.put("posSide", posSide);
                 }
                 if (reduceOnly != null && !reduceOnly.isEmpty()) body.put("reduceOnly", reduceOnly);
                 if (tp != null && !tp.isEmpty()) body.put("presetStopSurplusPrice", tp);
@@ -816,6 +834,66 @@ public class AppShellPlugin extends Plugin {
                 ret.put("orderId", res.optString("orderId", ""));
                 ret.put("clientOid", res.optString("clientOid", clientOid));
                 ret.put("tradeSide", hedge ? body.optString("tradeSide") : "");
+                call.resolve(ret);
+            } catch (Exception e) {
+                JSObject ret = new JSObject();
+                ret.put("ok", false);
+                ret.put("error", errorText(e));
+                if (e instanceof BitgetApi.ApiException) ret.put("code", ((BitgetApi.ApiException) e).code);
+                call.resolve(ret);
+            }
+        }).start();
+    }
+
+    /**
+     * 보유 포지션 시장가 청산 — 화면의 `시장가 청산` 버튼.
+     * 방향·축소(reduceOnly) 규칙은 `BitgetApi.closePosition` 이 계좌 모드(헤지/단방향)에 맞춰 만든다.
+     */
+    @PluginMethod
+    public void bitgetClosePosition(PluginCall call) {
+        final BitgetApi.Keys keys = AutoTradeStore.keys(getContext());
+        final String symbol = call.getString("symbol", "");
+        final String holdSide = call.getString("holdSide", "long");
+        final String size = call.getString("size", "");
+        final String holdMode = call.getString("holdMode", "");
+        final String clientOid = call.getString("clientOid", "");
+        if (keys == null) {
+            call.reject("API 키가 연결되지 않았습니다.");
+            return;
+        }
+        if (symbol == null || symbol.isEmpty()) {
+            call.reject("symbol required");
+            return;
+        }
+        new Thread(() -> {
+            try {
+                String posMode = holdMode == null ? "" : holdMode;
+                if (posMode.isEmpty()) {
+                    try {
+                        posMode = BitgetApi.holdMode(keys, symbol);
+                    } catch (Exception e) {
+                        posMode = "one_way_mode";
+                    }
+                }
+                org.json.JSONObject res = BitgetApi.closePosition(
+                        keys,
+                        symbol,
+                        holdSide,
+                        size,
+                        posMode,
+                        null,
+                        clientOid == null || clientOid.isEmpty() ? null : clientOid);
+                JSObject ret = new JSObject();
+                ret.put("ok", true);
+                ret.put("orderId", res.optString("orderId", ""));
+                ret.put("clientOid", res.optString("clientOid", ""));
+                ret.put("posMode", posMode);
+                AutoTradeStore.addLog(getContext(), "fill", String.format(Locale.US,
+                        "%s %s %s 청산 주문 — 주문 %s",
+                        AutoTradeStore.isDemo(getContext()) ? "[모의]" : "[실거래]",
+                        symbol,
+                        holdSide,
+                        res.optString("orderId", res.optString("clientOid", ""))));
                 call.resolve(ret);
             } catch (Exception e) {
                 JSObject ret = new JSObject();
@@ -918,7 +996,12 @@ public class AppShellPlugin extends Plugin {
         try {
             Intent intent = new Intent(getContext(), AutoTradeService.class);
             intent.setAction(AutoTradeService.ACTION_STOP);
-            getContext().startService(intent);
+            if (AutoTradeStore.running(getContext())) {
+                // 포그라운드 서비스에 중지 명령(Android 12 의 백그라운드 시작 제한도 피한다)
+                getContext().startService(intent);
+            } else {
+                getContext().stopService(intent);
+            }
         } catch (Exception ignored) {
             /* 서비스가 없으면 그만 */
         }

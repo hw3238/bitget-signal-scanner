@@ -87,8 +87,8 @@ check(
   info.targets?.join(' / '),
 );
 check(info.ntfy === 'bgss-hw3238-9f4k2m', 'ntfy 기본 전용 토픽', info.ntfy);
-check(/앱 v1\.5\.2/.test(info.version || ''), '앱 버전 표기 v1.5.2', info.version);
-check((info.update ?? '').includes('최신 버전입니다 (v1.5.2)'), '업데이트 확인 = 최신 v1.5.2', info.update);
+check(/앱 v1\.5\.3/.test(info.version || ''), '앱 버전 표기 v1.5.3', info.version);
+check((info.update ?? '').includes('최신 버전입니다 (v1.5.3)'), '업데이트 확인 = 최신 v1.5.3', info.update);
 
 await page.evaluate(() => {
   const panel = document.querySelector('#settings-notify');

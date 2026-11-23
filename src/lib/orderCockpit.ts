@@ -62,6 +62,8 @@ export interface ContractSpec {
   minTradeNum?: number;
   /** 수량 소수 자리 */
   volumePlace?: number;
+  /** 수량 배수 — 최소 주문 단위 = 10^(-volumePlace) × sizeMultiplier */
+  sizeMultiplier?: number;
   /** 최소 주문 금액(USDT) */
   minTradeUsdt?: number;
 }
@@ -159,7 +161,11 @@ export function planOrder(input: OrderPlanInput): OrderPlan {
     spec?.volumePlace != null && Number.isFinite(spec.volumePlace)
       ? Math.max(0, Math.min(8, Math.round(spec.volumePlace)))
       : null;
-  const step = volumePlace != null ? Math.pow(10, -volumePlace) : 0;
+  const mult =
+    spec?.sizeMultiplier != null && Number.isFinite(spec.sizeMultiplier) && spec.sizeMultiplier > 0
+      ? Math.round(spec.sizeMultiplier)
+      : 1;
+  const step = volumePlace != null ? Math.pow(10, -volumePlace) * mult : 0;
 
   const plannedRisk = (seed * riskPct) / 100;
   let qty = plannedRisk / stopDist;

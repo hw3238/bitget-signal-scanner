@@ -259,7 +259,7 @@ export default function App() {
                 if (!res.ok) window.alert(res.message);
               });
             }}
-            quickOrderMode={autoTrade.config.mode}
+            quickOrderMode={autoTrade.tradeMode.mode}
             quickOrderSymbol={autoTrade.busy?.startsWith('order:') ? autoTrade.busy.slice(6) : null}
           />
         )}

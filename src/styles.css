@@ -5440,6 +5440,22 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+/* 포지션별 시장가 청산 — 포지션 카드를 누르지 않고 바로 닫을 수 있게 */
+.auto-pos-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.auto-mini.danger {
+  color: var(--down);
+  border-color: color-mix(in srgb, var(--down) 34%, transparent);
+}
+
+.auto-mini:disabled {
+  opacity: 0.5;
+}
+
 .auto-log-actions {
   display: flex;
   align-items: center;

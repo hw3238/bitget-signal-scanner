@@ -35,6 +35,14 @@ interface AppShellPlugin {
   bitgetTestConnection(): Promise<BitgetAccount>;
   bitgetGetPositions(): Promise<BitgetPositionsResult>;
   bitgetPlaceOrder(options: PlaceOrderParams & { leverage: number; holdMode?: string }): Promise<BitgetOrderResult>;
+  /** 보유 포지션 시장가 청산 — posSide/reduceOnly 규칙은 네이티브가 계좌 모드에 맞춰 고른다 */
+  bitgetClosePosition(options: {
+    symbol: string;
+    holdSide: string;
+    size: string;
+    holdMode?: string;
+    clientOid?: string;
+  }): Promise<BitgetOrderResult>;
   /** 24시간 포그라운드 감시 서비스 */
   autoTradeStart(options: { config: string; plans: string }): Promise<AutoTradeNativeStatus>;
   autoTradeStop(): Promise<AutoTradeNativeStatus>;
@@ -137,6 +145,8 @@ export interface AutoTradeNativeStatus {
   dailyPnl?: number | null;
   dailyLocked?: boolean;
   lastTickAt?: number;
+  /** 1일 손실 한도로 서비스가 스스로 꺼졌는지 — 웹 설정도 같이 꺼야 배지가 맞는다 */
+  enabled?: boolean;
   log?: { at: number; level: string; text: string }[];
   error?: string;
 }
@@ -376,6 +386,23 @@ export async function bitgetPlaceOrder(
   }
   try {
     return await AppShell.bitgetPlaceOrder(params);
+  } catch (e) {
+    return { ok: false, error: errText(e) };
+  }
+}
+
+export async function bitgetClosePosition(input: {
+  symbol: string;
+  holdSide: string;
+  size: string;
+  holdMode?: string;
+  clientOid?: string;
+}): Promise<BitgetOrderResult> {
+  if (!isNativeApp()) {
+    return { ok: false, error: '브라우저에서는 포지션을 청산할 수 없습니다 (앱에서만 가능)' };
+  }
+  try {
+    return await AppShell.bitgetClosePosition(input);
   } catch (e) {
     return { ok: false, error: errText(e) };
   }

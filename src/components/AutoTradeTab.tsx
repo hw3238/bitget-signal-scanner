@@ -13,6 +13,8 @@ import {
   fmtClock,
   fmtUsdt,
   planSeed,
+  statusBadge,
+  todayFillCount,
 } from '../lib/autotrade';
 import { NumField } from './ui';
 import { APK_DOWNLOAD_URL } from '../lib/update';
@@ -45,7 +47,8 @@ const LEVEL_LABEL: Record<string, string> = {
  * 실제 주문은 앱(안드로이드) 네이티브가 넣고, 이 화면은 명령과 결과만 다룬다.
  */
 export function AutoTradeTab({ api, signals, profile }: Props) {
-  const { config, keys, account, positions, native, running, busy, error, daily, openPositions, runtime } = api;
+  const { config, keys, account, positions, native, running, busy, error, daily, openPositions, runtime, tradeMode } =
+    api;
   const [apiKey, setApiKey] = useState('');
   const [secret, setSecret] = useState('');
   const [passphrase, setPassphrase] = useState('');
@@ -59,12 +62,13 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
 
   const openSignals = useMemo(() => signals.filter((s) => s.state === 'open' && s.asset !== 'fx'), [signals]);
   const seed = planSeed(profile, account?.equity ?? null);
-  const badge = config.enabled
-    ? {
-        label: config.mode === 'live' ? '실거래 가동 중' : '모의투자 가동 중',
-        tone: config.mode === 'live' ? 'live' : 'demo',
-      }
-    : { label: '꺼짐', tone: 'off' as const };
+  /**
+   * 배지·버튼 라벨은 `config.mode` 가 아니라 **키가 실제로 가리키는 계좌**(tradeMode)를 따른다.
+   * 껴져 있는데 서비스가 안 돌고 있으면 '대기 중' 으로 구분한다.
+   */
+  const badge = statusBadge({ ...config, mode: tradeMode.mode }, running);
+  const fillsToday = todayFillCount(runtime.logs, Date.now());
+  const modeLabel = tradeMode.mode === 'live' ? '실거래' : '모의투자';
 
   const notify = (text: string) => {
     setToast(text);
@@ -78,7 +82,7 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
       return;
     }
     const ok = await api.start();
-    if (ok) notify(config.mode === 'live' ? '실거래 자동매매를 켰습니다.' : '모의투자 자동매매를 켰습니다.');
+    if (ok) notify(`${modeLabel} 자동매매를 켰습니다.`);
   };
 
   return (
@@ -93,11 +97,13 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
             <h2 data-auto-badge>{badge.label}</h2>
             <p>
               {config.enabled
-                ? `${config.mode === 'live' ? '실거래' : '모의투자'} · ${config.intervalSec}초마다 감시 · 리스크 ${config.riskPct}% · 최대 ${config.maxPositions}포지션`
+                ? `${modeLabel} · ${config.intervalSec}초마다 감시 · 리스크 ${config.riskPct}% · 최대 ${config.maxPositions}포지션`
                 : '기본은 꺼짐 + 모의투자입니다. 켜기 전에 아래 안전장치를 확인하세요.'}
             </p>
           </div>
-          <span className={`auto-pill ${badge.tone}`}>{running ? '● LIVE' : '○ OFF'}</span>
+          <span className={`auto-pill ${badge.tone}`} data-auto-pill>
+            {!config.enabled ? '○ OFF' : running ? (tradeMode.mode === 'live' ? '● 실거래' : '● 모의') : '◐ 대기'}
+          </span>
         </div>
 
         <div className="auto-metrics">
@@ -132,12 +138,12 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
         <div className="auto-actions">
           <button
             type="button"
-            className={`auto-switch ${config.enabled ? 'on' : ''} ${config.mode === 'live' ? 'live' : ''}`}
+            className={`auto-switch ${config.enabled ? 'on' : ''} ${tradeMode.mode === 'live' ? 'live' : ''}`}
             onClick={() => void onToggle()}
             disabled={busy === 'test'}
             data-auto-toggle
           >
-            {config.enabled ? '⏸ 자동매매 끄기' : `▶ ${config.mode === 'live' ? '실거래' : '모의투자'} 자동매매 켜기`}
+            {config.enabled ? '⏸ 자동매매 끄기' : `▶ ${modeLabel} 자동매매 켜기`}
           </button>
           <button
             type="button"
@@ -172,7 +178,7 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
             키 연결과 24시간 감시가 동작합니다. (설치 후 기존 설정·기록은 그대로 유지됩니다)
           </p>
           <button type="button" className="auto-primary" onClick={() => void openExternalUrl(APK_DOWNLOAD_URL)}>
-            ⬇︎ COTA v1.5.2 APK 받기
+            ⬇︎ COTA v1.5.3 APK 받기
           </button>
         </div>
       )}
@@ -229,6 +235,13 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
               실거래 계좌로 주문이 나가는 것을 이해했습니다. 출금 권한은 끈 키만 사용합니다.
             </span>
           </label>
+        )}
+
+        {keys.hasKeys && tradeMode.mismatch && (
+          <div className={`auto-note ${tradeMode.mode === 'live' ? 'danger' : ''}`} data-auto-mode-note>
+            <b>{tradeMode.mode === 'live' ? '⚠️ 실거래 키로 연결되어 있습니다' : '모의투자 키로 연결되어 있습니다'}</b>
+            <p>{tradeMode.note}</p>
+          </div>
         )}
 
         {keys.hasKeys ? (
@@ -515,6 +528,25 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
                     TP {p.presetStopSurplusPrice || '—'} / SL {p.presetStopLossPrice || '—'}
                   </span>
                 </div>
+                <div className="auto-pos-actions">
+                  <button
+                    type="button"
+                    className="auto-mini danger"
+                    data-auto-close={p.symbol}
+                    disabled={busy === `close:${p.symbol}` || !api.supported}
+                    onClick={() => {
+                      const label = `${p.symbol.replace('USDT', '')} ${p.holdSide === 'long' ? '롱' : '숏'} ${formatQty(
+                        p.total,
+                      )}을 시장가로 청산합니다. 계속할까요?`;
+                      if (!window.confirm(label)) return;
+                      void api.closePosition(p).then((res) => {
+                        notify(res.ok ? '청산 주문을 넣었습니다.' : res.message);
+                      });
+                    }}
+                  >
+                    {busy === `close:${p.symbol}` ? '청산 중…' : '시장가 청산'}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -531,7 +563,9 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
                 ▶ 시뮬레이션 실행
               </button>
             )}
-            <span className="auto-tag">{runtime.tradedKeys.length}건 진입</span>
+            <span className="auto-tag" data-auto-fillcount>
+              오늘 체결 {fillsToday}건 · 감시 {native?.armed ?? 0}건
+            </span>
           </div>
         </header>
         {runtime.logs.length === 0 ? (

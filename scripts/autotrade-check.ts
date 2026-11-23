@@ -13,6 +13,8 @@ import {
   DEFAULTS,
   LIMITS,
   MAJOR_SYMBOLS,
+  MIN_STOP_DISTANCE,
+  MIN_TARGET_GAP,
   RISK_HIGH_WARN,
   RISK_PRESET_CHOICES,
   buildOrderParams,
@@ -28,6 +30,8 @@ import {
   normalizePosMode,
   orderSideFor,
   orderPriceText,
+  qtyToStep,
+  resolveTradeMode,
   planAutoOrder,
   planSeed,
   planTrigger,
@@ -38,6 +42,7 @@ import {
   signalKeyOf,
   statusBadge,
   symbolAllowed,
+  todayFillCount,
   tickSizeOf,
   toArmedPlan,
   type AutoTradeConfig,
@@ -48,12 +53,15 @@ import {
   UTA_MODE_ERROR,
   accountKindLabel,
   clientOidV3,
+  closeOrderFields,
   modeSwitchTarget,
   parseAssetsV3,
   parsePositionsV3,
   parseSettingsV3,
   resolveAccountKind,
+  v2CloseBody,
   v2OrderBody,
+  v3CloseBody,
   v3LeverageBody,
   v3MarginMode,
   v3OrderBody,
@@ -647,6 +655,164 @@ check(
 check(
   '감시 항목 JSON — 네이티브 AutoTradeService 가 읽는 키 순서(pricePlace·priceEndStep·tpStr·slStr)',
   ['pricePlace', 'priceEndStep', 'tpStr', 'slStr'].every((k) => k in JSON.parse(JSON.stringify(armedTick))),
+);
+
+/* ------------------------------------------------------------------ *
+ * 10) v1.5.3 — 거래 모드 판정 · 진입 방어선 · 수량 단위 · 청산 방향
+ *    (실기기 사고: 모의 키로 실거래 라벨 · TP/SL 을 지나친 자리 진입 · 45115/수량 배수)
+ * ------------------------------------------------------------------ */
+
+// 10-1) 실제 모드는 저장된 키의 계좌가 정한다 — 라벨과 다른 계좌로 주문이 나가면 안 된다.
+const modeDemoKey = resolveTradeMode({ mode: 'live' }, { hasKeys: true, demo: true });
+check('모드: 모의 키 + 실거래 설정 → 모의투자로 강등', modeDemoKey.mode === 'demo' && modeDemoKey.mismatch);
+check('모드: 강등 사유를 화면에 남긴다', /모의투자 키/.test(modeDemoKey.note ?? ''), modeDemoKey.note ?? '');
+const modeLiveKey = resolveTradeMode({ mode: 'demo' }, { hasKeys: true, demo: false });
+check('모드: 실거래 키 + 모의 설정 → 실거래로 승격(확인 절차 필요)', modeLiveKey.mode === 'live' && modeLiveKey.mismatch);
+check('모드: 승격 경고 문구', /실제 USDT/.test(modeLiveKey.note ?? ''), modeLiveKey.note ?? '');
+check(
+  '모드: 키 없음 → 설정값 그대로',
+  resolveTradeMode({ mode: 'live' }, { hasKeys: false, demo: true }).mode === 'live' &&
+    !resolveTradeMode({ mode: 'live' }, { hasKeys: false, demo: true }).mismatch,
+);
+check(
+  '모드: 키와 설정이 같으면 경고 없음',
+  !resolveTradeMode({ mode: 'demo' }, { hasKeys: true, demo: true }).mismatch,
+);
+
+// 10-2) 진입 직전 방어선 — 이미 목표가를 지났거나 손절가에 붙은 자리는 들어가지 않는다.
+check(
+  '롱: 목표가를 이미 지나친 자리 → target-passed',
+  planTrigger({ side: 'long', entry: 100, stop: 95, target: 100.02, expiresAt: now + 60_000 }, 100.01, now) ===
+    'target-passed',
+);
+check(
+  '롱: 손절가 0.1% 이내 → near-stop',
+  planTrigger({ side: 'long', entry: 100, stop: 95, target: 115, expiresAt: now + 60_000 }, 95.05, now) === 'near-stop',
+);
+check(
+  '숏: 목표가를 이미 지나친 자리 → target-passed',
+  planTrigger({ side: 'short', entry: 100, stop: 105, target: 99.99, expiresAt: now + 60_000 }, 99.98, now) ===
+    'target-passed',
+);
+check(
+  '숏: 손절가 0.1% 이내 → near-stop',
+  planTrigger({ side: 'short', entry: 100, stop: 105, target: 90, expiresAt: now + 60_000 }, 104.95, now) === 'near-stop',
+);
+check(
+  '방어선: 정상 자리(진입가 터치)는 그대로 enter',
+  planTrigger({ side: 'long', entry: 100, stop: 95, target: 115, expiresAt: now + 60_000 }, 100.02, now) === 'enter' &&
+    planTrigger({ side: 'short', entry: 100, stop: 105, target: 90, expiresAt: now + 60_000 }, 99.98, now) === 'enter',
+);
+check('방어선 상수는 서비스(Java)와 같은 0.1%', MIN_STOP_DISTANCE === 0.001 && MIN_TARGET_GAP === 0.001);
+
+// 10-3) 수량 문자열 — 지수 표기·배수 오류(40762/45116) 없이 거래소 단위로 내림
+check('수량: 정수 단위 내림 (40762.5 → 40762)', qtyToStep(40762.5, 0) === '40762', qtyToStep(40762.5, 0));
+check('수량: 소수 둘째 자리 내림 (1.2345 → 1.23)', qtyToStep(1.2345, 2) === '1.23', qtyToStep(1.2345, 2));
+check('수량: 배수 단위 (25 · mult 10 → 20)', qtyToStep(25, 0, 10) === '20', qtyToStep(25, 0, 10));
+check('수량: 아주 작은 값도 지수 표기 없음', qtyToStep(0.000000123, 8) === '0.00000012', qtyToStep(0.000000123, 8));
+check('수량: 0 이하는 빈 문자열', qtyToStep(0, 4) === '' && qtyToStep(-1, 4) === '');
+const multPlan = planAutoOrder({
+  signal: sig({ entry: 100, stop: 99, target: 105 }),
+  seed: 1000,
+  config: cfg,
+  leverage: 10,
+  spec: { volumePlace: 0, sizeMultiplier: 10, minTradeNum: 10 },
+});
+check('수량 계획: sizeMultiplier 배수로 내림 (15 → 10)', multPlan.qty === 10, `qty=${multPlan.qty}`);
+const multOrder = buildOrderParams({
+  signal: sig({ entry: 100, stop: 99, target: 105 }),
+  plan: multPlan,
+  posMode: 'one_way_mode',
+  sizeMultiplier: 10,
+});
+check('주문 수량 문자열: 배수 반영', multOrder.size === '10', multOrder.size);
+
+// 10-4) 청산 — posSide 는 **청산할 포지션의 방향**이다(주문 side 로 추론하면 반대 포지션이 열린다)
+const hedgeLongClose = closeOrderFields({ holdSide: 'long', posMode: 'hedge_mode' });
+check('청산(헤지 롱): sell + posSide=long', hedgeLongClose.side === 'sell' && hedgeLongClose.posSide === 'long');
+const hedgeShortClose = closeOrderFields({ holdSide: 'short', posMode: 'hedge_mode' });
+check('청산(헤지 숏): buy + posSide=short', hedgeShortClose.side === 'buy' && hedgeShortClose.posSide === 'short');
+const owLongClose = closeOrderFields({ holdSide: 'long', posMode: 'one_way_mode' });
+check('청산(단방향 롱): sell + reduceOnly', owLongClose.side === 'sell' && owLongClose.reduceOnly === 'yes' && !owLongClose.posSide);
+const v3HedgeClose = v3CloseBody({ symbol: 'BTCUSDT', holdSide: 'long', size: '0.01', posMode: 'hedge_mode' });
+check(
+  'v3 청산(헤지): posSide=long · reduceOnly 없음',
+  v3HedgeClose.posSide === 'long' && v3HedgeClose.reduceOnly === undefined && v3HedgeClose.side === 'sell',
+  JSON.stringify(v3HedgeClose),
+);
+const v3OneWayClose = v3CloseBody({ symbol: 'BTCUSDT', holdSide: 'short', size: '0.01', posMode: 'one_way_mode' });
+check(
+  'v3 청산(단방향): side=buy · reduceOnly=yes · posSide 없음',
+  v3OneWayClose.side === 'buy' && v3OneWayClose.reduceOnly === 'yes' && v3OneWayClose.posSide === undefined,
+  JSON.stringify(v3OneWayClose),
+);
+const v2HedgeClose = v2CloseBody({ symbol: 'BTCUSDT', holdSide: 'long', size: '0.01', posMode: 'hedge_mode' });
+check(
+  'v2 청산(헤지): tradeSide=close · reduceOnly 없음(동시 지정은 25238)',
+  v2HedgeClose.tradeSide === 'close' && v2HedgeClose.reduceOnly === undefined,
+  JSON.stringify(v2HedgeClose),
+);
+const v2OneWayClose = v2CloseBody({ symbol: 'ETHUSDT', holdSide: 'short', size: '1', posMode: 'one_way_mode' });
+check(
+  'v2 청산(단방향): reduceOnly=true · tradeSide 없음',
+  v2OneWayClose.reduceOnly === 'true' && v2OneWayClose.tradeSide === undefined,
+  JSON.stringify(v2OneWayClose),
+);
+check(
+  '청산 clientOid 없으면 보내지 않는다(고정값이면 25212)',
+  v3CloseBody({ symbol: 'BTCUSDT', holdSide: 'long', size: '0.01', posMode: 'one_way_mode' }).clientOid === undefined,
+);
+check(
+  '청산 clientOid 는 v3 규칙(32자)으로 자른다',
+  (v3CloseBody({
+    symbol: 'BTCUSDT',
+    holdSide: 'long',
+    size: '0.01',
+    posMode: 'one_way_mode',
+    clientOid: 'cotaBTCUSDT1234567890abcdefghijklmnop',
+  }).clientOid ?? '').length <= 32,
+);
+
+// 10-5) 같은 종목 중복 진입 금지 — 포지션 수가 아니라 종목으로 막는다
+const sameSymbol = evaluateEntry({
+  config: normalizeConfig({ ...cfg, enabled: true }),
+  signal: sig(),
+  tradedKeys: [],
+  openPositions: 1,
+  openSymbols: ['BTCUSDT'],
+  dailyLocked: false,
+  plan,
+  now,
+  hasKeys: true,
+});
+check('게이트: 같은 종목 포지션 보유 → same-symbol', sameSymbol.code === 'same-symbol', sameSymbol.reason);
+check(
+  '게이트: 다른 종목이면 통과',
+  evaluateEntry({
+    config: normalizeConfig({ ...cfg, enabled: true }),
+    signal: sig(),
+    tradedKeys: [],
+    openPositions: 1,
+    openSymbols: ['ETHUSDT'],
+    dailyLocked: false,
+    plan,
+    now,
+    hasKeys: true,
+  }).allowed,
+);
+
+// 10-6) 오늘 체결 수 — `0건 진입` 오해 방지(로그의 fill 만 센다)
+const fillLogs = [
+  { at: now, level: 'fill' as const, text: '체결' },
+  { at: now - 1000, level: 'fill' as const, text: '체결2' },
+  { at: now, level: 'error' as const, text: '오류' },
+  { at: now - 30 * 3600_000, level: 'fill' as const, text: '어제' },
+];
+check('체결 수: 오늘 fill 2건만', todayFillCount(fillLogs, now) === 2, `${todayFillCount(fillLogs, now)}건`);
+check('체결 수: 로그가 없으면 0', todayFillCount([], now) === 0);
+check(
+  '상태 배지: 켰지만 서비스 미가동 → 대기',
+  statusBadge(normalizeConfig({ ...cfg, enabled: true }), false).label === '대기 중 (앱 열림)',
 );
 
 console.log('');

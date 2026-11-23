@@ -242,11 +242,24 @@ public final class AutoTradeStore {
     }
 
     public static double dayStartEquity(Context context) {
+        // v1.5.3 이전에는 float 로 저장해 USDT 잔고가 0.001 단위로 망가졌다 — 문자열(double) 로 읽고 backward 호환.
+        String raw = prefs(context).getString(K_DAY_EQUITY, "");
+        if (raw != null && !raw.isEmpty()) {
+            try {
+                return Double.parseDouble(raw);
+            } catch (Exception ignored) {
+                /* 아래 float 경로로 */
+            }
+        }
         return prefs(context).getFloat(K_DAY_EQUITY, 0f);
     }
 
     public static void setDay(Context context, String dayKey, double equity) {
-        prefs(context).edit().putString(K_DAY, dayKey).putFloat(K_DAY_EQUITY, (float) equity).apply();
+        prefs(context)
+            .edit()
+            .putString(K_DAY, dayKey)
+            .putString(K_DAY_EQUITY, String.format(Locale.US, "%.4f", equity))
+            .apply();
     }
 
     public static boolean dailyLocked(Context context) {
@@ -295,6 +308,8 @@ public final class AutoTradeStore {
             JSONObject config = config(context);
             out.put("running", running(context));
             out.put("service", running(context));
+            // 네이티브 설정의 enabled — 1일 손실 한도로 서비스가 스스로 끈 경우 웹도 같이 꺼진다.
+            out.put("enabled", config.optBoolean("enabled", false));
             out.put("mode", isDemo(context) ? "demo" : "live");
             out.put("armed", plans(context).length());
             out.put("openPositions", lastPositions(context));
