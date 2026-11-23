@@ -312,7 +312,10 @@ export function analyzeSymbol(
   const price = candles[last].c;
   const signals: Signal[] = [];
   // 같은 마켓·타임프레임에서 진행 중 신호는 우선순위가 가장 높은 전략 1건만 노출한다.
+  // 같은 봉·같은 방향은 한 전략만 — 여러 전략이 같은 캔들에서 겹치면 카드 키(종목|TF|방향|감지시각)가
+  // 중복돼 기록 집계가 한 건으로 합쳐지므로, 우선순위가 높은 전략의 신호만 남긴다.
   let openTaken = false;
+  const takenBars = new Set<string>();
 
   const pushSignals = (entry: (typeof evaluated)[number]) => {
     const bench = entry.meta.bench;
@@ -324,6 +327,9 @@ export function analyzeSymbol(
       const windowBars = t.result === 'open' ? SCAN_SIGNAL_BARS : RECENT_SIGNAL_BARS;
       if (t.entryIdx < last - windowBars) continue;
       if (t.result === 'open' && openTaken) continue;
+      const barKey = `${t.side}|${t.entryIdx}`;
+      if (takenBars.has(barKey)) continue;
+      takenBars.add(barKey);
       const rr = entryRR(t.entry, t.stop, t.target);
       const changePct = ((price - t.entry) / t.entry) * 100 * (t.side === 'long' ? 1 : -1);
       const risk = Math.abs(price - t.stop);

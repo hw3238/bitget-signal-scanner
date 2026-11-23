@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { HistoryRecord, MyTrade } from '../lib/storage';
+import { HISTORY_LIMIT, type HistoryRecord, type MyTrade } from '../lib/storage';
 import {
   dedupeHistory,
   equityCurve,
@@ -293,7 +293,7 @@ export function HistoryTab({
           <span className="muted">
             {mode === 'mine' && mineAll.orphans > 0
               ? `기록이 지워진 진입 ${mineAll.orphans}건 제외`
-              : `최근 ${Math.min(all.length, 400)}건 보관`}
+              : `최근 ${Math.min(all.length, HISTORY_LIMIT)}건 보관`}
           </span>
         </div>
         <ul className="history-list">

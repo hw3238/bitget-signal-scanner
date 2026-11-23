@@ -297,7 +297,18 @@ const run = async () => {
   const targetBase = await page.evaluate(() => document.querySelector('.signal-card .sym')?.textContent?.trim() || '');
   const targetSym = targetBase.split(' ')[0];
   await page.locator('.search-box input').fill(targetSym);
-  await page.waitForTimeout(450);
+  // 스캔이 도는 중이면 목록이 통째로 갈아끼워져 필터 반영 전 상태를 읽을 수 있다 — 검색어가 반영될 때까지 기다린다.
+  await page
+    .waitForFunction(
+      (sym) => {
+        const cards = [...document.querySelectorAll('.signal-card:not(.skeleton)')];
+        return cards.length > 0 && cards.every((c) => (c.textContent ?? '').includes(sym));
+      },
+      targetSym,
+      { timeout: 8000 },
+    )
+    .catch(() => {});
+  await page.waitForTimeout(200);
   const searchView = await page.evaluate(() => ({
     cards: [...document.querySelectorAll('.signal-card:not(.skeleton)')].map((c) => c.textContent?.replace(/\s+/g, ' ')),
     count: document.querySelector('.search-count b')?.textContent,
@@ -315,7 +326,17 @@ const run = async () => {
 
   // 전략명 검색
   await page.locator('.search-box input').fill('EMA');
-  await page.waitForTimeout(400);
+  await page
+    .waitForFunction(
+      () => {
+        const cards = [...document.querySelectorAll('.signal-card:not(.skeleton)')];
+        return cards.length > 0 && cards.every((c) => (c.textContent ?? '').includes('EMA'));
+      },
+      undefined,
+      { timeout: 8000 },
+    )
+    .catch(() => {});
+  await page.waitForTimeout(200);
   const emaView = await page.evaluate(() => ({
     cards: [...document.querySelectorAll('.signal-card:not(.skeleton)')].map((c) => c.textContent?.replace(/\s+/g, ' ')),
     empty: !!document.querySelector('.search-empty'),
