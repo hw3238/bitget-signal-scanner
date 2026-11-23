@@ -110,7 +110,7 @@ public final class BitgetApi {
     }
 
     /** API 키를 새로 저장·삭제하면 판별 결과를 버린다. */
-    public static void forgetAccountMode(Context context) {
+    public static void forgetAccountMode() {
         CACHE.clear();
     }
 

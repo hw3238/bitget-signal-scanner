@@ -672,7 +672,7 @@ public class AppShellPlugin extends Plugin {
         }
         AutoTradeStore.saveKeys(getContext(), apiKey, secret, passphrase, demo);
         // 새 키는 계정 모드(클래식/통합)를 다시 판별한다.
-        BitgetApi.forgetAccountMode(getContext());
+        BitgetApi.forgetAccountMode();
         AutoTradeStore.setAccountMode(getContext(), "unknown");
         AutoTradeStore.addLog(getContext(), "info", "API 키 저장 — " + (demo ? "모의투자" : "실거래") + " (기기 안에만 저장)");
         call.resolve(toJsObject(AutoTradeStore.keyState(getContext())));
@@ -687,7 +687,7 @@ public class AppShellPlugin extends Plugin {
     public void bitgetClearKeys(PluginCall call) {
         stopAutoTradeService();
         AutoTradeStore.clearKeys(getContext());
-        BitgetApi.forgetAccountMode(getContext());
+        BitgetApi.forgetAccountMode();
         AutoTradeStore.savePlans(getContext(), new org.json.JSONArray());
         AutoTradeStore.clearTraded(getContext());
         AutoTradeStore.addLog(getContext(), "info", "API 키 삭제 — 자동매매를 껐습니다.");
