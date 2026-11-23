@@ -15,6 +15,8 @@ import {
   planSeed,
 } from '../lib/autotrade';
 import { NumField } from './ui';
+import { APK_DOWNLOAD_URL } from '../lib/update';
+import { openExternalUrl } from '../lib/native';
 
 interface Props {
   api: AutoTradeApi;
@@ -160,6 +162,19 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
           </span>
         </div>
       </section>
+
+      {api.bridgeMissing && (
+        <div className="auto-note danger" data-auto-bridge-missing>
+          <b>앱 업데이트가 필요합니다 (v1.5.0+)</b>
+          <p>
+            지금 설치된 COTA 앱에는 자동매매 네이티브 기능이 없습니다. 아래 버튼으로 v1.5.0 이상 APK를 설치하면
+            키 연결과 24시간 감시가 동작합니다. (설치 후 기존 설정·기록은 그대로 유지됩니다)
+          </p>
+          <button type="button" className="auto-primary" onClick={() => void openExternalUrl(APK_DOWNLOAD_URL)}>
+            ⬇︎ COTA v1.5.0 APK 받기
+          </button>
+        </div>
+      )}
 
       {!api.supported && (
         <div className="auto-note" data-auto-browser-note>

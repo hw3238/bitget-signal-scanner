@@ -42,6 +42,7 @@ import {
   autoTradeSupported,
   autoTradeSync,
   bitgetClearKeys,
+  bitgetBridgeAvailable,
   bitgetKeyState,
   bitgetPlaceOrder,
   bitgetPositions,
@@ -109,6 +110,8 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
   const [positions, setPositions] = useState<BitgetPosition[]>([]);
   const [native, setNative] = useState<AutoTradeNativeStatus | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  /** 설치된 APK가 v1.5.0 미만이라 자동매매 브리지가 없는 상태 */
+  const [bridgeMissing, setBridgeMissing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
@@ -150,6 +153,8 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
   /* ---------------- 키 · 계좌 ---------------- */
 
   const refreshKeys = useCallback(async () => {
+    const available = await bitgetBridgeAvailable();
+    setBridgeMissing(!available);
     const state = await bitgetKeyState();
     setKeysState(state);
     return state;
@@ -567,6 +572,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
 
   return {
     supported,
+    bridgeMissing,
     config,
     runtime,
     keys,

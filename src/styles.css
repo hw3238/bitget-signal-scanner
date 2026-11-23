@@ -4997,6 +4997,20 @@ textarea {
   margin-bottom: 4px;
 }
 
+.auto-note.danger {
+  background: var(--up-soft);
+  border-color: #ffd6d9;
+}
+
+.auto-note.danger b {
+  color: #9c1019;
+}
+
+.auto-note.danger p {
+  color: #9c1019;
+  margin-bottom: 8px;
+}
+
 .auto-note p {
   margin: 0;
   font-size: 11px;

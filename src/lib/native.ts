@@ -311,6 +311,20 @@ export async function bitgetSaveKeys(input: {
   }
 }
 
+/**
+ * 이 설치본(APK)에 자동매매 브리지가 있는지 — v1.4.0 이하 앱은 메서드가 없어 호출이 거절된다.
+ * (웹은 항상 최신이지만, 앱은 사용자가 업데이트해야 네이티브 기능이 생긴다)
+ */
+export async function bitgetBridgeAvailable(): Promise<boolean> {
+  if (!isNativeApp()) return true;
+  try {
+    await AppShell.bitgetHasKeys();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function bitgetKeyState(): Promise<BitgetKeyState & { supported: boolean }> {
   if (!isNativeApp()) return { supported: false, hasKeys: false, demo: true };
   try {

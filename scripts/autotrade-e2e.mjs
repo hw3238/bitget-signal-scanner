@@ -184,7 +184,7 @@ const NATIVE_MOCK = () => {
     log: window.__auto.nativeLog,
   });
 
-  const methods = [
+  let methods = [
     'saveImage',
     'shareImage',
     'openExternal',
@@ -208,6 +208,8 @@ const NATIVE_MOCK = () => {
     'autoTradeStatus',
   ].map((name) => ({ name, rtype: 'promise' }));
   methods.push({ name: 'addListener', rtype: 'callback' }, { name: 'removeListener', rtype: 'callback' });
+  // v1.4.0 이하 APK 흉내 — 자동매매 메서드가 아예 없다
+  if (window.__oldApk) methods = methods.filter((m) => !/^(bitget|autoTrade)/.test(m.name));
 
   const handlers = {
     appInfo: async () => ({ versionName: '1.5.0', versionCode: 6, packageName: 'com.hw3238.bitgetscanner' }),
@@ -328,10 +330,10 @@ const NATIVE_MOCK = () => {
 
 const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 
-async function open({ native = true, blockMarket = true } = {}) {
+async function open({ native = true, blockMarket = true, oldApk = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   await ctx.addInitScript(`(${snapshotScript.toString()})();`);
-  if (native) await ctx.addInitScript(`(${NATIVE_MOCK.toString()})();`);
+  if (native) await ctx.addInitScript(`window.__oldApk = ${oldApk ? 'true' : 'false'}; (${NATIVE_MOCK.toString()})();`);
   if (blockMarket) {
     // 실 API 호출을 끊어 복원한 스냅숏 시그널이 그대로 유지되게 한다(결정적 검증).
     await ctx.route('**://api.bitget.com/**', (route) => route.abort());
@@ -552,6 +554,25 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   check(/\[모의 체결\]|\[모의\].*거부/.test(logs), '시뮬레이션 → 모의 체결/거부 로그', logs.slice(0, 70));
   await page.locator('[data-auto-root]').screenshot({ path: `${OUT}/57-autotrade-browser.png` }).catch(() => {});
   check(errors.length === 0, '브라우저 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+/* ================================================================== *
+ * 4) v1.5.0 이전 APK — 자동매매 브리지 없음 → 업데이트 안내
+ * ================================================================== */
+{
+  const { ctx, page, errors } = await open({ oldApk: true });
+  await page.evaluate(() => document.querySelector('[data-tab="menu"]')?.click());
+  await page.waitForTimeout(300);
+  await page.locator('[data-menu="auto"]').click();
+  await page.waitForTimeout(1400);
+  const bridgeCount = await page.locator('[data-auto-bridge-missing]').count();
+  check(bridgeCount >= 1, '구버전 APK: 업데이트 필요 안내 표시', `${bridgeCount}개`);
+  const note = await text(page, '[data-auto-bridge-missing]');
+  check(/v1\.5\.0/.test(note) && /APK/.test(note), '업데이트 안내에 v1.5.0·APK 안내', note.slice(0, 60));
+  check(/^(?!.*브라우저)/.test(note), '구버전 APK를 브라우저로 오해하지 않음');
+  check(errors.length === 0, '구버전 APK 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
+  await page.screenshot({ path: `${OUT}/62-autotrade-old-apk.png`, fullPage: true }).catch(() => {});
   await ctx.close();
 }
 
