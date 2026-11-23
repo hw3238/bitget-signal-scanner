@@ -70,7 +70,12 @@ export interface BitgetKeyState {
   demo: boolean;
   /** 예: bg_9f3k••••••2c7d — 원문은 절대 JS로 오지 않는다 */
   apiKeyMasked?: string;
+  /** Secret 저장 여부 — 원문은 절대 JS로 오지 않는다 */
+  secretSet?: boolean;
+  /** Passphrase 저장 여부 — 저장했는데 화면이 '—' 로 보이던 문제(v1.5.1)의 판정 값 */
   passphraseSet?: boolean;
+  /** 판별된 비트겟 계정 종류 — "uta"(통합 v3) / "classic"(클래식 v2) / "unknown" */
+  accountMode?: string;
   savedAt?: number;
 }
 
@@ -83,6 +88,8 @@ export interface BitgetAccount {
   unrealizedPL?: number;
   /** 포지션 모드: one_way_mode / hedge_mode */
   posMode?: string;
+  /** 비트겟 계정 종류 — "uta"(통합계정, v3) / "classic"(클래식, v2) / "unknown" */
+  accountMode?: string;
   error?: string;
   code?: string;
 }

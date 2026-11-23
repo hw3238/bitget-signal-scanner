@@ -35,6 +35,7 @@ import {
   type EntryDecision,
   type PlaceOrderParams,
 } from '../lib/autotrade';
+import { accountKindLabel } from '../lib/bitgetUta';
 import {
   autoTradeStart,
   autoTradeStatus,
@@ -180,9 +181,9 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       log({
         at: Date.now(),
         level: 'info',
-        text: `계좌 연결 확인 — ${res.demo ? '모의투자' : '실거래'} · USDT ${fmtUsdt(equity)} · 포지션 모드 ${
-          normalizePosMode(res.posMode) === 'hedge_mode' ? '헤지' : '단방향'
-        }`,
+        text: `계좌 연결 확인 — ${res.demo ? '모의투자' : '실거래'} · ${accountKindLabel(res.accountMode)} · USDT ${fmtUsdt(
+          equity,
+        )} · 포지션 모드 ${normalizePosMode(res.posMode) === 'hedge_mode' ? '헤지' : '단방향'}`,
       });
     } else {
       setError(res.error ?? '키를 확인해 주세요.');
@@ -208,7 +209,8 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
         setError(res.error);
         return false;
       }
-      setKeysState({ supported: true, hasKeys: res.hasKeys, demo: res.demo, apiKeyMasked: res.apiKeyMasked });
+      // ★ passphraseSet·secretSet·accountMode 를 빠뜨리면 저장 직후 화면이 `Passphrase: —` 로 바뀐다(v1.5.1 수정).
+      setKeysState({ ...res, supported: true });
       setConfig((prev) => ({ ...prev, mode: input.demo ? 'demo' : 'live' }));
       log({
         at: Date.now(),

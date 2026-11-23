@@ -509,7 +509,7 @@ const run = async () => {
   check('설정 최상단 내 투자 프로필 카드', /^💼 내 투자 프로필$/.test(settings.headings[0]) && settings.profileSeed === '$5,000', `${settings.headings[0]} · ${settings.profileSeed} · ${settings.profileStyle}`);
   check('매매 성향 표시(보수적)', /보수적 매매/.test(settings.profileStyle), settings.profileStyle);
   check('🔔 핸드폰 알림 유지 · 코인 알림 3택', settings.heading === '🔔 핸드폰 알림' && settings.targets.join('|') === '비트·이더·솔|주요 코인|전체 종목' && settings.targetOn === '주요 코인', settings.targets.join(' / '));
-  check('ntfy 토픽 유지 · 앱 버전 v1.5.0', settings.ntfy === 'bgss-hw3238-9f4k2m' && /COTA · 앱 v1\.5\.0/.test(settings.version || ''), `${settings.ntfy} · ${settings.version}`);
+  check('ntfy 토픽 유지 · 앱 버전 v1.5.1', settings.ntfy === 'bgss-hw3238-9f4k2m' && /COTA · 앱 v1\.5\.1/.test(settings.version || ''), `${settings.ntfy} · ${settings.version}`);
   check('설정에 FX 랏·벤티지·트웰브 데이터 없음', !settings.lotSection);
   check(
     '실전 주문 리스크 설정 = 성향 추천 + 1/2/3/5/10/20/30/50% + 직접 입력',

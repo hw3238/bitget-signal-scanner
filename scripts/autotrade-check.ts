@@ -6,6 +6,7 @@
  *    같은 벡터를 네이티브(`BitgetApi.java`)도 통과해야 실제 주문이 나간다.
  * 2) 주문: 리스크 기반 수량 · 거래소 수량 단위 내림 · 포지션 모드(one-way/hedge) 분기 · TP/SL 문자열.
  * 3) 안전장치: 1일 손실 한도 · 중복 진입 · 동시 포지션 · 허용 종목 · 승률/손익비 · 유효시간 · 레버리지 상한.
+ * 4) 비트겟 계정 모드(v1.5.1): 통합계정(UTA v3) 자동 판별 · 주문·레버리지 페이로드 · 잔고/포지션 파싱 · 클래식 폴백.
  */
 import type { Signal } from '../src/engine/types';
 import {
@@ -39,6 +40,21 @@ import {
   type AutoTradeConfig,
 } from '../src/lib/autotrade';
 import { bitgetPrehash, bitgetSign, demoHeader, hmacSha256Base64, maskKey } from '../src/lib/bitgetSign';
+import {
+  CLASSIC_MODE_ERROR,
+  UTA_MODE_ERROR,
+  accountKindLabel,
+  clientOidV3,
+  modeSwitchTarget,
+  parseAssetsV3,
+  parsePositionsV3,
+  parseSettingsV3,
+  resolveAccountKind,
+  v2OrderBody,
+  v3LeverageBody,
+  v3MarginMode,
+  v3OrderBody,
+} from '../src/lib/bitgetUta';
 
 let pass = 0;
 const fails: string[] = [];
@@ -346,6 +362,157 @@ check('시드: 프로필 우선', planSeed({ seed: 5000, style: 'conservative', 
 check('시드: 프로필 없으면 계좌', planSeed(null, 800) === 800);
 check('시드: 둘 다 없으면 0', planSeed(null, null) === 0);
 check('금액 표기', fmtUsdt(-45.5) === '−$45.50' && fmtUsdt(1234.5) === '$1,235');
+
+
+/* ------------------------------------------------------------------ *
+ * 10) 비트겟 계정 모드 — 통합계정(UTA v3) 자동 판별 · 페이로드 · 파싱 (v1.5.1)
+ * ------------------------------------------------------------------ */
+
+/* 10-1) 계정 판별 */
+check('v3 settings 성공(00000) → 통합계정(UTA)', resolveAccountKind({ settingsOk: true }) === 'uta');
+check(`v3 settings ${CLASSIC_MODE_ERROR} → 클래식 계정`, resolveAccountKind({ settingsCode: CLASSIC_MODE_ERROR }) === 'classic');
+check(`v2 계좌 ${UTA_MODE_ERROR} → 통합계정(UTA) 폴백`, resolveAccountKind({ v2Code: UTA_MODE_ERROR }) === 'uta');
+check('v2 계좌 성공 → 클래식 계정', resolveAccountKind({ v2Ok: true }) === 'classic');
+check('판별 실패는 null(모름)', resolveAccountKind({}) === null && resolveAccountKind({ settingsCode: '40014' }) === null);
+check('모드 전환 신호: 40085→uta · 40084→classic', modeSwitchTarget(UTA_MODE_ERROR) === 'uta' && modeSwitchTarget(CLASSIC_MODE_ERROR) === 'classic');
+check('모드 전환 신호 아님: 40014', modeSwitchTarget('40014') === null);
+check('계정 라벨', accountKindLabel('uta') === '통합계정(UTA)' && accountKindLabel('classic') === '클래식 계정' && accountKindLabel(undefined) === '확인 중');
+
+/* 10-2) v3 주문 페이로드 — 단방향 */
+const canonical = {
+  symbol: 'BTCUSDT',
+  size: '3',
+  side: 'buy' as const,
+  orderType: 'market' as const,
+  clientOid: 'cotaBTCUSDT1a2b3c',
+  presetStopSurplusPrice: '115',
+  presetStopLossPrice: '95',
+  marginMode: 'isolated',
+};
+const utaOw = v3OrderBody(canonical, { holdMode: 'one_way_mode', marginMode: 'crossed' });
+check(
+  'v3 단방향 주문 body: category·qty(size 아님)·TP/SL·marginMode',
+  JSON.stringify(utaOw) ===
+    JSON.stringify({
+      category: 'USDT-FUTURES',
+      symbol: 'BTCUSDT',
+      qty: '3',
+      side: 'buy',
+      orderType: 'market',
+      marginMode: 'crossed',
+      clientOid: 'cotaBTCUSDT1a2b3c',
+      takeProfit: '115',
+      tpOrderType: 'market',
+      stopLoss: '95',
+      slOrderType: 'market',
+    }),
+  JSON.stringify(utaOw),
+);
+check('v3 body 에는 size·productType·presetStopSurplusPrice 가 없다', !('size' in utaOw) && !('productType' in utaOw) && !('presetStopSurplusPrice' in utaOw));
+check('v3 단방향에는 posSide 없음', !('posSide' in utaOw));
+
+/* 10-3) v3 주문 페이로드 — 헤지 */
+const utaHedge = v3OrderBody({ ...canonical, side: 'sell' }, { holdMode: 'hedge_mode', marginMode: 'isolated' });
+check('v3 헤지 숏 진입 = side sell + posSide short', utaHedge.posSide === 'short' && utaHedge.side === 'sell');
+check('v3 헤지는 tradeSide 를 쓰지 않는다', !('tradeSide' in utaHedge));
+check('v3 헤지 주문도 TP/SL 시장가 트리거', utaHedge.takeProfit === '115' && utaHedge.slOrderType === 'market');
+const utaHedgeExplicit = v3OrderBody({ ...canonical, side: 'buy', posSide: 'short' }, { holdMode: 'hedge_mode' });
+check('posSide 를 넘기면 그 값을 그대로 쓴다', utaHedgeExplicit.posSide === 'short');
+
+/* 10-4) v2 페이로드는 그대로 */
+const v2Body = v2OrderBody(canonical);
+check(
+  'v2 주문 body: size·productType·presetStopSurplusPrice 유지',
+  v2Body.size === '3' &&
+    v2Body.productType === 'USDT-FUTURES' &&
+    v2Body.presetStopSurplusPrice === '115' &&
+    v2Body.presetStopLossPrice === '95' &&
+    v2Body.marginCoin === 'USDT',
+);
+check('v2 body 에는 category·qty·takeProfit 이 없다', !('category' in v2Body) && !('qty' in v2Body) && !('takeProfit' in v2Body));
+
+/* 10-5) 마진 모드 표기 · clientOid 규칙 */
+check('v3 마진 모드: isolated/crossed', v3MarginMode('isolated') === 'isolated' && v3MarginMode('cross') === 'crossed' && v3MarginMode(undefined) === 'crossed');
+const longOid = 'cotaBTCUSDTabcdefghijklmnopqrstuvwxyz0123456789';
+check('v3 clientOid 32자 제한', clientOidV3(longOid).length === 32);
+check('v3 clientOid 정규식 통과', /^[.A-Z:/a-z0-9_-]{1,32}$/.test(clientOidV3('c+a#ta/1:2_b-c')));
+check('v3 clientOid 빈 값은 cota', clientOidV3('') === 'cota' && clientOidV3(null) === 'cota');
+
+/* 10-6) v3 레버리지 */
+const levOw = v3LeverageBody({ symbol: 'BTCUSDT', leverage: '10', holdMode: 'one_way_mode', marginMode: 'crossed' });
+check('v3 레버리지(단방향): category·symbol·leverage·marginMode', levOw.category === 'USDT-FUTURES' && levOw.leverage === '10' && levOw.marginMode === 'crossed' && !('posSide' in levOw));
+const levHedge = v3LeverageBody({ symbol: 'ETHUSDT', leverage: '5', holdMode: 'hedge_mode', marginMode: 'isolated', posSide: 'short' });
+check('v3 레버리지(헤지): posSide + long/shortLeverage', levHedge.posSide === 'short' && levHedge.longLeverage === '5' && levHedge.shortLeverage === '5');
+
+/* 10-7) v3 잔고 파싱 */
+const assetsFixture = {
+  accountEquity: '11.13919278',
+  usdtEquity: '11.13921165',
+  usdtUnrealisedPnl: '0.42',
+  effEquity: '6.19299777',
+  assets: [
+    { coin: 'BGB', equity: '1.15582129', available: '1.1' },
+    { coin: 'USDT', equity: '6.19300826', available: '5.5' },
+  ],
+};
+const parsed = parseAssetsV3(assetsFixture);
+check('v3 잔고: USDT 행 equity·available 우선', parsed.equity === 6.19300826 && parsed.available === 5.5, JSON.stringify(parsed));
+check('v3 잔고: 평가손익 = usdtUnrealisedPnl', parsed.unrealizedPL === 0.42);
+const parsedNoRow = parseAssetsV3({ usdtEquity: '50.5', effEquity: '40', assets: [{ coin: 'BGB', equity: '1' }] });
+check('v3 잔고: USDT 행이 없으면 usdtEquity·effEquity 로 폴백', parsedNoRow.equity === 50.5 && parsedNoRow.available === 40);
+check('v3 잔고: 빈 응답은 0', parseAssetsV3(null).equity === 0);
+
+/* 10-8) v3 포지션 파싱 */
+const posFixture = {
+  list: [
+    {
+      category: 'USDT-FUTURES',
+      symbol: 'BTCUSDT',
+      holdMode: 'hedge_mode',
+      posSide: 'long',
+      positionBalance: '470.5',
+      total: '0.5',
+      leverage: '10',
+      avgPrice: '61000',
+      markPrice: '61500.5',
+      unrealisedPnl: '12.3',
+      liquidationPrice: '55000',
+      createdTime: '1736378720620',
+    },
+    { symbol: 'ETHUSDT', posSide: 'short', total: '0', avgPrice: '3000' },
+  ],
+};
+const pos = parsePositionsV3(posFixture);
+check('v3 포지션: total≠0 만 남긴다', pos.length === 1 && pos[0].symbol === 'BTCUSDT');
+check(
+  'v3 포지션: 필드 이름을 v2 모양으로 통일',
+  pos[0].holdSide === 'long' &&
+    pos[0].openPriceAvg === 61000 &&
+    pos[0].markPrice === 61500.5 &&
+    pos[0].unrealizedPL === 12.3 &&
+    pos[0].marginSize === 470.5 &&
+    pos[0].leverage === 10 &&
+    pos[0].liquidationPrice === 55000 &&
+    pos[0].ctime === 1736378720620,
+  JSON.stringify(pos[0]),
+);
+check('v3 포지션: list 가 null 이면 빈 배열', Array.isArray(parsePositionsV3({ list: null })) && parsePositionsV3({ list: null }).length === 0);
+check('v3 포지션: 응답이 비어도 빈 배열', parsePositionsV3(null).length === 0);
+
+/* 10-9) v3 계정 설정(holdMode·종목별 마진 모드) */
+const settingsFixture = {
+  accountMode: 'unified',
+  holdMode: 'hedge_mode',
+  symbolConfigList: [
+    { category: 'USDT-FUTURES', symbol: 'BTCUSDT', marginMode: 'isolated' },
+    { category: 'USDT-FUTURES', symbol: 'ETHUSDT', marginMode: 'crossed' },
+    { category: 'COIN-FUTURES', symbol: 'BTCUSD', marginMode: 'isolated' },
+  ],
+};
+const settings = parseSettingsV3(settingsFixture);
+check('v3 settings: holdMode 파싱', settings.holdMode === 'hedge_mode');
+check('v3 settings: USDT-FUTURES 종목 마진 모드만', settings.marginModes.BTCUSDT === 'isolated' && settings.marginModes.ETHUSDT === 'crossed' && !('BTCUSD' in settings.marginModes));
+check('v3 settings: holdMode 없으면 단방향', parseSettingsV3({}).holdMode === 'one_way_mode');
 
 console.log('');
 console.log(`자동매매 단위 검증: ${pass}/${pass + fails.length} 통과`);

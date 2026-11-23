@@ -212,7 +212,7 @@ const NATIVE_MOCK = () => {
   if (window.__oldApk) methods = methods.filter((m) => !/^(bitget|autoTrade)/.test(m.name));
 
   const handlers = {
-    appInfo: async () => ({ versionName: '1.5.0', versionCode: 6, packageName: 'com.hw3238.bitgetscanner' }),
+    appInfo: async () => ({ versionName: '1.5.1', versionCode: 7, packageName: 'com.hw3238.bitgetscanner' }),
     notificationPermission: async () => ({ granted: true, supported: true }),
     canInstallPackages: async () => ({ allowed: true }),
     bitgetSaveKeys: async (o) => {
@@ -237,6 +237,8 @@ const NATIVE_MOCK = () => {
         available: 1000.5,
         unrealizedPL: 12.34,
         posMode: 'one_way_mode',
+        // v1.5.1 — 비트겟 통합계정(UTA) 자동 판별 결과
+        accountMode: 'uta',
       };
     },
     bitgetGetPositions: async () => ({ ok: true, positions: window.__auto.positions }),
@@ -406,7 +408,12 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   const keyPanel = await text(page, '[data-auto-keys]');
   check(/bg_liv••••••2c7d/.test(keyPanel), '저장 후 마스킹된 키만 표시', keyPanel.slice(0, 60));
   check(!keyPanel.includes('secretsecret'), 'Secret 원문은 화면에 없음');
-  check(/모의투자 연결 · USDT \$1,235/.test(await text(page, '[data-auto-account]')), '연결 테스트 → USDT 잔고 표시', await text(page, '[data-auto-account]'));
+  // v1.5.1 회귀 — 저장 직후 passphraseSet 이 화면 상태로 넘어오지 않아 `Passphrase: —` 로 보이던 문제
+  check(/Passphrase ?•••••••• 저장됨/.test(keyPanel), 'Passphrase 저장됨 표시(— 아님)', keyPanel.slice(0, 120));
+  check(!/Passphrase[^•]{0,6}—/.test(keyPanel), 'Passphrase 에 — 표시 없음');
+  const accountLine = await text(page, '[data-auto-account]');
+  check(/모의투자 연결 · USDT \$1,235/.test(accountLine), '연결 테스트 → USDT 잔고 표시', accountLine);
+  check(/통합계정\(UTA\)/.test(accountLine), '계정 모드 표시 = 통합계정(UTA)', accountLine);
 
   // 1회 리스크 50% — 사용자 요청(시드의 50%까지) · 고위험 경고
   await page.locator('[data-risk-preset="50"]').click();

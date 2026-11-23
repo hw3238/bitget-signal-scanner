@@ -625,6 +625,8 @@ public class AppShellPlugin extends Plugin {
             } catch (Exception e) {
                 posMode = "one_way_mode";
             }
+            String accountMode = acc.optString("accountMode", BitgetApi.knownMode(keys));
+            AutoTradeStore.setAccountMode(getContext(), accountMode);
             JSObject ret = new JSObject();
             ret.put("ok", true);
             ret.put("demo", keys.demo);
@@ -632,6 +634,8 @@ public class AppShellPlugin extends Plugin {
             ret.put("available", acc.optDouble("available", 0));
             ret.put("unrealizedPL", acc.optDouble("unrealizedPL", 0));
             ret.put("posMode", posMode);
+            /** "uta" = 통합계정(v3) · "classic" = 클래식(v2) · "unknown" */
+            ret.put("accountMode", accountMode);
             double equity = acc.optDouble("equity", 0);
             if (equity > 0) {
                 AutoTradeStore.setSnapshot(
@@ -667,6 +671,9 @@ public class AppShellPlugin extends Plugin {
             return;
         }
         AutoTradeStore.saveKeys(getContext(), apiKey, secret, passphrase, demo);
+        // 새 키는 계정 모드(클래식/통합)를 다시 판별한다.
+        BitgetApi.forgetAccountMode(getContext());
+        AutoTradeStore.setAccountMode(getContext(), "unknown");
         AutoTradeStore.addLog(getContext(), "info", "API 키 저장 — " + (demo ? "모의투자" : "실거래") + " (기기 안에만 저장)");
         call.resolve(toJsObject(AutoTradeStore.keyState(getContext())));
     }
@@ -680,6 +687,7 @@ public class AppShellPlugin extends Plugin {
     public void bitgetClearKeys(PluginCall call) {
         stopAutoTradeService();
         AutoTradeStore.clearKeys(getContext());
+        BitgetApi.forgetAccountMode(getContext());
         AutoTradeStore.savePlans(getContext(), new org.json.JSONArray());
         AutoTradeStore.clearTraded(getContext());
         AutoTradeStore.addLog(getContext(), "info", "API 키 삭제 — 자동매매를 껐습니다.");
@@ -760,6 +768,7 @@ public class AppShellPlugin extends Plugin {
         final String tp = call.getString("presetStopSurplusPrice", "");
         final String sl = call.getString("presetStopLossPrice", "");
         final String reduceOnly = call.getString("reduceOnly", "");
+        final String marginMode = call.getString("marginMode", "");
 
         new Thread(() -> {
             try {
@@ -777,7 +786,8 @@ public class AppShellPlugin extends Plugin {
                 org.json.JSONObject body = new org.json.JSONObject();
                 body.put("symbol", symbol);
                 body.put("productType", BitgetApi.PRODUCT);
-                body.put("marginMode", call.getString("marginMode", "isolated"));
+                body.put("marginMode", marginMode == null || marginMode.isEmpty()
+                    ? "isolated" : marginMode);
                 body.put("marginCoin", call.getString("marginCoin", BitgetApi.MARGIN_COIN));
                 body.put("size", size);
                 body.put("side", requestedSide);
@@ -789,6 +799,8 @@ public class AppShellPlugin extends Plugin {
                 if (clientOid != null && !clientOid.isEmpty()) body.put("clientOid", clientOid);
                 if (hedge) {
                     body.put("tradeSide", tradeSideParam == null || tradeSideParam.isEmpty() ? "open" : tradeSideParam);
+                    // v3(통합계정)는 tradeSide 대신 posSide(long/short)를 쓴다 — BitgetApi 가 골라 쓴다.
+                    body.put("posSide", "buy".equals(requestedSide) ? "long" : "short");
                 }
                 if (reduceOnly != null && !reduceOnly.isEmpty()) body.put("reduceOnly", reduceOnly);
                 if (tp != null && !tp.isEmpty()) body.put("presetStopSurplusPrice", tp);

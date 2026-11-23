@@ -7,11 +7,19 @@
 | --- | --- |
 | 웹 (GitHub Pages) | <https://hw3238.github.io/bitget-signal-scanner/> |
 | APK 다운로드 | <https://github.com/hw3238/bitget-signal-scanner/releases/latest/download/bitget-crt-scanner.apk> |
-| 현재 버전 | **v1.5.0** (versionCode 6) |
+| 현재 버전 | **v1.5.1** (versionCode 7) |
 
 ## 주요 기능
 
+- **🔗 비트겟 계정 자동 감지(v1.5.1)** — 통합 거래 계정(UTA, v3)과 클래식 계정(v2)을 **앱이 스스로 판별**해
+  같은 화면·같은 버튼으로 둘 다 연결합니다. `GET /api/v3/account/settings`가 `00000`이면 통합계정,
+  `40084`면 클래식이며, v2 호출이 `40085`를 돌려주면 즉시 v3로 전환해 **같은 요청을 한 번 더** 보냅니다.
+  잔고(`/api/v3/account/assets`)·포지션(`/api/v3/position/current-position`)·레버리지(`/api/v3/account/set-leverage`)·
+  주문(`/api/v3/trade/place-order`, `qty`·`posSide`·`takeProfit`/`stopLoss`)까지 두 계정 모두 동작하고,
+  연결 화면에 `통합계정(UTA)` / `클래식 계정`이 표시됩니다.
+  계정 안내: 통합계정 API는 키에 **UTA 거래(UTA trade)** 와 **UTA 계정 관리(UTA mgt, 읽기)** 권한이 필요합니다(`40014`).
 - **🤖 비트겟 자동매매(v1.5.0)** — `메뉴 → 🤖 비트겟 자동매매`.
+  - v1.5.1에서 `Passphrase: —` 로 보이던 저장 상태 표시를 수리했습니다(Key·Secret·Passphrase 저장 여부를 그대로 전달).
   - **네이티브 Private API 브리지**: 웹뷰 CORS를 우회해 안드로이드에서 비트겟 v2를 직접 호출합니다.
     서명은 `Base64(HMAC-SHA256(secret, timestamp+METHOD+requestPath+body))` + `ACCESS-KEY/SIGN/TIMESTAMP/PASSPHRASE`,
     모의투자는 `paptrading: 1`. **API 키는 기기 안(SharedPreferences)에만 저장**되고 Secret은 웹뷰로 내려오지 않습니다(화면엔 마스킹).
@@ -127,8 +135,8 @@ npm run build
 npm run check:stops                 # 손절폭 상한(1H 3.5% / 4H 4.5%) 회귀
 npm run check:calc                  # 김프·청산가·물타기·사이징·수수료·피어슨·도플갱어·괴리 단위 검증(49건)
 npm run check:cockpit               # 실전 주문 콕핏(수량·증거금·거래소 주문 단위·가격 라벨 배치·리스크 50%) 47건
-npm run check:autotrade             # 자동매매 단위 — 서명(OpenSSL 벡터)·수량·포지션모드·안전장치·리스크 50% 99건
-node scripts/autotrade-e2e.mjs      # 자동매매 E2E — 키 연결·가동·체결/차단 로그·한도 잠금·원클릭 주문 (스크린샷 54~59)
+npm run check:autotrade             # 자동매매 단위 — 서명(OpenSSL 벡터)·수량·포지션모드·안전장치·리스크 50%·UTA v3 페이로드/파싱 133건
+node scripts/autotrade-e2e.mjs      # 자동매매 E2E — 키 연결·Passphrase 저장 표시·계정 모드·가동·체결/차단 로그·한도 잠금·원클릭 주문 (스크린샷 54~59)
 npm run check:journal               # 매매 복기 집계(승률·누적 R·MDD·연승/연패·전략별·중복 기록) 44건
 npm run bench:strategies            # 매매법 전수 백테스트(실제 비트겟 60마켓 × 500봉 · 수수료 · IS/OOS)
 npm run bench:strategies -- --engine  # 앱 엔진 그대로 200봉 시뮬레이션(진행 중 시그널 수·채택 분포)

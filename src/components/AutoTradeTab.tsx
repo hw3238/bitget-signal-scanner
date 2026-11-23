@@ -16,6 +16,7 @@ import {
 } from '../lib/autotrade';
 import { NumField } from './ui';
 import { APK_DOWNLOAD_URL } from '../lib/update';
+import { accountKindLabel } from '../lib/bitgetUta';
 import { openExternalUrl } from '../lib/native';
 
 interface Props {
@@ -171,7 +172,7 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
             키 연결과 24시간 감시가 동작합니다. (설치 후 기존 설정·기록은 그대로 유지됩니다)
           </p>
           <button type="button" className="auto-primary" onClick={() => void openExternalUrl(APK_DOWNLOAD_URL)}>
-            ⬇︎ COTA v1.5.0 APK 받기
+            ⬇︎ COTA v1.5.1 APK 받기
           </button>
         </div>
       )}
@@ -257,7 +258,7 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
                 {account.ok
                   ? `✓ ${account.demo ? '모의투자' : '실거래'} 연결 · USDT ${fmtUsdt(account.equity)} · 사용 가능 ${fmtUsdt(
                       account.available,
-                    )} · 평가손익 ${fmtUsdt(account.unrealizedPL)}`
+                    )} · 평가손익 ${fmtUsdt(account.unrealizedPL)} · ${accountKindLabel(account.accountMode)}`
                   : `✕ ${account.error ?? '키를 확인해 주세요.'}`}
               </div>
             )}

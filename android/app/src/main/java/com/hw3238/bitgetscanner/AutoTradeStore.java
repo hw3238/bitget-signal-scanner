@@ -39,6 +39,8 @@ public final class AutoTradeStore {
     private static final String K_LAST_TICK = "last_tick";
     private static final String K_EQUITY = "last_equity";
     private static final String K_POSITIONS = "last_positions";
+    /** 마지막으로 판별된 비트겟 계정 종류 — "uta" / "classic" / "" (아직 모름) */
+    private static final String K_ACCOUNT_MODE = "account_mode";
 
     private static final int LOG_LIMIT = 40;
     private static final int TRADED_LIMIT = 200;
@@ -93,24 +95,48 @@ public final class AutoTradeStore {
             .remove(K_PASSPHRASE)
             .remove(K_DEMO)
             .remove(K_SAVED_AT)
+            .remove(K_ACCOUNT_MODE)
             .putBoolean(K_RUNNING, false)
             .apply();
     }
 
-    /** JS로 돌려주는 키 상태 — 원문 없이 마스킹만 */
+    /**
+     * JS로 돌려주는 키 상태 — 원문 없이 마스킹만.
+     *  · hasKeys 는 Key·Secret·Passphrase **세 값이 모두** 있을 때만 true (keys() 와 같은 기준).
+     *  · passphraseSet 은 화면의 `Passphrase: —` 오판을 막기 위해 저장 여부를 그대로 알린다.
+     */
     public static JSONObject keyState(Context context) {
         SharedPreferences p = prefs(context);
         String key = p.getString(K_APIKEY, "");
-        boolean has = key != null && !key.isEmpty() && p.getString(K_SECRET, "").length() > 0;
+        String secret = p.getString(K_SECRET, "");
+        String passphrase = p.getString(K_PASSPHRASE, "");
+        boolean keySet = key != null && !key.isEmpty();
+        boolean secretSet = secret != null && !secret.isEmpty();
+        boolean passphraseSet = passphrase != null && !passphrase.isEmpty();
         JSONObject out = new JSONObject();
         try {
-            out.put("hasKeys", has);
+            out.put("hasKeys", keySet && secretSet && passphraseSet);
             out.put("demo", p.getBoolean(K_DEMO, true));
             out.put("apiKeyMasked", BitgetApi.maskKey(key == null ? "" : key));
-            out.put("passphraseSet", p.getString(K_PASSPHRASE, "").length() > 0);
+            out.put("secretSet", secretSet);
+            out.put("passphraseSet", passphraseSet);
+            out.put("accountMode", p.getString(K_ACCOUNT_MODE, "unknown"));
             out.put("savedAt", p.getLong(K_SAVED_AT, 0));
         } catch (Exception ignored) {}
         return out;
+    }
+
+    /* ---------------- 계정 종류 ---------------- */
+
+    public static String accountMode(Context context) {
+        String mode = prefs(context).getString(K_ACCOUNT_MODE, "unknown");
+        return mode == null || mode.isEmpty() ? "unknown" : mode;
+    }
+
+    public static void setAccountMode(Context context, String mode) {
+        String value = mode == null ? "unknown" : mode;
+        if (value.equals(accountMode(context))) return;
+        prefs(context).edit().putString(K_ACCOUNT_MODE, value).apply();
     }
 
     public static boolean isDemo(Context context) {
@@ -278,6 +304,7 @@ public final class AutoTradeStore {
             double eq = lastEquity(context);
             out.put("dailyPnl", start > 0 && eq > 0 ? (eq - start) : 0);
             out.put("lastTickAt", lastTick(context));
+            out.put("accountMode", accountMode(context));
             out.put("riskPct", config.optDouble("riskPct", 1.5));
             out.put("maxPositions", config.optInt("maxPositions", 2));
             out.put("log", logs(context));

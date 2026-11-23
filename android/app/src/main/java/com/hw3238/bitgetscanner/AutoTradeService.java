@@ -164,6 +164,8 @@ public class AutoTradeService extends Service {
         try {
             JSONObject account = BitgetApi.accounts(keys);
             equity = account.optDouble("equity", 0);
+            // 통합계정(UTA)·클래식 계정 중 어느 쪽인지 화면에 남긴다.
+            AutoTradeStore.setAccountMode(this, account.optString("accountMode", BitgetApi.knownMode(keys)));
         } catch (Exception e) {
             AutoTradeStore.addLog(this, "error", "계좌 조회 실패 — " + friendly(e));
         }
@@ -273,7 +275,8 @@ public class AutoTradeService extends Service {
                 AutoTradeStore.addLog(this, "fill", text);
                 notifySignal("🤖 자동매매 체결", text);
             } catch (Exception e) {
-                AutoTradeStore.addLog(this, "error", base + " 주문 실패 — " + friendly(e));
+                AutoTradeStore.addLog(this, "error", base + " 주문 실패 — " + friendly(e)
+                        + " [" + AutoTradeStore.accountMode(this) + "]");
                 /* 주문이 실제로 접수됐을 수 있으니 다음 주기까지 대기(중복 주문은 clientOid로 차단) */
                 keep.put(plan);
             }
@@ -297,7 +300,11 @@ public class AutoTradeService extends Service {
         body.put("marginCoin", BitgetApi.MARGIN_COIN);
         body.put("size", trim(plan.optDouble("qty", 0)));
         body.put("side", longSide ? "buy" : "sell");
-        if (hedge) body.put("tradeSide", "open");
+        if (hedge) {
+            // v2 는 tradeSide(open/close), v3(통합계정)는 posSide(long/short) — BitgetApi 가 골라 쓴다.
+            body.put("tradeSide", "open");
+            body.put("posSide", side);
+        }
         body.put("orderType", "market");
         body.put("clientOid", clientOid(plan));
         String target = trim(plan.optDouble("target", 0));
