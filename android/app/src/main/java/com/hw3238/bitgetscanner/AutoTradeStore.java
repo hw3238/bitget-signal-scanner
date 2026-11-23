@@ -243,15 +243,19 @@ public final class AutoTradeStore {
 
     public static double dayStartEquity(Context context) {
         // v1.5.3 이전에는 float 로 저장해 USDT 잔고가 0.001 단위로 망가졌다 — 문자열(double) 로 읽고 backward 호환.
-        String raw = prefs(context).getString(K_DAY_EQUITY, "");
-        if (raw != null && !raw.isEmpty()) {
-            try {
-                return Double.parseDouble(raw);
-            } catch (Exception ignored) {
-                /* 아래 float 경로로 */
+        // ⚠ 저장 타입이 섞여 있을 수 있어 getString/getFloat 직접 호출 대신 getAll() 로 타입을 확인한다(ClassCastException 방지).
+        try {
+            Object value = prefs(context).getAll().get(K_DAY_EQUITY);
+            if (value instanceof String) {
+                String raw = ((String) value).trim();
+                if (!raw.isEmpty()) return Double.parseDouble(raw);
+            } else if (value instanceof Number) {
+                return ((Number) value).doubleValue();
             }
+        } catch (Exception ignored) {
+            /* 읽지 못하면 0 — 다음 주기에 다시 잡힌다 */
         }
-        return prefs(context).getFloat(K_DAY_EQUITY, 0f);
+        return 0;
     }
 
     public static void setDay(Context context, String dayKey, double equity) {
