@@ -510,7 +510,8 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
         clientOid: clientOidFor(signal.symbol),
         pricePlace: contractBySymbol.get(signal.symbol)?.decimals ?? null,
         priceEndStep: contractBySymbol.get(signal.symbol)?.priceEndStep ?? 1,
-        sizeMultiplier: contractBySymbol.get(signal.symbol)?.sizeMultiplier ?? 1,
+        // 없으면 0 — '1' 은 "정수 단위" 라는 뜻이라 소수 수량을 0 으로 깎는다.
+        sizeMultiplier: contractBySymbol.get(signal.symbol)?.sizeMultiplier ?? 0,
       });
       setBusy(`order:${signal.symbol}`);
       const res = await bitgetPlaceOrder({ ...params, leverage: plan.leverage, holdMode: account?.posMode });
