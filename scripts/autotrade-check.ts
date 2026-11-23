@@ -374,6 +374,8 @@ check(`v3 settings ${CLASSIC_MODE_ERROR} → 클래식 계정`, resolveAccountKi
 check(`v2 계좌 ${UTA_MODE_ERROR} → 통합계정(UTA) 폴백`, resolveAccountKind({ v2Code: UTA_MODE_ERROR }) === 'uta');
 check('v2 계좌 성공 → 클래식 계정', resolveAccountKind({ v2Ok: true }) === 'classic');
 check('판별 실패는 null(모름)', resolveAccountKind({}) === null && resolveAccountKind({ settingsCode: '40014' }) === null);
+check('v3 settings 권한오류라도 v2 성공이면 클래식', resolveAccountKind({ settingsCode: '40012', v2Ok: true }) === 'classic');
+check('v3 settings 권한오류 + v2 40085 → 통합계정', resolveAccountKind({ settingsCode: '40014', v2Code: UTA_MODE_ERROR }) === 'uta');
 check('모드 전환 신호: 40085→uta · 40084→classic', modeSwitchTarget(UTA_MODE_ERROR) === 'uta' && modeSwitchTarget(CLASSIC_MODE_ERROR) === 'classic');
 check('모드 전환 신호 아님: 40014', modeSwitchTarget('40014') === null);
 check('계정 라벨', accountKindLabel('uta') === '통합계정(UTA)' && accountKindLabel('classic') === '클래식 계정' && accountKindLabel(undefined) === '확인 중');

@@ -275,17 +275,13 @@ public final class BitgetApi {
      * 계정 모드 판별
      * ------------------------------------------------------------------ */
 
-    private static boolean isAuthError(String code) {
-        return "40006".equals(code) || "40009".equals(code) || "40012".equals(code)
-                || "40037".equals(code) || "40005".equals(code) || "40004".equals(code);
-    }
-
     /**
      * 계정 종류 판별(캐시 사용).
      *  1) v3 settings 성공 → UTA
      *  2) v3 settings 40084 → Classic
-     *  3) 그 밖의 오류 — v2 계좌를 찔러 40085 면 UTA, 성공하면 Classic
-     *  4) 키·서명 오류는 그대로 올린다(모드 문제가 아니다).
+     *  3) 그 밖의 오류(권한·키 오류 포함) — v2 계좌를 한 번 찔러 본다:
+     *     v2 성공 → Classic · v2 가 40085 → UTA · 둘 다 실패하면 v3 오류를 그대로 올린다.
+     *     (계정 종류에 따라 한쪽 API 만 키를 거절하는 사례가 있어, 한 신호만으로 단정하지 않는다)
      */
     public static String accountMode(Keys keys) throws Exception {
         String cached = knownMode(keys);
@@ -300,8 +296,6 @@ public final class BitgetApi {
                 cache(keys).mode = MODE_CLASSIC;
                 return MODE_CLASSIC;
             }
-            if (isAuthError(e.code)) throw e;
-            // 권한이 모자라 v3 settings 를 못 읽는 경우가 있다 — v2 로 확인한다.
             try {
                 request(keys, "GET", "/api/v2/mix/account/accounts?productType=" + PRODUCT, null);
                 cache(keys).mode = MODE_CLASSIC;
