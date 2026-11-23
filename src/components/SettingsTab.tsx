@@ -14,7 +14,13 @@ import {
 import { isNativeApp, nativeAppInfo, openExternalUrl } from '../lib/native';
 import { useApkUpdate } from '../lib/useApkUpdate';
 import { STYLE_META, fmtSeed, type Profile } from '../lib/profile';
-import { RISK_PRESETS, defaultRiskPct } from '../lib/orderCockpit';
+import {
+  RISK_PRESETS,
+  clampRiskInput,
+  defaultRiskPct,
+  isHighRisk,
+  resolveRiskPct,
+} from '../lib/orderCockpit';
 import {
   APP_VERSION,
   APK_DOWNLOAD_URL,
@@ -65,6 +71,8 @@ export function SettingsTab({
   const [permission, setPermission] = useState<NotifyPermission | null>(null);
   const [testing, setTesting] = useState(false);
   const [testNote, setTestNote] = useState('');
+  /** 리스크 '직접 입력' 모드 — 프리셋 값에서도 숫자 입력을 열어 준다. */
+  const [riskCustom, setRiskCustom] = useState(false);
   const native = isNativeApp();
   const apkUpdate = useApkUpdate();
 
@@ -181,35 +189,76 @@ export function SettingsTab({
             </button>
           </div>
         </div>
-        <div className="setting-row">
+        <div className="setting-row risk-setting">
           <div>
             <div className="setting-name">실전 주문 리스크</div>
             <div className="setting-desc">
-              카드의 주문 수량은 손절가에 닿았을 때 시드의 이 비율만큼만 잃도록 자동 계산됩니다.
+              카드의 주문 수량은 손절가에 닿았을 때 시드의 이 비율만큼만 잃도록 자동 계산됩니다. 0.5~50%까지
+              직접 입력할 수 있습니다.
               {profile ? ` 지금 설정은 시드의 ${defaultRiskPct(profile.style)}% 기준입니다.` : ''}
             </div>
           </div>
-          <label className="select-pill risk-pill">
-            <span>리스크</span>
-            <select
-              value={settings.riskPct == null ? 'auto' : String(settings.riskPct)}
-              onChange={(e) => {
-                const v = e.target.value;
-                onChange({ riskPct: v === 'auto' ? null : Number(v) });
-              }}
-              aria-label="1회 허용 손실률"
-            >
-              <option value="auto">
-                성향 추천 ({profile ? defaultRiskPct(profile.style) : 1.5}%)
-              </option>
-              {RISK_PRESETS.map((v) => (
-                <option key={v} value={v}>
-                  시드의 {v}%
+          <div className="risk-control">
+            <label className="select-pill risk-pill">
+              <span>리스크</span>
+              <select
+                value={
+                  settings.riskPct == null
+                    ? 'auto'
+                    : riskCustom || !(RISK_PRESETS as readonly number[]).includes(settings.riskPct)
+                      ? 'custom'
+                      : String(settings.riskPct)
+                }
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === 'auto') {
+                    setRiskCustom(false);
+                    onChange({ riskPct: null });
+                  } else if (v === 'custom') {
+                    setRiskCustom(true);
+                    if (settings.riskPct == null) onChange({ riskPct: clampRiskInput(2.5) });
+                  } else {
+                    setRiskCustom(false);
+                    onChange({ riskPct: Number(v) });
+                  }
+                }}
+                aria-label="1회 허용 손실률"
+                data-risk-select
+              >
+                <option value="auto">
+                  성향 추천 ({profile ? defaultRiskPct(profile.style) : 1.5}%)
                 </option>
-              ))}
-            </select>
-          </label>
+                {RISK_PRESETS.map((v) => (
+                  <option key={v} value={v}>
+                    시드의 {v}%
+                  </option>
+                ))}
+                <option value="custom">직접 입력</option>
+              </select>
+            </label>
+            {settings.riskPct != null && (riskCustom || !(RISK_PRESETS as readonly number[]).includes(settings.riskPct)) && (
+              <label className="risk-custom">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0.5}
+                  max={50}
+                  step={0.1}
+                  value={settings.riskPct}
+                  onChange={(e) => onChange({ riskPct: clampRiskInput(Number(e.target.value)) })}
+                  aria-label="1회 허용 손실률 직접 입력"
+                  data-risk-input
+                />
+                <i>%</i>
+              </label>
+            )}
+          </div>
         </div>
+        {isHighRisk(resolveRiskPct(profile?.style ?? 'conservative', settings.riskPct)) && (
+          <div className="risk-high-warn" data-risk-warning>
+            ⚠️ 고위험 설정: 연속 손실 시 시드 감소가 커집니다
+          </div>
+        )}
         <div className="setting-row compact">
           <div>
             <div className="setting-name">내 투자 성향 다시 설정</div>

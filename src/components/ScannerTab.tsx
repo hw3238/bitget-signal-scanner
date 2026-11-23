@@ -23,6 +23,11 @@ interface Props {
   /** 내 진입으로 표시한 시그널 */
   myTrades: MyTrade[];
   onToggleMyTrade: (key: string) => void;
+  /** ⚡ 원클릭 주문 (자동매매) */
+  onQuickOrder?: (signal: Signal) => void;
+  quickOrderMode?: 'demo' | 'live';
+  /** 주문 요청 중인 심볼 */
+  quickOrderSymbol?: string | null;
 }
 
 type AssetFilter = 'crypto' | 'stock' | 'all';
@@ -56,6 +61,9 @@ export function ScannerTab({
   profile,
   myTrades,
   onToggleMyTrade,
+  onQuickOrder,
+  quickOrderMode,
+  quickOrderSymbol,
 }: Props) {
   const [asset, setAsset] = useState<AssetFilter>('crypto');
   const [tf, setTf] = useState<TfFilter>('all');
@@ -383,6 +391,9 @@ export function ScannerTab({
             isMyTrade={mineKeys.has(signalKey(signal))}
             onToggleMyTrade={() => onToggleMyTrade(signalKey(signal))}
             stale={stale}
+            onQuickOrder={onQuickOrder}
+            quickOrderMode={quickOrderMode}
+            quickOrderBusy={!!quickOrderSymbol && quickOrderSymbol === signal.symbol}
           />
         ))}
 

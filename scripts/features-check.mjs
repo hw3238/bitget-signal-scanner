@@ -592,11 +592,17 @@ const run = async () => {
   await dpage.waitForTimeout(600);
   const desk = await dpage.evaluate(() => ({
     rows: document.querySelectorAll('.menu-row').length,
+    auto: document.querySelectorAll('.menu-auto').length,
+    autoBadge: document.querySelector('[data-auto-menu-badge]')?.textContent?.trim() ?? '',
     overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
     bottomHidden: getComputedStyle(document.querySelector('.bottom-nav')).display === 'none',
   }));
   await dpage.screenshot({ path: `${OUT}/36-menu-desktop.png` });
-  check('데스크톱: 메뉴 허브 7도구 · 오버플로 0건', desk.rows === 7 && !desk.overflow && desk.bottomHidden, JSON.stringify(desk));
+  check(
+    '데스크톱: 메뉴 허브 8도구(자동매매 포함) · 오버플로 0건',
+    desk.rows === 7 && desk.auto === 1 && desk.autoBadge === '꺼짐' && !desk.overflow && desk.bottomHidden,
+    JSON.stringify(desk),
+  );
   await desktop.close();
 
   await mobile.close();

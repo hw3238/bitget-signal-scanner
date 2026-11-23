@@ -498,16 +498,39 @@ const run = async () => {
   check('설정 최상단 내 투자 프로필 카드', /^💼 내 투자 프로필$/.test(settings.headings[0]) && settings.profileSeed === '$5,000', `${settings.headings[0]} · ${settings.profileSeed} · ${settings.profileStyle}`);
   check('매매 성향 표시(보수적)', /보수적 매매/.test(settings.profileStyle), settings.profileStyle);
   check('🔔 핸드폰 알림 유지 · 코인 알림 3택', settings.heading === '🔔 핸드폰 알림' && settings.targets.join('|') === '비트·이더·솔|주요 코인|전체 종목' && settings.targetOn === '주요 코인', settings.targets.join(' / '));
-  check('ntfy 토픽 유지 · 앱 버전 v1.4.0', settings.ntfy === 'bgss-hw3238-9f4k2m' && /COTA · 앱 v1\.4\.0/.test(settings.version || ''), `${settings.ntfy} · ${settings.version}`);
+  check('ntfy 토픽 유지 · 앱 버전 v1.5.0', settings.ntfy === 'bgss-hw3238-9f4k2m' && /COTA · 앱 v1\.5\.0/.test(settings.version || ''), `${settings.ntfy} · ${settings.version}`);
   check('설정에 FX 랏·벤티지·트웰브 데이터 없음', !settings.lotSection);
   check(
-    '실전 주문 리스크 설정 = 성향 추천 + 1/1.5/2/3/5%',
+    '실전 주문 리스크 설정 = 성향 추천 + 1/2/3/5/10/20/30/50% + 직접 입력',
     settings.risk.value === 'auto' &&
-      settings.risk.options.length === 6 &&
+      settings.risk.options.length === 10 &&
       /성향 추천 \(1\.5%\)/.test(settings.risk.options[0]) &&
-      settings.risk.options.slice(1).join('|') === '시드의 1%|시드의 1.5%|시드의 2%|시드의 3%|시드의 5%',
+      settings.risk.options.slice(1, 9).join('|') === '시드의 1%|시드의 2%|시드의 3%|시드의 5%|시드의 10%|시드의 20%|시드의 30%|시드의 50%' &&
+      settings.risk.options[9] === '직접 입력',
     `${settings.risk.value} · ${settings.risk.options.join(' / ')}`,
   );
+  // 50% 리스크 + 직접 입력 → 고위험 경고 · 콕핏 수량 반영
+  await page.selectOption('#settings-profile .risk-pill select', '50');
+  await page.waitForTimeout(300);
+  const risk50 = await page.evaluate(() => ({
+    warning: !!document.querySelector('#settings-profile [data-risk-warning]'),
+    text: document.querySelector('#settings-profile [data-risk-warning]')?.textContent?.trim() ?? '',
+    stored: JSON.parse(localStorage.getItem('bgss.settings.v1') || '{}').riskPct,
+  }));
+  check('리스크 50% 선택 → 고위험 경고 표시', risk50.warning && /고위험 설정/.test(risk50.text) && risk50.stored === 50, risk50.text);
+  await page.selectOption('#settings-profile .risk-pill select', 'custom');
+  await page.waitForTimeout(250);
+  const customInput = page.locator('#settings-profile [data-risk-input]');
+  const customExists = (await customInput.count()) === 1;
+  if (customExists) {
+    await customInput.fill('12.5');
+    await page.waitForTimeout(250);
+  }
+  const custom = { exists: customExists, value: customExists ? await customInput.inputValue() : '' };
+  const customStored = await page.evaluate(() => JSON.parse(localStorage.getItem('bgss.settings.v1') || '{}').riskPct);
+  check('직접 입력 12.5% 저장', custom.exists && customStored === 12.5, `input=${custom.value} · 저장=${customStored}`);
+  await page.selectOption('#settings-profile .risk-pill select', 'auto');
+  await page.waitForTimeout(200);
   check('설정 탭 가로 오버플로 0건', !settings.overflow);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(300);

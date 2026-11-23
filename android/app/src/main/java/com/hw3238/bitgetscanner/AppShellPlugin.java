@@ -603,4 +603,313 @@ public class AppShellPlugin extends Plugin {
         }
         return file.getAbsolutePath();
     }
+
+    /* ------------------------------------------------------------------ *
+     * 🤖 비트겟 자동매매 (v1.5.0+) — Private API 는 여기(네이티브)에서만 서명한다.
+     *    웹에는 마스킹된 키 상태 · 잔고 · 포지션 · 주문 결과만 돌려준다.
+     * ------------------------------------------------------------------ */
+
+    private String errorText(Exception e) {
+        if (e instanceof BitgetApi.ApiException) return ((BitgetApi.ApiException) e).friendly();
+        String msg = e.getMessage();
+        return msg == null || msg.isEmpty() ? "알 수 없는 오류" : msg;
+    }
+
+    /** 실패해도 화면이 상태를 그릴 수 있도록 ok:false 로 resolve 한다. */
+    private void resolveAccount(PluginCall call, BitgetApi.Keys keys) {
+        try {
+            org.json.JSONObject acc = BitgetApi.accounts(keys);
+            String posMode;
+            try {
+                posMode = BitgetApi.holdMode(keys, "BTCUSDT");
+            } catch (Exception e) {
+                posMode = "one_way_mode";
+            }
+            JSObject ret = new JSObject();
+            ret.put("ok", true);
+            ret.put("demo", keys.demo);
+            ret.put("equity", acc.optDouble("equity", 0));
+            ret.put("available", acc.optDouble("available", 0));
+            ret.put("unrealizedPL", acc.optDouble("unrealizedPL", 0));
+            ret.put("posMode", posMode);
+            double equity = acc.optDouble("equity", 0);
+            if (equity > 0) {
+                AutoTradeStore.setSnapshot(
+                    getContext(),
+                    System.currentTimeMillis(),
+                    equity,
+                    AutoTradeStore.lastPositions(getContext())
+                );
+                if (AutoTradeStore.dayStartEquity(getContext()) <= 0) {
+                    AutoTradeStore.setDay(getContext(), AutoTradeStore.todayKst(), equity);
+                }
+            }
+            call.resolve(ret);
+        } catch (Exception e) {
+            JSObject ret = new JSObject();
+            ret.put("ok", false);
+            ret.put("error", errorText(e));
+            if (e instanceof BitgetApi.ApiException) ret.put("code", ((BitgetApi.ApiException) e).code);
+            call.resolve(ret);
+        }
+    }
+
+    @PluginMethod
+    public void bitgetSaveKeys(PluginCall call) {
+        String apiKey = call.getString("apiKey", "");
+        String secret = call.getString("secret", "");
+        String passphrase = call.getString("passphrase", "");
+        boolean demo = call.getBoolean("demo", true);
+        if (apiKey == null || apiKey.trim().isEmpty()
+            || secret == null || secret.trim().isEmpty()
+            || passphrase == null || passphrase.trim().isEmpty()) {
+            call.reject("API Key · Secret · Passphrase를 모두 입력해 주세요.");
+            return;
+        }
+        AutoTradeStore.saveKeys(getContext(), apiKey, secret, passphrase, demo);
+        AutoTradeStore.addLog(getContext(), "info", "API 키 저장 — " + (demo ? "모의투자" : "실거래") + " (기기 안에만 저장)");
+        call.resolve(toJsObject(AutoTradeStore.keyState(getContext())));
+    }
+
+    @PluginMethod
+    public void bitgetHasKeys(PluginCall call) {
+        call.resolve(toJsObject(AutoTradeStore.keyState(getContext())));
+    }
+
+    @PluginMethod
+    public void bitgetClearKeys(PluginCall call) {
+        stopAutoTradeService();
+        AutoTradeStore.clearKeys(getContext());
+        AutoTradeStore.savePlans(getContext(), new org.json.JSONArray());
+        AutoTradeStore.clearTraded(getContext());
+        AutoTradeStore.addLog(getContext(), "info", "API 키 삭제 — 자동매매를 껐습니다.");
+        call.resolve(toJsObject(AutoTradeStore.keyState(getContext())));
+    }
+
+    @PluginMethod
+    public void bitgetTestConnection(PluginCall call) {
+        final BitgetApi.Keys keys = AutoTradeStore.keys(getContext());
+        if (keys == null) {
+            JSObject ret = new JSObject();
+            ret.put("ok", false);
+            ret.put("error", "API 키가 저장되어 있지 않습니다.");
+            call.resolve(ret);
+            return;
+        }
+        new Thread(() -> resolveAccount(call, keys)).start();
+    }
+
+    @PluginMethod
+    public void bitgetGetPositions(PluginCall call) {
+        final BitgetApi.Keys keys = AutoTradeStore.keys(getContext());
+        if (keys == null) {
+            JSObject ret = new JSObject();
+            ret.put("ok", false);
+            ret.put("positions", new org.json.JSONArray());
+            ret.put("error", "API 키가 저장되어 있지 않습니다.");
+            call.resolve(ret);
+            return;
+        }
+        new Thread(() -> {
+            try {
+                org.json.JSONArray positions = BitgetApi.positions(keys);
+                JSObject ret = new JSObject();
+                ret.put("ok", true);
+                ret.put("positions", positions);
+                AutoTradeStore.setSnapshot(
+                    getContext(),
+                    System.currentTimeMillis(),
+                    AutoTradeStore.lastEquity(getContext()),
+                    positions.length()
+                );
+                call.resolve(ret);
+            } catch (Exception e) {
+                JSObject ret = new JSObject();
+                ret.put("ok", false);
+                ret.put("positions", new org.json.JSONArray());
+                ret.put("error", errorText(e));
+                call.resolve(ret);
+            }
+        }).start();
+    }
+
+    /**
+     * 주문 — 레버리지 설정 후 시장가(+TP/SL) 주문.
+     * body 는 웹이 만든 파라미터(PlaceOrderParams)를 그대로 쓰고, 포지션 모드(hedge)만 여기서 보정한다.
+     */
+    @PluginMethod
+    public void bitgetPlaceOrder(PluginCall call) {
+        final BitgetApi.Keys keys = AutoTradeStore.keys(getContext());
+        final String symbol = call.getString("symbol", "");
+        if (keys == null) {
+            call.reject("API 키가 연결되지 않았습니다.");
+            return;
+        }
+        if (symbol == null || symbol.isEmpty()) {
+            call.reject("symbol required");
+            return;
+        }
+        final int leverage = Math.max(1, Math.min(25, call.getInt("leverage", 1)));
+        final String declaredMode = call.getString("holdMode", "");
+        final String requestedSide = call.getString("side", "buy");
+        final String orderType = call.getString("orderType", "market");
+        final String price = call.getString("price", "");
+        final String size = call.getString("size", "");
+        final String clientOid = call.getString("clientOid", "");
+        final String tradeSideParam = call.getString("tradeSide", "");
+        final String tp = call.getString("presetStopSurplusPrice", "");
+        final String sl = call.getString("presetStopLossPrice", "");
+        final String reduceOnly = call.getString("reduceOnly", "");
+
+        new Thread(() -> {
+            try {
+                if (size == null || size.isEmpty()) throw new Exception("주문 수량이 비어 있습니다.");
+                String posMode = declaredMode == null ? "" : declaredMode;
+                if (posMode.isEmpty()) {
+                    try {
+                        posMode = BitgetApi.holdMode(keys, symbol);
+                    } catch (Exception e) {
+                        posMode = "one_way_mode";
+                    }
+                }
+                boolean hedge = posMode != null && posMode.toLowerCase(Locale.ROOT).contains("hedge");
+
+                org.json.JSONObject body = new org.json.JSONObject();
+                body.put("symbol", symbol);
+                body.put("productType", BitgetApi.PRODUCT);
+                body.put("marginMode", call.getString("marginMode", "isolated"));
+                body.put("marginCoin", call.getString("marginCoin", BitgetApi.MARGIN_COIN));
+                body.put("size", size);
+                body.put("side", requestedSide);
+                body.put("orderType", orderType);
+                if ("limit".equals(orderType) && price != null && !price.isEmpty()) {
+                    body.put("price", price);
+                    body.put("force", "gtc");
+                }
+                if (clientOid != null && !clientOid.isEmpty()) body.put("clientOid", clientOid);
+                if (hedge) {
+                    body.put("tradeSide", tradeSideParam == null || tradeSideParam.isEmpty() ? "open" : tradeSideParam);
+                }
+                if (reduceOnly != null && !reduceOnly.isEmpty()) body.put("reduceOnly", reduceOnly);
+                if (tp != null && !tp.isEmpty()) body.put("presetStopSurplusPrice", tp);
+                if (sl != null && !sl.isEmpty()) body.put("presetStopLossPrice", sl);
+
+                String holdSide = null;
+                if (hedge) holdSide = "buy".equals(requestedSide) ? "long" : "short";
+                BitgetApi.setLeverage(keys, symbol, String.valueOf(leverage), holdSide);
+
+                org.json.JSONObject res = BitgetApi.placeOrder(keys, body);
+                JSObject ret = new JSObject();
+                ret.put("ok", true);
+                ret.put("orderId", res.optString("orderId", ""));
+                ret.put("clientOid", res.optString("clientOid", clientOid));
+                ret.put("tradeSide", hedge ? body.optString("tradeSide") : "");
+                call.resolve(ret);
+            } catch (Exception e) {
+                JSObject ret = new JSObject();
+                ret.put("ok", false);
+                ret.put("error", errorText(e));
+                if (e instanceof BitgetApi.ApiException) ret.put("code", ((BitgetApi.ApiException) e).code);
+                call.resolve(ret);
+            }
+        }).start();
+    }
+
+    @PluginMethod
+    public void autoTradeStart(PluginCall call) {
+        String config = call.getString("config", "");
+        String plans = call.getString("plans", "");
+        try {
+            if (config != null && !config.isEmpty()) AutoTradeStore.saveConfig(getContext(), new org.json.JSONObject(config));
+            if (plans != null && !plans.isEmpty()) AutoTradeStore.savePlans(getContext(), new org.json.JSONArray(plans));
+        } catch (Exception e) {
+            call.reject("설정을 읽을 수 없습니다: " + e.getMessage());
+            return;
+        }
+        Intent intent = new Intent(getContext(), AutoTradeService.class);
+        intent.setAction(AutoTradeService.ACTION_START);
+        intent.putExtra(AutoTradeService.EXTRA_CONFIG, config);
+        intent.putExtra(AutoTradeService.EXTRA_PLANS, plans);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ContextCompat.startForegroundService(getContext(), intent);
+            } else {
+                getContext().startService(intent);
+            }
+            AutoTradeStore.setRunning(getContext(), true);
+            AutoTradeStore.addLog(getContext(), "info", "자동매매 감시 시작 (" + (AutoTradeStore.isDemo(getContext()) ? "모의투자" : "실거래") + ")");
+        } catch (Exception e) {
+            call.reject("감시 서비스를 시작하지 못했습니다: " + e.getMessage());
+            return;
+        }
+        call.resolve(toJsObject(AutoTradeStore.status(getContext())));
+    }
+
+    @PluginMethod
+    public void autoTradeStop(PluginCall call) {
+        stopAutoTradeService();
+        org.json.JSONObject config = AutoTradeStore.config(getContext());
+        try {
+            config.put("enabled", false);
+            AutoTradeStore.saveConfig(getContext(), config);
+        } catch (Exception ignored) {
+            /* 설정을 못 쓰더라도 서비스는 멈춘다 */
+        }
+        call.resolve(toJsObject(AutoTradeStore.status(getContext())));
+    }
+
+    @PluginMethod
+    public void autoTradeSync(PluginCall call) {
+        String config = call.getString("config", "");
+        String plans = call.getString("plans", "");
+        try {
+            if (config != null && !config.isEmpty()) AutoTradeStore.saveConfig(getContext(), new org.json.JSONObject(config));
+            if (plans != null && !plans.isEmpty()) AutoTradeStore.savePlans(getContext(), new org.json.JSONArray(plans));
+        } catch (Exception e) {
+            call.reject("감시 목록을 저장하지 못했습니다: " + e.getMessage());
+            return;
+        }
+        if (AutoTradeStore.running(getContext())) {
+            Intent intent = new Intent(getContext(), AutoTradeService.class);
+            intent.setAction(AutoTradeService.ACTION_SYNC);
+            try {
+                getContext().startService(intent);
+            } catch (Exception ignored) {
+                /* 서비스가 이미 종료됐으면 다음 시작에서 반영된다 */
+            }
+        }
+        call.resolve(toJsObject(AutoTradeStore.status(getContext())));
+    }
+
+    @PluginMethod
+    public void autoTradeStatus(PluginCall call) {
+        call.resolve(toJsObject(AutoTradeStore.status(getContext())));
+    }
+
+    /** org.json.JSONObject → Capacitor JSObject (call.resolve 는 JSObject 만 받는다) */
+    private JSObject toJsObject(org.json.JSONObject obj) {
+        JSObject out = new JSObject();
+        if (obj == null) return out;
+        java.util.Iterator<String> keys = obj.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            try {
+                out.put(key, obj.get(key));
+            } catch (Exception ignored) {
+                /* 값 하나를 못 옮겨도 나머지는 돌려준다 */
+            }
+        }
+        return out;
+    }
+
+    private void stopAutoTradeService() {
+        try {
+            Intent intent = new Intent(getContext(), AutoTradeService.class);
+            intent.setAction(AutoTradeService.ACTION_STOP);
+            getContext().startService(intent);
+        } catch (Exception ignored) {
+            /* 서비스가 없으면 그만 */
+        }
+        AutoTradeStore.setRunning(getContext(), false);
+    }
 }

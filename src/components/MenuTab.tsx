@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import type { ScanState } from '../hooks/useScanner';
+import type { AutoTradeApi } from '../hooks/useAutoTrade';
+import type { Signal } from '../engine/types';
 import type { Profile } from '../lib/profile';
 import type { SwapLogEntry } from '../lib/storage';
+import { AutoTradeTab } from './AutoTradeTab';
 import { EngineTab } from './EngineTab';
 import { KimchiRadar } from './KimchiRadar';
 import { KeyMatchRadar } from './KeyMatchRadar';
@@ -10,7 +13,7 @@ import { PositionSurvival } from './PositionSurvival';
 import { SizingCalc } from './SizingCalc';
 import { FeeCalc } from './FeeCalc';
 
-export type MenuView = 'kimchi' | 'lag' | 'doppel' | 'survival' | 'sizing' | 'fee' | 'engine';
+export type MenuView = 'auto' | 'kimchi' | 'lag' | 'doppel' | 'survival' | 'sizing' | 'fee' | 'engine';
 
 interface MenuItem {
   key: MenuView;
@@ -98,9 +101,13 @@ interface Props {
   swapLog: SwapLogEntry[];
   onRescan: () => void;
   onClearLog: () => void;
+  /** 🤖 자동매매 상태·화면 */
+  autoTrade: AutoTradeApi;
+  signals: Signal[];
 }
 
 const TITLES: Record<MenuView, string> = {
+  auto: '비트겟 자동매매',
   kimchi: '김프 & 송금 레이더',
   lag: '키맞추기 레이더',
   doppel: '차트 도플갱어',
@@ -110,7 +117,7 @@ const TITLES: Record<MenuView, string> = {
   engine: '전략 엔진',
 };
 
-export function MenuTab({ state, profile, leverage, swapLog, onRescan, onClearLog }: Props) {
+export function MenuTab({ state, profile, leverage, swapLog, onRescan, onClearLog, autoTrade, signals }: Props) {
   const [view, setView] = useState<MenuView | null>(null);
 
   if (view) {
@@ -122,6 +129,7 @@ export function MenuTab({ state, profile, leverage, swapLog, onRescan, onClearLo
           </button>
           <b>{TITLES[view]}</b>
         </div>
+        {view === 'auto' && <AutoTradeTab api={autoTrade} signals={signals} profile={profile} />}
         {view === 'kimchi' && <KimchiRadar state={state} />}
         {view === 'lag' && <KeyMatchRadar state={state} />}
         {view === 'doppel' && <Doppelganger state={state} />}
@@ -142,14 +150,37 @@ export function MenuTab({ state, profile, leverage, swapLog, onRescan, onClearLo
           <div>
             <div className="menu-hero-eyebrow">COTA 트레이더 올인원</div>
             <h2>시장 · 리스크 · 분석</h2>
-            <p>코인 트레이더가 매일 쓰는 7가지 도구를 한 곳에 모았습니다.</p>
+            <p>코인 트레이더가 매일 쓰는 8가지 도구를 한 곳에 모았습니다.</p>
           </div>
           <div className="menu-hero-count">
-            <b>7</b>
+            <b>8</b>
             <span>tools</span>
           </div>
         </div>
       </section>
+
+      <button
+        type="button"
+        className={`menu-auto ${autoTrade.config.enabled ? (autoTrade.config.mode === 'live' ? 'live' : 'demo') : 'off'}`}
+        onClick={() => setView('auto')}
+        data-menu="auto"
+      >
+        <span className="menu-auto-emoji">🤖</span>
+        <span className="menu-auto-copy">
+          <b>
+            비트겟 자동매매 <i className="menu-hot">NEW</i>
+          </b>
+          <span>시그널을 24시간 감시해 TP/SL 포함 자동 주문 · 1일 손실 한도</span>
+          <em className={`menu-auto-badge ${autoTrade.config.enabled ? (autoTrade.config.mode === 'live' ? 'live' : 'demo') : 'off'}`} data-auto-menu-badge>
+            {autoTrade.config.enabled
+              ? autoTrade.config.mode === 'live'
+                ? '실거래 가동 중'
+                : '모의투자 가동 중'
+              : '꺼짐'}
+          </em>
+        </span>
+        <span className="menu-arrow">›</span>
+      </button>
 
       {GROUPS.map((g) => (
         <section key={g.title} className="menu-group">

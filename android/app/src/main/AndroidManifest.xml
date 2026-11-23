@@ -29,6 +29,12 @@
 
         </activity>
 
+        <!-- 🤖 24시간 자동매매 감시 서비스 (v1.5.0+) -->
+        <service
+            android:name=".AutoTradeService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -49,4 +55,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- 앱 안에서 새 APK를 내려받아 바로 설치(v1.4.0+) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 🤖 자동매매: 화면이 꺼져 있어도 감시(포그라운드 데이터 동기화) · 주기 작업 중 CPU 유지 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 </manifest>

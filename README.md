@@ -7,10 +7,22 @@
 | --- | --- |
 | 웹 (GitHub Pages) | <https://hw3238.github.io/bitget-signal-scanner/> |
 | APK 다운로드 | <https://github.com/hw3238/bitget-signal-scanner/releases/latest/download/bitget-crt-scanner.apk> |
-| 현재 버전 | **v1.4.0** (versionCode 5) |
+| 현재 버전 | **v1.5.0** (versionCode 6) |
 
 ## 주요 기능
 
+- **🤖 비트겟 자동매매(v1.5.0)** — `메뉴 → 🤖 비트겟 자동매매`.
+  - **네이티브 Private API 브리지**: 웹뷰 CORS를 우회해 안드로이드에서 비트겟 v2를 직접 호출합니다.
+    서명은 `Base64(HMAC-SHA256(secret, timestamp+METHOD+requestPath+body))` + `ACCESS-KEY/SIGN/TIMESTAMP/PASSPHRASE`,
+    모의투자는 `paptrading: 1`. **API 키는 기기 안(SharedPreferences)에만 저장**되고 Secret은 웹뷰로 내려오지 않습니다(화면엔 마스킹).
+  - **24시간 감시**: 자동매매를 켜면 포그라운드 서비스가 상단 고정 알림(`COTA 자동매매 · 모의투자/실거래`)과 함께
+    웹 엔진이 넘긴 감시 목록(진입가·손절가·목표가·수량·만료)의 **진입가 터치 · 손절 이탈 · 유효시간**을 주기(기본 60초)로 확인하고,
+    통과하면 **레버리지 설정 → 시장가 주문 + TP/SL 동시 설정**까지 자동으로 넣습니다.
+  - **안전장치**: 기본값 `OFF + 모의투자` · 1회 리스크(0.5~50%) · 최대 동시 포지션(기본 2) · **1일 손실 한도**(기본 4.5%, 0=끄기, 최대 100%)
+    · 허용 종목(메이저 4종/전체) · 최소 승률·손익비 · 레버리지 상한 · **중복 진입 방지**(시그널 키) · 긴급 `⏹ 즉시 중지`.
+    한도에 닿으면 그날 자동 진입을 스스로 멈추고 알립니다. 1회 리스크 10% 이상은 `⚠️ 고위험 설정` 경고를 띄웁니다.
+  - **시그널 카드 `⚡ 원클릭 주문`**: 카드에서 바로 모의/실거래 주문(수량은 시드×리스크%÷손절거리, 거래소 수량 단위로 내림).
+  - 브라우저(웹 배포본)에서는 같은 규칙으로 **모의 시뮬레이션**만 돌려 어떤 시그널이 왜 통과/거부되는지 로그로 확인합니다(실제 주문·키 저장 불가).
 - **스캔 속도(v1.4.0)** — 164개 마켓을 **2단계 우선 스캔**합니다. 즐겨찾기 종목 + 비트·이더·솔을 맨 앞에 두어
   **첫 시그널이 2초 안에** 뜨고, 나머지 마켓이 이어서 채워집니다. 캔들 캐시(1H 90초 · 4H 180초 TTL)와
   분석 결과 재사용으로 자동 갱신은 **티커만 새로 받아 0.3~0.5초**에 현재가·수익률을 갱신합니다.
@@ -74,7 +86,7 @@
   - **전략별 성적** — 전략명·건수·승률·누적 R 을 누적 R 순으로. "요즘 어떤 전략이 먹히는지" 바로 확인
   - 같은 캔들이 중복 기록돼도 한 건으로 정리해 승률·곡선이 부풀지 않습니다.
 - **설정** — 🔔 핸드폰 알림(비트·이더·솔 / 주요 코인 / 전체 종목), ntfy 외부 푸시(`bgss-hw3238-9f4k2m`),
-  레버리지 모드·최소 손익비·자동 갱신, 앱 버전/업데이트.
+  레버리지 모드·최소 손익비·자동 갱신, **실전 주문 리스크(성향 추천 / 1·2·3·5·10·20·30·50% / 직접 입력 0.5~50%)**, 앱 버전/업데이트.
 - **앱 안에서 바로 업데이트(v1.4.0)** — 새 APK가 있으면 상단 배너·설정의 `바로 업데이트 (vX.Y.Z)` 버튼이
   앱을 나가지 않고 APK를 내려받아(진행률 % 표시) 안드로이드 설치 화면을 엽니다. Android 8.0+ 에서
   "출처를 알 수 없는 앱 설치"가 꺼져 있으면 설정 화면으로 안내하고, 허용 후 다시 누르면 이어서 설치합니다.
@@ -96,7 +108,9 @@ npm run build      # tsc + vite build → dist/
 npm run build
 npm run check:stops                 # 손절폭 상한(1H 3.5% / 4H 4.5%) 회귀
 npm run check:calc                  # 김프·청산가·물타기·사이징·수수료·피어슨·도플갱어·괴리 단위 검증(49건)
-npm run check:cockpit               # 실전 주문 콕핏(수량·증거금·거래소 주문 단위·가격 라벨 배치) 39건
+npm run check:cockpit               # 실전 주문 콕핏(수량·증거금·거래소 주문 단위·가격 라벨 배치·리스크 50%) 47건
+npm run check:autotrade             # 자동매매 단위 — 서명(OpenSSL 벡터)·수량·포지션모드·안전장치·리스크 50% 99건
+node scripts/autotrade-e2e.mjs      # 자동매매 E2E — 키 연결·가동·체결/차단 로그·한도 잠금·원클릭 주문 (스크린샷 54~59)
 npm run check:journal               # 매매 복기 집계(승률·누적 R·MDD·연승/연패·전략별·중복 기록) 44건
 node scripts/journal-e2e.mjs        # 기록 대시보드 E2E — 세그먼트·곡선 색/클리핑·전략표·복기 메모·원탭 진입 (스크린샷 47~51)
 node scripts/features-check.mjs     # 메뉴 7도구·김프·생존·사이징·수수료·도플갱어·키맞추기·시황 카드 E2E (스크린샷 25~36)
@@ -133,7 +147,7 @@ cd android && ./gradlew assembleDebug   # → app/build/outputs/apk/debug/app-de
 
 ```
 src/
-  components/   SignalCard · CoinLogo · ScannerTab · MarketTab · EngineTab · HistoryTab · SettingsTab
+  components/   SignalCard · CoinLogo · ScannerTab · MarketTab · EngineTab · HistoryTab · SettingsTab · AutoTradeTab
                 MenuTab(허브) · KimchiRadar · KeyMatchRadar · Doppelganger · PositionSurvival
                 SizingCalc · FeeCalc · ImageCardModal · cardKit · marketBriefCard · survivalCard · doppelCard
                 ShareModal · OnboardingModal · MiniCandles · BottomNav · shareCard(canvas)

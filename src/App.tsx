@@ -11,6 +11,7 @@ import logoUrl from './assets/cota-logo.png';
 import { RefreshIcon } from './components/Icons';
 import type { Signal } from './engine/types';
 import { useFavorites } from './hooks/useFavorites';
+import { useAutoTrade } from './hooks/useAutoTrade';
 import { useMyTrades } from './hooks/useMyTrades';
 import { useScanner } from './hooks/useScanner';
 import { fmtTime } from './lib/format';
@@ -47,6 +48,25 @@ export default function App() {
   const { state, history, swapLog, scan, clearHistory, clearSwapLog } = useScanner({
     refreshSec: settings.refreshSec,
     favoriteSymbols,
+  });
+
+  /** 전략엔진·기록처럼 시그널별 계산이 아닌 화면에 쓰는 대표 배율 */
+  const repLeverage =
+    settings.leverageMode === 'auto' && profile
+      ? profile.style === 'aggressive'
+        ? 15
+        : 3
+      : settings.leverage;
+
+  /** 🤖 비트겟 자동매매 — 시그널·프로필·계약 단위로 수량을 계산해 앱 네이티브에 주문을 맡긴다 */
+  const autoTrade = useAutoTrade({
+    signals: state.signals,
+    profile,
+    contracts: state.contracts,
+    leverageFor: (signal) =>
+      settings.leverageMode === 'auto' && profile
+        ? recommendLeverage(signal, profile.style).leverage
+        : settings.leverage,
   });
 
   // 🔔 새 시그널 → 핸드폰 알림 (첫 스캔 결과는 기준선으로만 기록)
@@ -128,13 +148,6 @@ export default function App() {
   }, [state]);
 
   const openCount = state.signals.filter((s) => s.state === 'open' && s.asset !== 'fx').length;
-  /** 전략엔진·기록처럼 시그널별 계산이 아닌 화면에 쓰는 대표 배율 */
-  const repLeverage =
-    settings.leverageMode === 'auto' && profile
-      ? profile.style === 'aggressive'
-        ? 15
-        : 3
-      : settings.leverage;
   const shareLeverage =
     shareSignal && settings.leverageMode === 'auto' && profile
       ? recommendLeverage(shareSignal, profile.style).leverage
@@ -241,6 +254,13 @@ export default function App() {
             profile={profile}
             myTrades={myTrades.entries}
             onToggleMyTrade={myTrades.toggle}
+            onQuickOrder={(s) => {
+              void autoTrade.quickOrder(s).then((res) => {
+                if (!res.ok) window.alert(res.message);
+              });
+            }}
+            quickOrderMode={autoTrade.config.mode}
+            quickOrderSymbol={autoTrade.busy?.startsWith('order:') ? autoTrade.busy.slice(6) : null}
           />
         )}
         {tab === 'market' && <MarketTab state={state} onRescan={() => void scan(true)} />}
@@ -252,6 +272,8 @@ export default function App() {
             swapLog={swapLog}
             onRescan={() => void scan(true)}
             onClearLog={clearSwapLog}
+            autoTrade={autoTrade}
+            signals={state.signals}
           />
         )}
         {tab === 'history' && (

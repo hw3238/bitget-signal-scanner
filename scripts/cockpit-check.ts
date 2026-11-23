@@ -4,6 +4,10 @@
  */
 import {
   RISK_MAX,
+  RISK_MIN,
+  RISK_PRESETS,
+  clampRiskInput,
+  isHighRisk,
   copyPriceText,
   copyQtyText,
   defaultRiskPct,
@@ -32,7 +36,11 @@ check('보수적 기본 리스크 1.5%', defaultRiskPct('conservative') === 1.5)
 check('공격적 기본 리스크 3%', defaultRiskPct('aggressive') === 3);
 check('설정값이 있으면 그 값을 쓴다', resolveRiskPct('conservative', 2) === 2);
 check('설정값 null → 성향 기본값', resolveRiskPct('aggressive', null) === 3);
-check('리스크 상한 20%로 제한', resolveRiskPct('aggressive', 50) === RISK_MAX);
+check('리스크 상한 50%로 확장', resolveRiskPct('aggressive', 50) === RISK_MAX && RISK_MAX === 50);
+check('리스크 하한 0.5%', resolveRiskPct('conservative', 0.1) === RISK_MIN && RISK_MIN === 0.5);
+check('프리셋에 10/20/30/50% 포함', RISK_PRESETS.includes(10) && RISK_PRESETS.includes(20) && RISK_PRESETS.includes(30) && RISK_PRESETS.includes(50));
+check('직접 입력 0.5~50% 클램프', clampRiskInput(70) === 50 && clampRiskInput(0.2) === 0.5 && clampRiskInput(12.34) === 12.3);
+check('10% 이상 고위험 표시', isHighRisk(10) && isHighRisk(50) && !isHighRisk(9.9));
 check('0·음수 설정은 기본값으로', resolveRiskPct('conservative', 0) === 1.5 && resolveRiskPct('conservative', -3) === 1.5);
 
 /* 2) 롱 주문 계획 */
@@ -45,6 +53,13 @@ check('롱: 손절 손익 = −손실금', near(long.stopLossUsd, -20) && near(l
 check('롱: 목표 수익 = 수량 × 목표거리', near(long.profitUsd, 60) && near(long.profitRoiPct, 6));
 check('롱: 손익비·거리%', near(long.rr, 3) && near(long.stopDistPct, 5) && near(long.targetDistPct, 15));
 check('롱: 시드보다 증거금이 작음', !long.overSeed);
+
+/* 2-1) 1회 리스크 50% — 수량·손실·증거금이 그대로 비례하는지 */
+const half = planOrder({ seed: 1000, riskPct: 50, leverage: 10, side: 'long', entry: 100, stop: 95, target: 115 });
+check('리스크 50%: 손실금 = 시드의 절반', near(half.riskUsd, 500));
+check('리스크 50%: 수량 100 · 규모 10,000', near(half.qty, 100) && near(half.notional, 10000));
+check('리스크 50%: 필요 증거금 1,000 (시드와 동일 → 경고 없음)', near(half.margin, 1000) && !half.overSeed);
+check('리스크 50%: 손실률 −50%', near(half.lossRoiPct, -50));
 
 /* 3) 숏 주문 계획 */
 const short = planOrder({ seed: 1000, riskPct: 1, leverage: 10, side: 'short', entry: 100, stop: 104, target: 90 });

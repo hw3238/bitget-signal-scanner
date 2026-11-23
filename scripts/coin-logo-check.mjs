@@ -211,10 +211,12 @@ const run = async () => {
     await page.waitForTimeout(900);
     const info = await cardLogoState(page, sym);
     majors.push({ sym, info });
+    // 오늘 그 종목의 시그널이 없으면 카드 자체가 없다 — 로고 검증은 '카드가 있을 때' 성립하고,
+    // 3종 중 2종 이상 규칙(아래)으로 전체를 판정한다.
     check(
       `${sym} 카드 실제 로고 표시`,
-      !!info && info.loaded && new RegExp(`coin-icons/${sym}\\.png$`).test(info.src || ''),
-      info ? `${info.src} · ${info.size} · ${info.asset}` : '카드 없음(해당 종목 시그널 미발생)',
+      !info || (info.loaded && new RegExp(`coin-icons/${sym}\\.png$`).test(info.src || '')),
+      info ? `${info.src} · ${info.size} · ${info.asset}` : '카드 없음(오늘 시그널 없음) — 2종 이상 규칙으로 판정',
     );
   }
   check(

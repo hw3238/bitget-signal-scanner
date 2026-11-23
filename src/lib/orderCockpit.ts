@@ -20,12 +20,18 @@ export const STYLE_RISK_PCT: Record<TradeStyle, number> = {
   aggressive: 3,
 };
 
-/** 설정 화면에서 고를 수 있는 리스크 비율(%) */
-export const RISK_PRESETS = [1, 1.5, 2, 3, 5] as const;
+/** 설정 화면에서 고를 수 있는 리스크 비율(%) — 50%까지(직접 입력도 0.5~50%) */
+export const RISK_PRESETS = [1, 2, 3, 5, 10, 20, 30, 50] as const;
 
-/** 리스크 비율 상·하한 — 오타로 시드 전체를 걸지 않게 막는다. */
-export const RISK_MIN = 0.1;
-export const RISK_MAX = 20;
+/** 리스크 비율 상·하한 — 0.5%~50%. 10% 이상은 화면에서 고위험으로 경고한다. */
+export const RISK_MIN = 0.5;
+export const RISK_MAX = 50;
+/** 이 값 이상이면 '고위험 설정' 안내를 띄운다 */
+export const RISK_HIGH_WARN = 10;
+
+/** 직접 입력 허용 범위 */
+export const RISK_INPUT_MIN = 0.5;
+export const RISK_INPUT_MAX = 50;
 
 export function defaultRiskPct(style: TradeStyle): number {
   return STYLE_RISK_PCT[style] ?? STYLE_RISK_PCT.conservative;
@@ -37,6 +43,17 @@ export function resolveRiskPct(style: TradeStyle, override?: number | null): num
     return Math.min(RISK_MAX, Math.max(RISK_MIN, override));
   }
   return defaultRiskPct(style);
+}
+
+/** 화면 입력값을 0.5~50% 안으로 정리한다(0.1 단위). */
+export function clampRiskInput(value: number): number {
+  if (!Number.isFinite(value)) return RISK_INPUT_MIN;
+  const snapped = Math.round(value * 10) / 10;
+  return Math.min(RISK_INPUT_MAX, Math.max(RISK_INPUT_MIN, snapped));
+}
+
+export function isHighRisk(riskPct: number | null | undefined): boolean {
+  return riskPct != null && Number.isFinite(riskPct) && riskPct >= RISK_HIGH_WARN;
 }
 
 /** 비트겟 USDT-M 계약의 주문 단위 정보 */

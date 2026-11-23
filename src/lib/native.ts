@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import type { PlaceOrderParams } from './autotrade';
 
 interface AppShellPlugin {
   saveImage(options: { base64: string; fileName: string }): Promise<{ uri: string }>;
@@ -24,6 +25,26 @@ interface AppShellPlugin {
     eventName: 'apkProgress',
     listener: (data: ApkProgress) => void,
   ): Promise<{ remove: () => Promise<void> }>;
+
+  /* ---------------- 🤖 비트겟 자동매매 (v1.5.0+) ---------------- */
+  /** API Key·Secret·Passphrase를 앱 전용 저장소(SharedPreferences)에 저장 — JS로 원문이 돌아오지 않는다 */
+  bitgetSaveKeys(options: { apiKey: string; secret: string; passphrase: string; demo: boolean }): Promise<BitgetKeyState>;
+  bitgetHasKeys(): Promise<BitgetKeyState>;
+  bitgetClearKeys(): Promise<BitgetKeyState>;
+  /** 키 유효성 + USDT 잔고 */
+  bitgetTestConnection(): Promise<BitgetAccount>;
+  bitgetGetPositions(): Promise<BitgetPositionsResult>;
+  bitgetPlaceOrder(options: PlaceOrderParams & { leverage: number; holdMode?: string }): Promise<BitgetOrderResult>;
+  /** 24시간 포그라운드 감시 서비스 */
+  autoTradeStart(options: { config: string; plans: string }): Promise<AutoTradeNativeStatus>;
+  autoTradeStop(): Promise<AutoTradeNativeStatus>;
+  /** 웹 엔진의 최신 설정·감시 목록을 서비스에 넘긴다 */
+  autoTradeSync(options: { config: string; plans: string }): Promise<AutoTradeNativeStatus>;
+  autoTradeStatus(): Promise<AutoTradeNativeStatus>;
+  addListener(
+    eventName: 'autoTradeEvent',
+    listener: (data: AutoTradeNativeStatus) => void,
+  ): Promise<{ remove: () => Promise<void> }>;
 }
 
 export interface ApkProgress {
@@ -38,6 +59,79 @@ export interface ApkInstallResult {
   needsPermission?: boolean;
   bytes?: number;
   path?: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * 🤖 비트겟 자동매매 브리지 타입
+ * ------------------------------------------------------------------ */
+
+export interface BitgetKeyState {
+  hasKeys: boolean;
+  demo: boolean;
+  /** 예: bg_9f3k••••••2c7d — 원문은 절대 JS로 오지 않는다 */
+  apiKeyMasked?: string;
+  passphraseSet?: boolean;
+  savedAt?: number;
+}
+
+export interface BitgetAccount {
+  ok: boolean;
+  demo?: boolean;
+  /** USDT 자산(equity) */
+  equity?: number;
+  available?: number;
+  unrealizedPL?: number;
+  /** 포지션 모드: one_way_mode / hedge_mode */
+  posMode?: string;
+  error?: string;
+  code?: string;
+}
+
+export interface BitgetPosition {
+  symbol: string;
+  holdSide: 'long' | 'short' | string;
+  total: number;
+  openPriceAvg: number;
+  markPrice: number;
+  unrealizedPL: number;
+  leverage: number;
+  marginSize: number;
+  liquidationPrice: number;
+  presetStopSurplusPrice?: number;
+  presetStopLossPrice?: number;
+  ctime: number;
+}
+
+export interface BitgetPositionsResult {
+  ok: boolean;
+  positions: BitgetPosition[];
+  error?: string;
+  code?: string;
+}
+
+export interface BitgetOrderResult {
+  ok: boolean;
+  orderId?: string;
+  clientOid?: string;
+  /** 서버가 돌려준 주문 파라미터(디버그용) */
+  tradeSide?: string;
+  error?: string;
+  code?: string;
+}
+
+export interface AutoTradeNativeStatus {
+  running: boolean;
+  /** 서비스가 살아 있는가(포그라운드 알림 표시 중) */
+  service?: boolean;
+  mode?: 'demo' | 'live';
+  armed?: number;
+  openPositions?: number;
+  equity?: number | null;
+  dailyPnl?: number | null;
+  dailyLocked?: boolean;
+  lastTickAt?: number;
+  log?: { at: number; level: string; text: string }[];
+  error?: string;
 }
 
 const AppShell = registerPlugin<AppShellPlugin>('AppShell');
@@ -178,4 +272,142 @@ export async function downloadAndInstallApk(
   } finally {
     if (handle) void handle.remove();
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * 🤖 비트겟 자동매매 (v1.5.0+)
+ *
+ *  Private API 서명·주문은 **안드로이드 네이티브**에서만 일어난다.
+ *  웹은 명령과 결과(마스킹·잔고·포지션·로그)만 주고받고, Secret은 웹뷰로 내려오지 않는다.
+ *  브라우저(웹 배포본)에서는 모든 함수가 `supported:false`로 끝나고, 화면은 모의 시뮬레이션으로 동작한다.
+ * ------------------------------------------------------------------ */
+
+export interface AutoTradeBridgeInfo {
+  supported: boolean;
+}
+
+/** 자동매매 브리지 사용 가능 여부 — 앱(APK)에서만 true */
+export function autoTradeSupported(): boolean {
+  return isNativeApp();
+}
+
+export interface SaveKeysResult extends BitgetKeyState {
+  supported: boolean;
+  error?: string;
+}
+
+export async function bitgetSaveKeys(input: {
+  apiKey: string;
+  secret: string;
+  passphrase: string;
+  demo: boolean;
+}): Promise<SaveKeysResult> {
+  if (!isNativeApp()) return { supported: false, hasKeys: false, demo: input.demo };
+  try {
+    const res = await AppShell.bitgetSaveKeys(input);
+    return { supported: true, ...res };
+  } catch (e) {
+    return { supported: true, hasKeys: false, demo: input.demo, error: errText(e) };
+  }
+}
+
+export async function bitgetKeyState(): Promise<BitgetKeyState & { supported: boolean }> {
+  if (!isNativeApp()) return { supported: false, hasKeys: false, demo: true };
+  try {
+    return { supported: true, ...(await AppShell.bitgetHasKeys()) };
+  } catch {
+    return { supported: true, hasKeys: false, demo: true };
+  }
+}
+
+export async function bitgetClearKeys(): Promise<BitgetKeyState & { supported: boolean }> {
+  if (!isNativeApp()) return { supported: false, hasKeys: false, demo: true };
+  try {
+    return { supported: true, ...(await AppShell.bitgetClearKeys()) };
+  } catch {
+    return { supported: true, hasKeys: false, demo: true };
+  }
+}
+
+export async function bitgetTestConnection(): Promise<BitgetAccount | null> {
+  if (!isNativeApp()) return null;
+  try {
+    return await AppShell.bitgetTestConnection();
+  } catch (e) {
+    return { ok: false, error: errText(e) };
+  }
+}
+
+export async function bitgetPositions(): Promise<BitgetPositionsResult> {
+  if (!isNativeApp()) return { ok: false, positions: [], error: '앱에서만 조회할 수 있습니다' };
+  try {
+    return await AppShell.bitgetGetPositions();
+  } catch (e) {
+    return { ok: false, positions: [], error: errText(e) };
+  }
+}
+
+export async function bitgetPlaceOrder(
+  params: PlaceOrderParams & { leverage: number; holdMode?: string },
+): Promise<BitgetOrderResult> {
+  if (!isNativeApp()) {
+    return { ok: false, error: '브라우저에서는 실제 주문을 넣을 수 없습니다 (모의 시뮬레이션만)' };
+  }
+  try {
+    return await AppShell.bitgetPlaceOrder(params);
+  } catch (e) {
+    return { ok: false, error: errText(e) };
+  }
+}
+
+export async function autoTradeStart(config: unknown, plans: unknown): Promise<AutoTradeNativeStatus | null> {
+  if (!isNativeApp()) return null;
+  try {
+    return await AppShell.autoTradeStart({ config: JSON.stringify(config), plans: JSON.stringify(plans) });
+  } catch (e) {
+    return { running: false, error: errText(e) };
+  }
+}
+
+export async function autoTradeStop(): Promise<AutoTradeNativeStatus | null> {
+  if (!isNativeApp()) return null;
+  try {
+    return await AppShell.autoTradeStop();
+  } catch (e) {
+    return { running: false, error: errText(e) };
+  }
+}
+
+export async function autoTradeSync(config: unknown, plans: unknown): Promise<AutoTradeNativeStatus | null> {
+  if (!isNativeApp()) return null;
+  try {
+    return await AppShell.autoTradeSync({ config: JSON.stringify(config), plans: JSON.stringify(plans) });
+  } catch (e) {
+    return { running: false, error: errText(e) };
+  }
+}
+
+export async function autoTradeStatus(): Promise<AutoTradeNativeStatus | null> {
+  if (!isNativeApp()) return null;
+  try {
+    return await AppShell.autoTradeStatus();
+  } catch {
+    return null;
+  }
+}
+
+export async function onAutoTradeEvent(
+  listener: (state: AutoTradeNativeStatus) => void,
+): Promise<{ remove: () => Promise<void> } | null> {
+  if (!isNativeApp()) return null;
+  try {
+    return await AppShell.addListener('autoTradeEvent', listener);
+  } catch {
+    return null;
+  }
+}
+
+function errText(e: unknown): string {
+  if (e && typeof e === 'object' && 'message' in e) return String((e as { message?: unknown }).message ?? e);
+  return String(e);
 }

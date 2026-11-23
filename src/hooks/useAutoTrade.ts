@@ -1,0 +1,596 @@
+/**
+ * 🤖 비트겟 자동매매 상태 훅.
+ *
+ *  - 설정·로그·중복 진입 키는 이 브라우저(localStorage)에 남는다.
+ *  - 실제 주문·감시는 앱(안드로이드) 네이티브가 맡는다. 브라우저에서는 같은 규칙으로
+ *    **모의 시뮬레이션**만 돌려, 어떤 시그널이 왜 통과/거부됐는지 로그로 확인할 수 있다.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Contract, Signal } from '../engine/types';
+import type { Profile } from '../lib/profile';
+import {
+  DEFAULTS,
+  LOG_LIMIT,
+  buildOrderParams,
+  checkDailyLoss,
+  clientOidFor,
+  emptyRuntime,
+  evaluateEntry,
+  fmtUsdt,
+  markTraded,
+  mergeArmedPlans,
+  normalizeConfig,
+  normalizePosMode,
+  planAutoOrder,
+  planSeed,
+  pushLog,
+  rollDay,
+  signalKeyOf,
+  symbolAllowed,
+  toArmedPlan,
+  type ArmedPlan,
+  type AutoLogEntry,
+  type AutoRuntime,
+  type AutoTradeConfig,
+  type EntryDecision,
+  type PlaceOrderParams,
+} from '../lib/autotrade';
+import {
+  autoTradeStart,
+  autoTradeStatus,
+  autoTradeStop,
+  autoTradeSupported,
+  autoTradeSync,
+  bitgetClearKeys,
+  bitgetKeyState,
+  bitgetPlaceOrder,
+  bitgetPositions,
+  bitgetSaveKeys,
+  bitgetTestConnection,
+  onAutoTradeEvent,
+  type AutoTradeNativeStatus,
+  type BitgetAccount,
+  type BitgetKeyState,
+  type BitgetPosition,
+} from '../lib/native';
+
+const CONFIG_KEY = 'cota.autotrade.config.v1';
+const RUNTIME_KEY = 'cota.autotrade.runtime.v1';
+
+function readConfig(): AutoTradeConfig {
+  try {
+    const raw = localStorage.getItem(CONFIG_KEY);
+    return normalizeConfig(raw ? (JSON.parse(raw) as Partial<AutoTradeConfig>) : DEFAULTS);
+  } catch {
+    return normalizeConfig(DEFAULTS);
+  }
+}
+
+function readRuntime(): AutoRuntime {
+  try {
+    const raw = localStorage.getItem(RUNTIME_KEY);
+    if (!raw) return emptyRuntime(Date.now());
+    const parsed = JSON.parse(raw) as Partial<AutoRuntime>;
+    const base = emptyRuntime(Date.now());
+    return {
+      ...base,
+      ...parsed,
+      logs: Array.isArray(parsed.logs) ? parsed.logs.slice(0, LOG_LIMIT) : [],
+      tradedKeys: Array.isArray(parsed.tradedKeys) ? parsed.tradedKeys.slice(-200) : [],
+    };
+  } catch {
+    return emptyRuntime(Date.now());
+  }
+}
+
+interface UseAutoTradeInput {
+  signals: Signal[];
+  profile: Profile | null;
+  contracts: Contract[];
+  /** 시그널별 적용 배율 (COTA 추천 / 고정) */
+  leverageFor: (signal: Signal) => number;
+}
+
+export interface QuickOrderResult {
+  ok: boolean;
+  message: string;
+  simulated: boolean;
+}
+
+export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAutoTradeInput) {
+  const [config, setConfig] = useState<AutoTradeConfig>(readConfig);
+  const [runtime, setRuntime] = useState<AutoRuntime>(readRuntime);
+  const [keys, setKeysState] = useState<BitgetKeyState & { supported: boolean }>({
+    supported: autoTradeSupported(),
+    hasKeys: false,
+    demo: true,
+  });
+  const [account, setAccount] = useState<BitgetAccount | null>(null);
+  const [positions, setPositions] = useState<BitgetPosition[]>([]);
+  const [native, setNative] = useState<AutoTradeNativeStatus | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+
+  const supported = autoTradeSupported();
+  const contractBySymbol = useMemo(() => {
+    const map = new Map<string, Contract>();
+    for (const c of contracts) map.set(c.symbol, c);
+    return map;
+  }, [contracts]);
+
+  const specFor = useCallback(
+    (symbol: string) => {
+      const c = contractBySymbol.get(symbol);
+      if (!c) return null;
+      return { minTradeNum: c.minTradeNum, volumePlace: c.volumePlace, minTradeUsdt: c.minTradeUsdt };
+    },
+    [contractBySymbol],
+  );
+
+  /** 로그 · 상태 저장 */
+  const log = useCallback((entry: AutoLogEntry) => {
+    setRuntime((prev) => pushLog(prev, entry));
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+  }, [config]);
+
+  useEffect(() => {
+    localStorage.setItem(RUNTIME_KEY, JSON.stringify(runtime));
+  }, [runtime]);
+
+  /** 감시 주기마다 화면의 '마지막 확인' 시간을 갱신 */
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((v) => v + 1), 5000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  /* ---------------- 키 · 계좌 ---------------- */
+
+  const refreshKeys = useCallback(async () => {
+    const state = await bitgetKeyState();
+    setKeysState(state);
+    return state;
+  }, []);
+
+  const testConnection = useCallback(async () => {
+    if (!supported) {
+      setError('브라우저에서는 실제 계좌 연결을 시험할 수 없습니다. COTA 안드로이드 앱(v1.5.0+)에서 사용하세요.');
+      return null;
+    }
+    setBusy('test');
+    setError(null);
+    const res = await bitgetTestConnection();
+    setBusy(null);
+    if (!res) {
+      setError('네이티브 연결에 실패했습니다.');
+      return null;
+    }
+    setAccount(res);
+    if (res.ok) {
+      const equity = res.equity ?? 0;
+      setRuntime((prev) => rollDay(prev, Date.now(), equity));
+      log({
+        at: Date.now(),
+        level: 'info',
+        text: `계좌 연결 확인 — ${res.demo ? '모의투자' : '실거래'} · USDT ${fmtUsdt(equity)} · 포지션 모드 ${
+          normalizePosMode(res.posMode) === 'hedge_mode' ? '헤지' : '단방향'
+        }`,
+      });
+    } else {
+      setError(res.error ?? '키를 확인해 주세요.');
+    }
+    return res;
+  }, [log, supported]);
+
+  const saveKeys = useCallback(
+    async (input: { apiKey: string; secret: string; passphrase: string; demo: boolean }) => {
+      if (!supported) {
+        setError('브라우저에서는 키를 저장할 수 없습니다. COTA 안드로이드 앱(v1.5.0+)에서 연결하세요.');
+        return false;
+      }
+      if (!input.apiKey.trim() || !input.secret.trim() || !input.passphrase.trim()) {
+        setError('API Key · Secret · Passphrase를 모두 입력해 주세요.');
+        return false;
+      }
+      setBusy('save');
+      setError(null);
+      const res = await bitgetSaveKeys(input);
+      setBusy(null);
+      if (res.error) {
+        setError(res.error);
+        return false;
+      }
+      setKeysState({ supported: true, hasKeys: res.hasKeys, demo: res.demo, apiKeyMasked: res.apiKeyMasked });
+      setConfig((prev) => ({ ...prev, mode: input.demo ? 'demo' : 'live' }));
+      log({
+        at: Date.now(),
+        level: 'info',
+        text: `API 키 저장 완료 (${input.demo ? '모의투자' : '실거래'}) — 키는 기기 안에만 저장됩니다.`,
+      });
+      await testConnection();
+      return true;
+    },
+    [log, supported, testConnection],
+  );
+
+  const forgetKeys = useCallback(async () => {
+    setBusy('clear');
+    const res = await bitgetClearKeys();
+    setBusy(null);
+    setKeysState(res);
+    setAccount(null);
+    setPositions([]);
+    if (config.enabled) await autoTradeStop();
+    setConfig((prev) => ({ ...prev, enabled: false }));
+    setNative(null);
+    log({ at: Date.now(), level: 'info', text: 'API 키를 삭제하고 자동매매를 껐습니다.' });
+  }, [config.enabled, log]);
+
+  const refreshPositions = useCallback(async () => {
+    if (!supported || !keys.hasKeys) return [];
+    const res = await bitgetPositions();
+    if (res.ok) {
+      setPositions(res.positions);
+      setRuntime((prev) => ({ ...prev, openPositions: res.positions.length }));
+    }
+    return res.positions;
+  }, [keys.hasKeys, supported]);
+
+  /* ---------------- 안전장치 상태 ---------------- */
+
+  const daily = useMemo(() => {
+    const locked = native?.dailyLocked === true;
+    if (locked) {
+      return { pnlUsd: native?.dailyPnl ?? 0, pnlPct: 0, limitUsd: 0, locked: true, remainingUsd: 0 };
+    }
+    return checkDailyLoss({
+      dayStartEquity: runtime.dayStartEquity,
+      equity: native?.equity ?? account?.equity ?? null,
+      dailyLossPct: config.dailyLossPct,
+    });
+  }, [account?.equity, config.dailyLossPct, native?.dailyLocked, native?.dailyPnl, native?.equity, runtime.dayStartEquity]);
+
+  const openPositions = native?.openPositions ?? positions.length;
+  const running = supported ? native?.running === true : config.enabled;
+
+  /* ---------------- 웹 → 서비스 감시 목록 ---------------- */
+
+  const buildPlans = useCallback(
+    (
+      list: Signal[],
+      now: number,
+      override?: AutoTradeConfig,
+    ): { plans: ArmedPlan[]; decisions: Array<{ signal: Signal; decision: EntryDecision }> } => {
+      const cfg = override ?? config;
+      const seed = planSeed(profile, account?.equity ?? null);
+      const decisions: Array<{ signal: Signal; decision: EntryDecision }> = [];
+      const plans: ArmedPlan[] = [];
+      if (!(seed > 0)) return { plans, decisions };
+      for (const signal of list) {
+        if (signal.asset === 'fx') continue;
+        if (signal.state !== 'open') continue;
+        if (!symbolAllowed(cfg, signal.symbol)) continue;
+        const plan = planAutoOrder({ signal, seed, config: cfg, leverage: leverageFor(signal), spec: specFor(signal.symbol) });
+        const decision = evaluateEntry({
+          config: cfg,
+          signal,
+          tradedKeys: runtime.tradedKeys,
+          openPositions,
+          dailyLocked: daily.locked,
+          plan,
+          now,
+          hasKeys: keys.hasKeys || !supported,
+        });
+        decisions.push({ signal, decision });
+        if (decision.allowed) plans.push(toArmedPlan({ signal, plan, now, ttlMin: cfg.entryTtlMin }));
+      }
+      return { plans, decisions };
+    },
+    [
+      account?.equity,
+      config,
+      daily.locked,
+      keys.hasKeys,
+      leverageFor,
+      openPositions,
+      profile,
+      runtime.tradedKeys,
+      specFor,
+      supported,
+    ],
+  );
+
+  /** 브라우저 모의 시뮬레이션 — 같은 게이트를 태우고 통과분을 '체결'로 기록 */
+  const simulate = useCallback((override?: AutoTradeConfig): EntryDecision[] => {
+    const now = Date.now();
+    const { plans, decisions } = buildPlans(signals, now, override);
+    if (!decisions.length) {
+      log({ at: now, level: 'info', text: '시뮬레이션: 평가할 진행 중 시그널이 없습니다.' });
+      return [];
+    }
+    setRuntime((prev) => {
+      let next = prev;
+      for (const { signal, decision } of decisions.slice(0, 6)) {
+        if (!decision.allowed) {
+          next = pushLog(next, {
+            at: now,
+            level: decision.code === 'daily-locked' || decision.code === 'max-positions' ? 'block' : 'reject',
+            text: `[모의] ${signal.base} ${signal.side === 'long' ? '롱' : '숏'} 거부 — ${decision.reason}`,
+            symbol: signal.symbol,
+            side: signal.side,
+          });
+          continue;
+        }
+        const plan = plans.find((p) => p.key === signalKeyOf(signal));
+        next = pushLog(next, {
+          at: now,
+          level: 'fill',
+          text: `[모의 체결] ${signal.base} ${signal.side === 'long' ? '롱' : '숏'} ${plan?.qty ?? ''} @ ${signal.entry} · TP ${signal.target} / SL ${signal.stop}`,
+          symbol: signal.symbol,
+          side: signal.side,
+        });
+        next = markTraded(next, signalKeyOf(signal));
+      }
+      return next;
+    });
+    return decisions.map((d) => d.decision);
+  }, [buildPlans, log, signals]);
+
+  /* ---------------- 시작 · 정지 ---------------- */
+
+  const applyNative = useCallback((status: AutoTradeNativeStatus | null) => {
+    setNative(status);
+    if (!status) return;
+    if (typeof status.openPositions === 'number') {
+      setRuntime((prev) => ({ ...prev, openPositions: status.openPositions ?? prev.openPositions }));
+    }
+    const incoming = status.log ?? [];
+    if (incoming.length) {
+      setRuntime((prev) => {
+        let next = prev;
+        for (const item of [...incoming].reverse()) {
+          const at = Number(item.at) || Date.now();
+          const text = String(item.text ?? '');
+          if (!text) continue;
+          if (next.logs.some((l) => l.at === at && l.text === text)) continue;
+          const level = item.level as AutoLogEntry['level'];
+          next = pushLog(next, {
+            at,
+            level: ['fill', 'reject', 'block', 'info', 'error'].includes(level) ? level : 'info',
+            text,
+          });
+        }
+        return next;
+      });
+    }
+  }, []);
+
+  const start = useCallback(async () => {
+    if (!keys.hasKeys && supported) {
+      setError('먼저 비트겟 API 키를 연결해 주세요.');
+      return false;
+    }
+    if (config.mode === 'live' && supported) {
+      // 실거래는 이 한 번의 확인 없이는 시작되지 않는다.
+      const ok = window.confirm(
+        '실거래 자동매매를 켭니다.\n\n· 실제 USDT로 주문이 나갑니다.\n· 손절가·목표가가 주문에 함께 걸립니다.\n· 1일 손실 한도에 닿으면 오늘 자동 진입이 멈춥니다.\n\n계속할까요?',
+      );
+      if (!ok) return false;
+    }
+    const next = { ...config, enabled: true };
+    setConfig(next);
+    const equity = account?.equity ?? null;
+    setRuntime((prev) => rollDay({ ...prev, dayStartEquity: prev.dayStartEquity ?? equity }, Date.now(), equity));
+    if (supported) {
+      const { plans } = buildPlans(signals, Date.now(), next);
+      const status = await autoTradeStart(next, plans);
+      applyNative(status);
+      if (!status || status.error) {
+        setError(status?.error ?? '감시 서비스를 시작하지 못했습니다.');
+        return false;
+      }
+      log({
+        at: Date.now(),
+        level: 'info',
+        text: `자동매매 시작 — ${next.mode === 'live' ? '실거래' : '모의투자'} · 감시 ${plans.length}건 · ${next.intervalSec}초 주기`,
+      });
+    } else {
+      log({
+        at: Date.now(),
+        level: 'info',
+        text: `모의 시뮬레이션 모드로 켰습니다(브라우저). 앱(APK v1.5.0+)에서는 24시간 감시가 실제로 돌아갑니다.`,
+      });
+      simulate(next);
+    }
+    return true;
+  }, [account?.equity, applyNative, buildPlans, config, keys.hasKeys, log, signals, simulate, supported]);
+
+  const stop = useCallback(
+    async (reason = '사용자가 자동매매를 껐습니다.') => {
+      const next = { ...config, enabled: false };
+      setConfig(next);
+      if (supported) {
+        const status = await autoTradeStop();
+        applyNative(status ?? { running: false });
+      }
+      setNative((prev) => (supported ? { ...(prev ?? {}), running: false } : null));
+      log({ at: Date.now(), level: 'info', text: reason });
+    },
+    [applyNative, config, log, supported],
+  );
+
+  /* ---------------- 원클릭 주문 ---------------- */
+
+  const quickOrder = useCallback(
+    async (signal: Signal): Promise<QuickOrderResult> => {
+      const seed = planSeed(profile, account?.equity ?? null);
+      if (!(seed > 0)) return { ok: false, simulated: false, message: '시드가 없습니다. 설정에서 투자 프로필을 먼저 입력하세요.' };
+      const plan = planAutoOrder({ signal, seed, config, leverage: leverageFor(signal), spec: specFor(signal.symbol) });
+      const decision = evaluateEntry({
+        config: { ...config, enabled: true },
+        signal,
+        tradedKeys: runtime.tradedKeys,
+        openPositions,
+        dailyLocked: daily.locked,
+        plan,
+        now: Date.now(),
+        hasKeys: keys.hasKeys || !supported,
+        manual: true,
+      });
+      if (!decision.allowed) {
+        log({
+          at: Date.now(),
+          level: 'reject',
+          text: `${signal.base} ${signal.side === 'long' ? '롱' : '숏'} 주문 거부 — ${decision.reason}`,
+          symbol: signal.symbol,
+          side: signal.side,
+        });
+        return { ok: false, simulated: !supported, message: decision.reason };
+      }
+
+      if (!supported) {
+        const text = `[모의 체결] ${signal.base} ${signal.side === 'long' ? '롱' : '숏'} ${plan.qty} @ ${signal.entry} · 리스크 ${fmtUsdt(plan.riskUsd)}`;
+        setRuntime((prev) => markTraded(pushLog(prev, { at: Date.now(), level: 'fill', text, symbol: signal.symbol, side: signal.side }), signalKeyOf(signal)));
+        return { ok: true, simulated: true, message: '모의 체결로 기록했습니다. 실제 주문은 앱(v1.5.0+)에서만 나갑니다.' };
+      }
+
+      const params: PlaceOrderParams = buildOrderParams({
+        signal,
+        plan,
+        posMode: normalizePosMode(account?.posMode),
+        orderType: 'market',
+        clientOid: clientOidFor(signal.symbol),
+      });
+      setBusy(`order:${signal.symbol}`);
+      const res = await bitgetPlaceOrder({ ...params, leverage: plan.leverage, holdMode: account?.posMode });
+      setBusy(null);
+      if (!res.ok) {
+        log({
+          at: Date.now(),
+          level: 'error',
+          text: `${signal.base} 주문 실패 — ${res.error ?? '알 수 없는 오류'}${res.code ? ` (${res.code})` : ''}`,
+          symbol: signal.symbol,
+          side: signal.side,
+        });
+        return { ok: false, simulated: false, message: res.error ?? '주문에 실패했습니다.' };
+      }
+      log({
+        at: Date.now(),
+        level: 'fill',
+        text: `${config.mode === 'live' ? '[실거래]' : '[모의]'} ${signal.base} ${signal.side === 'long' ? '롱' : '숏'} ${params.size} 주문 접수 · TP ${signal.target} / SL ${signal.stop} · 주문 ${res.orderId ?? res.clientOid ?? ''}`,
+        symbol: signal.symbol,
+        side: signal.side,
+      });
+      setRuntime((prev) => markTraded(prev, signalKeyOf(signal)));
+      void refreshPositions();
+      return { ok: true, simulated: false, message: `${config.mode === 'live' ? '실거래' : '모의투자'} 주문을 넣었습니다.` };
+    },
+    [account?.equity, account?.posMode, config, daily.locked, keys.hasKeys, leverageFor, log, openPositions, profile, refreshPositions, runtime.tradedKeys, specFor, supported],
+  );
+
+  /* ---------------- 부팅 · 주기 동기화 ---------------- */
+
+  useEffect(() => {
+    void refreshKeys();
+  }, [refreshKeys]);
+
+  // 네이티브 이벤트 구독은 한 번만 건다(키·포지션 상태가 바뀌어도 해제/재등록하지 않는다).
+  useEffect(() => {
+    if (!supported) return;
+    let alive = true;
+    let handle: { remove: () => Promise<void> } | null = null;
+    void onAutoTradeEvent((data) => {
+      if (alive) applyNative(data);
+    }).then((h) => {
+      if (alive) handle = h;
+      else void h?.remove();
+    });
+    void autoTradeStatus().then((s) => {
+      if (alive) applyNative(s);
+    });
+    return () => {
+      alive = false;
+      if (handle) void handle.remove();
+    };
+    // applyNative 는 useCallback([]) 으로 고정되어 있고, supported 는 앱/웹 여부 상수다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyNative, supported]);
+
+  // 서비스 상태·포지션 주기 확인 — 화면이 열려 있을 때 20초마다.
+  useEffect(() => {
+    if (!supported) return;
+    let alive = true;
+    const id = window.setInterval(() => {
+      void autoTradeStatus().then((s) => {
+        if (alive && s) applyNative(s);
+      });
+      void refreshPositions();
+    }, 20_000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [applyNative, refreshPositions, supported]);
+
+  /** 켜져 있는 동안 새 시그널을 감시 목록으로 계속 넘긴다(중복은 키로 병합). */
+  const armedRef = useRef<ArmedPlan[]>([]);
+  const lastSyncRef = useRef(0);
+  useEffect(() => {
+    if (!config.enabled || !supported) {
+      armedRef.current = [];
+      return;
+    }
+    const now = Date.now();
+    if (now - lastSyncRef.current < 15_000) return;
+    lastSyncRef.current = now;
+    const { plans } = buildPlans(signals, now);
+    armedRef.current = mergeArmedPlans(armedRef.current, plans);
+    void autoTradeSync(config, armedRef.current).then(applyNative);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signals, config, config.enabled, config.autoEntry, supported]);
+
+  /** 하루 손실 한도에 닿으면 자동으로 잠근다. */
+  useEffect(() => {
+    if (!config.enabled || !daily.locked || config.dailyLossPct <= 0) return;
+    log({
+      at: Date.now(),
+      level: 'block',
+      text: `1일 손실 한도 도달(${fmtUsdt(daily.pnlUsd)} / 한도 −${config.dailyLossPct}%) — 오늘 자동 진입을 멈춥니다.`,
+    });
+    setConfig((prev) => ({ ...prev, enabled: false }));
+    if (supported) void autoTradeStop().then(applyNative);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [daily.locked]);
+
+  return {
+    supported,
+    config,
+    runtime,
+    keys,
+    account,
+    positions,
+    native,
+    running,
+    busy,
+    error,
+    daily,
+    openPositions,
+    tick,
+    patchConfig: (patch: Partial<AutoTradeConfig>) => setConfig((prev) => normalizeConfig({ ...prev, ...patch })),
+    saveKeys,
+    forgetKeys,
+    testConnection,
+    refreshPositions,
+    start,
+    stop,
+    quickOrder,
+    simulate,
+    setError,
+    reloadKeys: refreshKeys,
+  };
+}
+
+export type AutoTradeApi = ReturnType<typeof useAutoTrade>;

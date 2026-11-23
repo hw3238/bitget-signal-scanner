@@ -43,6 +43,11 @@ interface Props {
   onToggleMyTrade?: () => void;
   /** 현재 스캔 결과에 없는 즐겨찾기(저장된 스냅샷) */
   stale?: boolean;
+  /** ⚡ 원클릭 주문 — 자동매매 규칙으로 바로 주문(모의/실거래) */
+  onQuickOrder?: (signal: Signal) => void;
+  quickOrderMode?: 'demo' | 'live';
+  /** 주문 요청이 진행 중인 시그널 */
+  quickOrderBusy?: boolean;
 }
 
 export function SignalCard({
@@ -58,6 +63,9 @@ export function SignalCard({
   isMyTrade = false,
   onToggleMyTrade,
   stale = false,
+  onQuickOrder,
+  quickOrderMode = 'demo',
+  quickOrderBusy = false,
 }: Props) {
   const { entry, target, stop, eq, price } = signal;
   const dir = signal.side === 'long' ? 1 : -1;
@@ -292,6 +300,27 @@ export function SignalCard({
       )}
 
       <div className="card-actions">
+        {onQuickOrder && signal.state === 'open' && plan?.valid && (
+          <button
+            type="button"
+            className={`quick-order-btn ${quickOrderMode === 'live' ? 'live' : ''} ${quickOrderBusy ? 'busy' : ''}`}
+            aria-label={`${signal.base} ${signal.side === 'long' ? '롱' : '숏'} 원클릭 주문`}
+            disabled={quickOrderBusy}
+            data-quick-order
+            onClick={(e) => {
+              e.stopPropagation();
+              onQuickOrder(signal);
+            }}
+          >
+            <span className="quick-order-emoji">⚡</span>
+            <span className="quick-order-copy">
+              <b>{quickOrderBusy ? '주문 중…' : `원클릭 ${quickOrderMode === 'live' ? '실거래' : '모의'} 주문`}</b>
+              <i>
+                {formatQty(plan.qty, plan.qtyDecimals)} {signal.base} · 스크 {fmtUsd(plan.riskUsd)}
+              </i>
+            </span>
+          </button>
+        )}
         {onToggleMyTrade && (
           <button
             type="button"
