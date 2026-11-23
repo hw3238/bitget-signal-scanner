@@ -314,6 +314,14 @@ public class AutoTradeService extends Service {
         // 비트겟이 45115(The price you enter should be a multiple of 0.01)로 거절했다.
         int pricePlace = plan.has("pricePlace") ? plan.optInt("pricePlace", -1) : plan.optInt("decimals", -1);
         int priceEndStep = plan.optInt("priceEndStep", 1);
+        if (pricePlace < 0) {
+            // 예전 웹 번들(캐시)이 보낸 감시 항목은 호가 정보가 없다 — 계약 API에서 직접 읽어 첫 주문부터 맟춘다.
+            int[] tick = BitgetApi.contractTick(symbol);
+            if (tick != null) {
+                pricePlace = tick[0];
+                priceEndStep = tick[1];
+            }
+        }
         String target = tickPrice(plan, "tpStr", "target", pricePlace, priceEndStep);
         String stop = tickPrice(plan, "slStr", "stop", pricePlace, priceEndStep);
         if (!target.isEmpty()) body.put("presetStopSurplusPrice", target);
