@@ -154,6 +154,12 @@ const run = async () => {
 
   const fngRaw = await (await fetch('https://api.alternative.me/fng/?limit=2&format=json')).json();
   const fngValue = Number(fngRaw.data[0].value);
+  // 펀딩비는 몇 분 단위로도 움직인다 — 화면을 읽기 전/후 두 스냅숏 중 하나와 맞으면 일치로 본다.
+  const fundingMap = (rows) =>
+    new Map(rows.map((f) => [String(f.symbol).replace(/USDT$/, ''), Number(f.fundingRate) * 100]));
+  const fundingBefore = fundingMap(
+    await bgJson('/api/v2/mix/market/current-fund-rate?productType=USDT-FUTURES').catch(() => []),
+  );
   const market = await page.evaluate(() => {
     const squeeze = [...document.querySelectorAll('.squeeze-list li')].filter((li) => li.querySelector('.squeeze-badge')).map((li) => ({
       base: li.querySelector('.squeeze-main b')?.textContent?.trim(),
@@ -177,11 +183,13 @@ const run = async () => {
   check('시황: 390px 오버플로 0건', !market.overflow);
 
   if (market.squeeze.length) {
-    const fundingAll = await bgJson('/api/v2/mix/market/current-fund-rate?productType=USDT-FUTURES');
-    const map = new Map(fundingAll.map((f) => [f.symbol.replace(/USDT$/, ''), Number(f.fundingRate) * 100]));
+    const fundingAfter = fundingMap(
+      await bgJson('/api/v2/mix/market/current-fund-rate?productType=USDT-FUTURES').catch(() => []),
+    );
     const mismatched = market.squeeze.filter((s) => {
-      const api = map.get(s.base);
-      return api == null || !close(num(s.rate), api, 0.0002);
+      const shown = num(s.rate);
+      const cands = [fundingBefore.get(s.base), fundingAfter.get(s.base)].filter((v) => Number.isFinite(v));
+      return cands.length === 0 || !cands.some((api) => close(shown, api, 0.0002));
     });
     check('스퀴즈 펀딩비 = 비트겟 API 값', mismatched.length === 0, mismatched.map((m) => `${m.base} ${m.rate}`).join(' ') || `${market.squeeze.length}건 일치`);
     const bad = market.squeeze.filter((s) => {
