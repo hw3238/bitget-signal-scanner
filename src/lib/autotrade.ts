@@ -442,8 +442,10 @@ export interface PlaceOrderParams {
 }
 
 /**
- * 수량 → 거래소 수량 단위(10^-volumePlace × sizeMultiplier)로 **내림**한 문자열.
- *  · 지수 표기(1e-5) 없이 고정 소수로 쓴다 — 비트겟이 `1e-5` 문자열을 거절한다.
+ * 수량 → 거래소 수량 단위로 **내림**한 문자열.
+ *  · 단위 = max(10^-volumePlace, sizeMultiplier) — Bitget `sizeMultiplier` 는 BTC 0.0001 · MSTR 0.01 처럼
+ *    10^-volumePlace 와 같은 값이거나, 1·10 처럼 **더 큰** 단위다. 둘 중 **큰쪽**을 지켜야 거래소가 받는다.
+ *  · 지수 표기(1e-5) 없이 고정 소수로 씀다 — 비트겟이 `1e-5` 문자열을 거절한다.
  *  · 내림이므로 계획한 리스크를 넘기지 않는다(올림하면 손실이 커진다).
  *    qtyToStep(40762.5, 0) → '40762'   qtyToStep(1.2345, 2) → '1.23'   qtyToStep(25, 0, 10) → '20'
  * 네이티브 `BitgetApi.floorToStep` 과 같은 규칙이다.
@@ -452,11 +454,13 @@ export function qtyToStep(qty: number, volumePlace?: number | null, sizeMultipli
   if (!Number.isFinite(qty) || qty <= 0) return '';
   const vp = volumePlace != null && Number.isFinite(volumePlace) ? clamp(Math.round(volumePlace), 0, 8) : 8;
   const mult =
-    sizeMultiplier != null && Number.isFinite(sizeMultiplier) && sizeMultiplier > 0 ? Math.round(sizeMultiplier) : 1;
+    sizeMultiplier != null && Number.isFinite(sizeMultiplier) && sizeMultiplier > 0 ? sizeMultiplier : 0;
   const scale = 10 ** vp;
-  const units = Math.floor((qty * scale) / mult + 1e-9);
+  // 10^-vp 단위의 개수로 환산한 최소 주문 단위(1 이상 정수)
+  const stepUnits = Math.max(1, Math.round(mult * scale));
+  const units = Math.floor((qty * scale) / stepUnits + 1e-9);
   if (!(units > 0)) return '';
-  const fixed = ((units * mult) / scale).toFixed(vp);
+  const fixed = ((units * stepUnits) / scale).toFixed(vp);
   if (vp === 0) return fixed;
   const trimmed = fixed.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
   return trimmed === '-0' ? '0' : trimmed;

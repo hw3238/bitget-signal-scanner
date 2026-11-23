@@ -881,8 +881,11 @@ public final class BitgetApi {
         public final int volumePlace;
         public final double minTradeNum;
         public final double minTradeUSDT;
-        /** 수량 배수(sizeMultiplier) — 보통 1, 일부 종목은 10 처럼 배수 단위로만 주문된다 */
-        public final int sizeMultiplier;
+        /**
+         * 수량 배수(sizeMultiplier) — BTC 0.0001 · MSTR 0.01 처럼 10^-volumePlace 와 같은 값이거나,
+         * 1·10 처럼 **더 큰** 단위다. 실제 최소 주문 단위 = max(10^-volumePlace, sizeMultiplier).
+         */
+        public final double sizeMultiplier;
 
         ContractLimits(
                 int pricePlace,
@@ -890,13 +893,13 @@ public final class BitgetApi {
                 int volumePlace,
                 double minTradeNum,
                 double minTradeUSDT,
-                int sizeMultiplier) {
+                double sizeMultiplier) {
             this.pricePlace = pricePlace;
             this.priceEndStep = priceEndStep;
             this.volumePlace = volumePlace;
             this.minTradeNum = minTradeNum;
             this.minTradeUSDT = minTradeUSDT;
-            this.sizeMultiplier = sizeMultiplier > 0 ? sizeMultiplier : 1;
+            this.sizeMultiplier = sizeMultiplier > 0 ? sizeMultiplier : 0;
         }
     }
 
@@ -938,7 +941,7 @@ public final class BitgetApi {
                     vp,
                     num(row.optString("minTradeNum", "")),
                     num(row.optString("minTradeUSDT", "")),
-                    (int) Math.round(num(row.optString("sizeMultiplier", "1"))));
+                    num(row.optString("sizeMultiplier", "")));
             LIMITS.put(symbol, out);
             LIMITS_FAILED_AT.remove(symbol);
             return out;
@@ -960,21 +963,21 @@ public final class BitgetApi {
      *   floorToStep(40762.5, 0) → "40762" · floorToStep(1.234, 2) → "1.23"
      * maxDecimalPlaces(8) 를 넘는 소수는 과학적 표기법 대신 고정 소수로 쓴다.
      */
-    public static String floorToStep(double qty, int volumePlace) {
-        return floorToStep(qty, volumePlace, 1);
-    }
-
-    /** 수량 → (10^-volumePlace × sizeMultiplier) 배수로 내림 */
-    public static String floorToStep(double qty, int volumePlace, int sizeMultiplier) {
+    /**
+     * 수량 → max(10^-volumePlace, sizeMultiplier) 단위로 내림.
+     *   BTC(volumePlace=4 · 0.0001) → 0.0001 · MSTR(2 · 0.01) → 0.01 · (2 · 1) → 1 · (0 · 10) → 10
+     */
+    public static String floorToStep(double qty, int volumePlace, double sizeMultiplier) {
         if (!(qty > 0) || !Double.isFinite(qty)) return "";
         int vp = Math.max(0, Math.min(8, volumePlace));
-        int mult = sizeMultiplier > 0 ? sizeMultiplier : 1;
         BigDecimal scale = BigDecimal.TEN.pow(vp);
-        BigDecimal units = BigDecimal.valueOf(qty)
-                .multiply(scale)
-                .divide(BigDecimal.valueOf(mult), 0, RoundingMode.FLOOR);
+        BigDecimal mult = BigDecimal.valueOf(sizeMultiplier > 0 && Double.isFinite(sizeMultiplier) ? sizeMultiplier : 0);
+        // 10^-vp 단위의 개수로 환산한 최소 주문 단위(1 이상 정수)
+        BigDecimal stepUnits = mult.multiply(scale).setScale(0, RoundingMode.HALF_UP);
+        if (stepUnits.signum() <= 0) stepUnits = BigDecimal.ONE;
+        BigDecimal units = BigDecimal.valueOf(qty).multiply(scale).divide(stepUnits, 0, RoundingMode.FLOOR);
         if (units.signum() <= 0) return "";
-        BigDecimal value = units.multiply(BigDecimal.valueOf(mult));
+        BigDecimal value = units.multiply(stepUnits);
         return new BigDecimal(value.toBigIntegerExact(), vp).stripTrailingZeros().toPlainString();
     }
 

@@ -405,7 +405,8 @@ public class AutoTradeService extends Service {
         double qty = plan.optDouble("qty", 0);
         if (!(qty > 0)) return "";
         int vp = plan.has("qtyDecimals") ? plan.optInt("qtyDecimals", 8) : 8;
-        String exact = BitgetApi.floorToStep(qty, vp);
+        // 감시 항목은 이미 거래소 단위로 내림된 값 — 자리수만 지켜 문자열로 만든다(배수 0 = 10^-vp).
+        String exact = BitgetApi.floorToStep(qty, vp, 0);
         return exact.isEmpty() ? trim(qty) : exact;
     }
 

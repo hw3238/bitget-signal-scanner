@@ -29,7 +29,11 @@ export interface Contract {
   minTradeNum?: number;
   /** 주문 수량 소수 자리(거래소 volumePlace) */
   volumePlace?: number;
-  /** 수량 배수(거래소 sizeMultiplier) — 보통 1, 일부 종목은 10 처럼 배수로만 주문된다 */
+  /**
+   * 수량 배수(거래소 sizeMultiplier). 실제 최소 주문 단위는 **max(10^-volumePlace, sizeMultiplier)** 다.
+   *   BTC volumePlace=4 · sizeMultiplier=0.0001 → 0.0001 · MSTR volumePlace=2 · 0.01 → 0.01
+   *   (sizeMultiplier 가 1 이면 volumePlace 와 무관하게 정수 단위)
+   */
   sizeMultiplier?: number;
   /** 최소 주문 금액(USDT · minTradeUSDT) */
   minTradeUsdt?: number;

@@ -711,6 +711,10 @@ check('수량: 소수 둘째 자리 내림 (1.2345 → 1.23)', qtyToStep(1.2345,
 check('수량: 배수 단위 (25 · mult 10 → 20)', qtyToStep(25, 0, 10) === '20', qtyToStep(25, 0, 10));
 check('수량: 아주 작은 값도 지수 표기 없음', qtyToStep(0.000000123, 8) === '0.00000012', qtyToStep(0.000000123, 8));
 check('수량: 0 이하는 빈 문자열', qtyToStep(0, 4) === '' && qtyToStep(-1, 4) === '');
+// Bitget sizeMultiplier 는 10^-volumePlace 와 같거나(BTC 0.0001 · MSTR 0.01) 더 큰 단위(1·10)다 — 큰 쪽을 지킨다.
+check('수량: BTC 실계약 단위(volumePlace 4 · mult 0.0001)', qtyToStep(0.0244137, 4, 0.0001) === '0.0244', qtyToStep(0.0244137, 4, 0.0001));
+check('수량: MSTR 실계약 단위(volumePlace 2 · mult 0.01)', qtyToStep(12.3456, 2, 0.01) === '12.34', qtyToStep(12.3456, 2, 0.01));
+check('수량: mult 가 더 큰 단위(volumePlace 2 · mult 1)는 정수로 내림', qtyToStep(1.23, 2, 1) === '1', qtyToStep(1.23, 2, 1));
 const multPlan = planAutoOrder({
   signal: sig({ entry: 100, stop: 99, target: 105 }),
   seed: 1000,
