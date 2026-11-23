@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { Settings } from '../lib/storage';
-import { MIN_RR, MIN_WINRATE } from '../engine/backtest';
+import { MIN_RR, MIN_TRADES, MIN_WINRATE } from '../engine/backtest';
 import { STOP_WIDTH } from '../engine/risk';
 import type { ScanState } from '../hooks/useScanner';
-import type { Signal } from '../engine/types';
+import { BENCH_INFO, STRATEGIES, type Signal } from '../engine/types';
 import {
   NOTIFY_TARGETS,
   notificationPermission,
@@ -566,8 +566,12 @@ export function SettingsTab({
         </header>
         <ul className="rule-list">
           <li>
-            <b>전략 풀</b> CRT+FVG+CISD, 유동성 스윕+오더블록, EMA20/50+RSI, 볼린저 스퀴즈, EQ 장악형,
-            SuperTrend·돈치안 — 6개 매매법
+            <b>전략 풀</b> {STRATEGIES.map((m) => m.short).join(', ')} — {STRATEGIES.length}개 매매법
+            (상위 트레이더 기법을 실제 비트겟 {BENCH_INFO.universe}에 전수 백테스트해 기대값이 플러스인 기법만 유지)
+          </li>
+          <li>
+            <b>HTF 동조</b> 1H 신호는 4H EMA50에 해당하는 EMA200 추세 방향에서만 냅니다. 추세를 거스르는 역추세
+            셋업은 시그널에서 제외됩니다
           </li>
           <li>
             <b>정밀 타점</b> 손절은 직전 스윙·오더블록·FVG 경계, 신호 캔들 극값에 최소 버퍼만 붙여 붙입니다. 진입가에서
@@ -578,7 +582,7 @@ export function SettingsTab({
             {STOP_WIDTH['1H'].min}% — 상한을 넘는 넓은 손절폭 시그널은 만들지 않습니다
           </li>
           <li>
-            <b>채택 기준</b> 최근 60봉 검증 승률 {MIN_WINRATE}% 이상 · 손익비 {MIN_RR}R 이상 · 표본 2건 이상
+            <b>채택 기준</b> 최근 60봉 검증 승률 {MIN_WINRATE}% 이상 · 손익비 {MIN_RR}R 이상 · 표본 {MIN_TRADES}건 이상
           </li>
           <li>
             <b>자동 교체</b> 기존 채택 전략이 기준 미달이면 현재 최고 성과 전략으로 즉시 전환하고 로그를 남깁니다

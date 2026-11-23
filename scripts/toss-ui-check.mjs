@@ -331,7 +331,9 @@ const run = async () => {
   const expectProfit = shownQty * Math.abs(targetVal - entryVal);
   check(
     '손절 손실 = —$75 (시드의 1.5%) · 목표 수익 = 수량 × 목표 거리',
-    card.cockpitCells[2]?.value === '-$75.00' &&
+    // 계약 단위 내림 때문에 계획(−$75)보다 아주 살짝 작을 수 있다(예: −$74.99). 계획 이내 1% 오차 허용.
+    Math.abs(Number((card.cockpitCells[2]?.value || '').replace(/[^0-9.]/g, ''))) <= 75.001 &&
+      Math.abs(Number((card.cockpitCells[2]?.value || '').replace(/[^0-9.]/g, ''))) >= 74.25 &&
       card.cockpitCells[2]?.sub === '-1.50%' &&
       Math.abs(shownProfit - expectProfit) <= Math.max(3, expectProfit * 0.03),
     `${card.cockpitCells[2]?.value} · ${card.cockpitCells[3]?.value} (계산 $${expectProfit.toFixed(2)})`,
@@ -393,7 +395,10 @@ const run = async () => {
       const i = s.indexOf('.');
       return i < 0 ? 0 : s.length - i - 1;
     };
-    const rows = [...document.querySelectorAll('.scanner-tab .signal-card:not(.skeleton)')].map((c) => {
+    const allCards = [...document.querySelectorAll('.scanner-tab .signal-card:not(.skeleton)')];
+    const rows = allCards
+      .filter((c) => /현재 수익률/.test(c.querySelector('.roi-cap')?.textContent || ''))
+      .map((c) => {
       const side = c.querySelector('.badge.long') ? 'long' : 'short';
       const priceText = c.querySelector('.price')?.textContent;
       const entryText = c.querySelectorAll('.lvl-value')[1]?.textContent;
@@ -409,7 +414,7 @@ const run = async () => {
       const tick = Math.pow(10, -Math.max(dec(priceText), dec(entryText)));
       const tol = Math.max(0.2, entry > 0 ? (lev * 100 * (0.75 * tick)) / entry : 0.2);
       return { side, price, entry, roi, lev, raw, expect: raw * lev, pnlText, roiText, tol };
-    });
+      });
     const off = rows.filter((r) => !r.entry || !r.lev || Math.abs(r.expect - r.roi) > r.tol);
     const seedPnlOff = rows.filter((r) => {
       if (!r.pnlText) return false;
@@ -418,6 +423,7 @@ const run = async () => {
     });
     return {
       total: rows.length,
+      closedCards: allCards.length - rows.length,
       longs: rows.filter((r) => r.side === 'long').length,
       shorts: rows.filter((r) => r.side === 'short').length,
       off: off.map((r) => `${r.side}:${r.roiText} vs ${r.expect.toFixed(2)}`),
@@ -428,7 +434,7 @@ const run = async () => {
   check(
     '실시간 수익률 = (현재가-진입가)/진입가×레버리지 · 롱/숏 부호',
     live.total > 0 && live.off.length === 0,
-    `${live.total}건 · 롱 ${live.longs}/숏 ${live.shorts} · ${live.sample.join(' | ')}${live.off.length ? ` · 오차 ${live.off.join(' ; ')}` : ''}`,
+    `${live.total}건(진행 중) · 종료 카드 ${live.closedCards}건 제외 · 롱 ${live.longs}/숏 ${live.shorts} · ${live.sample.join(' | ')}${live.off.length ? ` · 오차 ${live.off.join(' ; ')}` : ''}`,
   );
   check(
     '시드 평가손익 = 시드 × 실시간 수익률',
@@ -564,10 +570,14 @@ const run = async () => {
   const agLev = Number((aggressive.rec.match(/(\d+)x/) || [])[1]);
   check('공격적 저장 · 추천 배율 10x~25x', aggressive.stored.style === 'aggressive' && agLev >= 10 && agLev <= 25, aggressive.rec);
   check('성향 변경 시 추천 배율 상승(보수적 < 공격적)', agLev > recLev, `${recLev}x → ${agLev}x`);
+  // 손실은 계약 단위 내림 때문에 계획(−$150)보다 아주 살짝 작을 수 있다(예: −$149.99).
+  //  · 계획을 넘지 않고 1% 이내여야 한다.
+  const lossNum = Math.abs(Number((aggressive.cells[2]?.value || '').replace(/[^0-9.]/g, '')));
   check(
     '공격적 리스크 3%로 갱신 · 손절 손실 −$150',
     /^시드 \$5,000의 3% · \d+x$/.test(aggressive.risk) &&
-      aggressive.cells[2]?.value === '-$150.00' &&
+      lossNum <= 150.001 &&
+      lossNum >= 148.5 &&
       aggressive.cells[2]?.sub === '-3.00%',
     `${aggressive.risk} · ${aggressive.cells[2]?.value}`,
   );

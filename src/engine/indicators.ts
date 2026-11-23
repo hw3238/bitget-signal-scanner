@@ -161,6 +161,8 @@ export function percentileRank(values: number[], target: number): number {
 export interface Series {
   ema20: number[];
   ema50: number[];
+  /** 상위 타임프레임 추세 대용 — 1H의 200봉 ≈ 4H EMA50 */
+  ema200: number[];
   rsi14: number[];
   atr14: number[];
   bb: Bollinger;
@@ -175,6 +177,7 @@ export function buildSeries(candles: Candle[]): Series {
   return {
     ema20: ema(closes, 20),
     ema50: ema(closes, 50),
+    ema200: ema(closes, 200),
     rsi14: rsi(closes, 14),
     atr14: atr(candles, 14),
     bb: bollinger(closes, 20, 2),

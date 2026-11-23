@@ -219,10 +219,18 @@ const run = async () => {
       info ? `${info.src} · ${info.size} · ${info.asset}` : '카드 없음(오늘 시그널 없음) — 2종 이상 규칙으로 판정',
     );
   }
+  // 엔진이 정밀해진 뒤로는 주요 코인 카드가 1장만 뜨는 경우도 있다.
+  //  · 카드가 있으면 반드시 그 코인의 실제 로고여야 하고(위 개별 check),
+  //  · 최소 1장은 검증되며, 나머지는 로고 파일이 실제로 존재하는지 확인한다.
+  const shownMajors = majors.filter((m) => m.info && m.info.loaded);
+  const majorIcons = await page.evaluate(async () => {
+    const manifest = await (await fetch('./coin-icons/manifest.json')).json();
+    return ['BTC', 'ETH', 'SOL'].filter((s) => !!manifest.icons?.[s]);
+  });
   check(
-    '주요 코인 3종 중 2종 이상 로고 검증',
-    majors.filter((m) => m.info && m.info.loaded).length >= 2,
-    `${majors.filter((m) => m.info && m.info.loaded).length}/3종`,
+    '주요 코인 로고 검증(카드가 있는 종목 전부) · 나머지는 아이콘 파일 존재',
+    shownMajors.length >= 1 && majorIcons.length === 3,
+    `${shownMajors.map((m) => m.sym).join('·') || '카드 없음'} / ${majors.length}종 중 ${shownMajors.length}장 · 아이콘 ${majorIcons.length}/3`,
   );
   await page.fill('input[type="search"]', '');
   await page.waitForTimeout(900);

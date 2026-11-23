@@ -8,8 +8,24 @@ export { STOP_WIDTH, riskPctOf };
 
 export const MIN_WINRATE = 55;
 export const MIN_RR = 1.5;
-export const MIN_TRADES = 2;
+export const MIN_TRADES = 3;
 export const RECENT_BARS = 60;
+
+/** 마켓별 채택 기준 — 실측 기대값까지 함께 보는 게이트 */
+export interface GateOptions {
+  minTrades: number;
+  minWinRate: number;
+  minRR: number;
+  /** 1건당 최소 기대값(R) — 0 이면 미적용 */
+  minExpectancy: number;
+}
+
+export const DEFAULT_GATE: GateOptions = {
+  minTrades: MIN_TRADES,
+  minWinRate: MIN_WINRATE,
+  minRR: MIN_RR,
+  minExpectancy: 0,
+};
 /** 진행중 시그널 강조 구간(봉) */
 export const SCAN_SIGNAL_BARS = 10;
 /** 이전(종료) 시그널까지 함께 수집하는 최근 구간(봉) — 200봉 백테스트 안에서 넉넉히 노출 */
@@ -125,8 +141,12 @@ export function entryRR(entry: number, stop: number, target: number): number {
   return Math.abs(target - entry) / risk;
 }
 
-function qualifies(stats: StrategyStats): boolean {
-  return stats.n >= MIN_TRADES && stats.winRate >= MIN_WINRATE && stats.rr >= MIN_RR;
+function qualifies(stats: StrategyStats, gate: GateOptions = DEFAULT_GATE): boolean {
+  if (stats.n < gate.minTrades) return false;
+  if (stats.winRate < gate.minWinRate) return false;
+  if (stats.rr < gate.minRR) return false;
+  if (gate.minExpectancy > 0 && stats.expectancy < gate.minExpectancy) return false;
+  return true;
 }
 
 export interface AnalyzeOptions {
@@ -142,6 +162,7 @@ export function analyzeSymbol(
   tf: TF,
   candles: Candle[],
   decimals?: number,
+  gate: GateOptions = DEFAULT_GATE,
 ): SymbolAnalysis | null {
   if (candles.length < 80) return null;
   const series = buildSeries(candles);
@@ -167,8 +188,8 @@ export function analyzeSymbol(
         acc = cur;
         continue;
       }
-      const curOk = qualifies(cur.stats);
-      const accOk = qualifies(acc.stats);
+      const curOk = qualifies(cur.stats, gate);
+      const accOk = qualifies(acc.stats, gate);
       if (curOk && !accOk) acc = cur;
       else if (curOk === accOk && cur.stats.score > acc.stats.score) acc = cur;
     }
@@ -180,18 +201,18 @@ export function analyzeSymbol(
 
   let active = oosBest;
   let replacement: SymbolAnalysis['replacement'] = null;
-  if (isBest && oosBest && isBest.id !== oosBest.id && qualifies(oosBest.stats)) {
+  if (isBest && oosBest && isBest.id !== oosBest.id && qualifies(oosBest.stats, gate)) {
     // 워크포워드: 과거 구간 1위 전략을 최근 구간에서 다시 채점
     const isStat = perStrategy.find((p) => p.meta.id === isBest.id)!.stats;
     // 최근 구간 표본이 MIN_TRADES 이상이면서 기준 미달일 때만 '성과 저조 교체'로 기록
-    const hasEvidence = isStat.n >= MIN_TRADES;
-    const failsThreshold = hasEvidence && !qualifies(isStat);
+    const hasEvidence = isStat.n >= gate.minTrades;
+    const failsThreshold = hasEvidence && !qualifies(isStat, gate);
     const clearlyWorse =
-      hasEvidence && qualifies(isStat) && oosBest.stats.winRate - isStat.winRate >= 8;
+      hasEvidence && qualifies(isStat, gate) && oosBest.stats.winRate - isStat.winRate >= 8;
     if (failsThreshold || clearlyWorse) {
       const reasonParts: string[] = [];
-      if (isStat.winRate < MIN_WINRATE) reasonParts.push(`최근 승률 ${isStat.winRate.toFixed(1)}% < 기준 ${MIN_WINRATE}%`);
-      if (isStat.wins > 0 && isStat.rr < MIN_RR) reasonParts.push(`손익비 ${isStat.rr.toFixed(2)}R < 기준 ${MIN_RR}R`);
+      if (isStat.winRate < gate.minWinRate) reasonParts.push(`최근 승률 ${isStat.winRate.toFixed(1)}% < 기준 ${gate.minWinRate}%`);
+      if (isStat.wins > 0 && isStat.rr < gate.minRR) reasonParts.push(`손익비 ${isStat.rr.toFixed(2)}R < 기준 ${gate.minRR}R`);
       if (!isStat.wins) reasonParts.push(`최근 표본 ${isStat.n}건 전패`);
       if (!reasonParts.length) reasonParts.push(`상위 전략 대비 승률 ${(oosBest.stats.winRate - isStat.winRate).toFixed(1)}%p 열위`);
       replacement = {
@@ -231,7 +252,7 @@ export function analyzeSymbol(
 
   const activeEntry = perStrategy.find((p) => p.meta.id === active!.id)!;
   const activeStats = activeEntry.stats;
-  const qualified = qualifies(activeStats);
+  const qualified = qualifies(activeStats, gate);
   const price = candles[last].c;
   const signals: Signal[] = [];
 

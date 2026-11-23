@@ -77,6 +77,20 @@ export interface StrategyStats {
   avgRiskPct: number;
 }
 
+/** 전수 백테스트 실측 성적 — `npm run bench:strategies` 로 재측정한다. */
+export interface StrategyBench {
+  /** 체결 표본(건) */
+  n: number;
+  /** 승률(%) */
+  winRate: number;
+  /** 테이커 왕복 수수료 0.12% 차감 후 1건당 기대값(R) */
+  exp: number;
+  /** Profit Factor */
+  pf: number;
+  /** 타임프레임별 승률(%) */
+  byTf: Record<TF, number>;
+}
+
 export interface StrategyMeta {
   id: string;
   name: string;
@@ -84,56 +98,99 @@ export interface StrategyMeta {
   desc: string;
   star: number;
   warmup: number;
+  /** 원본 기법(상위 코인 트레이더 레퍼런스) */
+  origin: string;
+  /** 전수 백테스트 실측치 */
+  bench: StrategyBench;
 }
+
+/** 전수 백테스트 기준일·표본 — UI 표기용 */
+export const BENCH_INFO = {
+  at: '2026-11-23',
+  universe: 'USDT-M 60개 마켓 × 1H/4H 500봉',
+  fee: '테이커 왕복 0.12% 차감',
+};
 
 export const STRATEGIES: StrategyMeta[] = [
   {
     id: 'crt-fvg-cisd',
     name: 'CRT 레인지 스윕 + FVG + CISD',
     short: 'CRT·FVG·CISD',
-    desc: '레인지 스윕 후 FVG·구조전환(CISD)이 겹치는 되돌림 구간을 잡는다.',
+    desc: '레인지 스윕 후 FVG·구조전환(CISD)이 겹치는 되돌림을 HTF 추세 방향에서만 잡는다.',
     star: 5,
-    warmup: 34,
+    warmup: 46,
+    origin: 'CRT(Consolidation-Range-Truth) + FVG + CISD — 상위 스캘퍼 역추세 진입',
+    bench: { n: 39, winRate: 61.5, exp: 0.577, pf: 2.41, byTf: { '1H': 66.7, '4H': 53.3 } },
   },
   {
     id: 'sweep-ob',
     name: '유동성 스윕 + 오더블록 리테스트',
     short: '스윕·OB',
-    desc: '유동성 스윕 뒤 오더블록(마지막 역방향 캔들) 리테스트 진입.',
+    desc: '유동성 스윕 뒤 오더블록(마지막 역방향 캔들) 리테스트에서 2.2R 목표 진입.',
     star: 5,
     warmup: 40,
+    origin: 'Liquidity Sweep + Order Block Retest — ICT/SMC 실전 기법',
+    bench: { n: 112, winRate: 49.1, exp: 0.479, pf: 1.87, byTf: { '1H': 54.0, '4H': 45.2 } },
   },
   {
     id: 'ema-pullback-rsi',
     name: 'EMA 20/50 눌림 + RSI 다이버전스',
     short: 'EMA 눌림·RSI',
-    desc: '추세 방향 EMA20 눌림 + RSI 다이버전스에서 추세 지속 진입.',
+    desc: 'HTF 추세 방향에서 EMA20 눌림 + RSI 다이버전스/회복 + 거래량 확인 진입.',
     star: 4,
     warmup: 60,
-  },
-  {
-    id: 'bb-squeeze-break',
-    name: '볼린저 스퀴즈 + 거래량 돌파',
-    short: 'BB 스퀴즈',
-    desc: '볼린저 밴드 폭 수축 후 거래량 동반 이탈 돌파.',
-    star: 3,
-    warmup: 110,
+    origin: 'EMA Pullback + RSI Divergence — 추세 지속 눌림 매매',
+    bench: { n: 2863, winRate: 42.3, exp: 0.097, pf: 1.15, byTf: { '1H': 41.7, '4H': 42.9 } },
   },
   {
     id: 'eq-engulfing',
     name: 'EQ 평균회귀 + 장악형 캔들',
     short: 'EQ·장악형',
-    desc: '스윙 구간 EQ(0.5) 지지/저항에서 장악형 캔들 반전 진입.',
-    star: 2,
+    desc: '스윙 EQ(0.5) 지지·저항에서 장악형 캔들 반전을 HTF 추세 방향으로 받는다.',
+    star: 3,
     warmup: 36,
+    origin: 'EQ(0.5) Mean Reversion + Engulfing — 구간 회귀 매매',
+    bench: { n: 136, winRate: 47.1, exp: 0.338, pf: 1.6, byTf: { '1H': 46.8, '4H': 47.3 } },
   },
   {
     id: 'supertrend-donchian',
     name: 'SuperTrend · 돈치안 모멘텀',
     short: 'ST·돈치안',
-    desc: 'SuperTrend 방향 전환 또는 돈치안 20 돌파 모멘텀 추종.',
+    desc: 'SuperTrend 전환·돈치안 20 돌파를 HTF 추세·거래량으로 확인해 모멘텀 추종.',
+    star: 5,
+    warmup: 52,
+    origin: 'SuperTrend + Donchian Breakout — 추세 추종 모멘텀',
+    bench: { n: 451, winRate: 51.4, exp: 0.334, pf: 1.66, byTf: { '1H': 59.7, '4H': 42.3 } },
+  },
+  {
+    id: 'trap-bar-fade',
+    name: 'HTF 추세 동조 트랩바 페이드',
+    short: '트랩바·HTF',
+    desc: 'HTF 추세 안에서 직전 12봉 유동성 스윕 후 몸통 복귀한 트랩바에 추세 방향 진입.',
+    star: 4,
+    warmup: 70,
+    origin: 'Strat Trap-Bar Fade + HTF EMA50 Regime — 상위 트레이더 눌림 페이드',
+    bench: { n: 159, winRate: 51.6, exp: 0.368, pf: 1.71, byTf: { '1H': 51.2, '4H': 51.9 } },
+  },
+  {
+    id: 'break-retest-20',
+    name: '20봉 박스 Break & Retest',
+    short: 'B&R 20',
+    desc: '20봉 박스 상·하단 돌파 후 깨진 경계가 지지·저항으로 전환되는 리테스트 진입.',
     star: 4,
     warmup: 46,
+    origin: 'Break & Retest (20-bar range) — 돌파 후 리테스트 추세 편승',
+    bench: { n: 324, winRate: 43.5, exp: 0.246, pf: 1.41, byTf: { '1H': 47.2, '4H': 38.9 } },
+  },
+  {
+    id: 'momentum-climax',
+    name: '모멘텀 정렬 + 볼륨 클라이맥스',
+    short: '모멘텀·클라이맥스',
+    desc: 'EMA 20>50>200 정렬에서 볼륨 클라이맥스 + RSI 과매도·과매수 탈출 첫 봉에 추세 방향 진입.',
+    star: 5,
+    warmup: 70,
+    origin: 'MTF Momentum Alignment + Volume Climax — 멀티타임프레임 모멘텀',
+    bench: { n: 33, winRate: 57.6, exp: 0.674, pf: 2.52, byTf: { '1H': 50.0, '4H': 63.2 } },
   },
 ];
 
