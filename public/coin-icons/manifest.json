@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-11-23T04:15:04.345Z",
- "count": 175,
+ "generatedAt": "2026-11-23T04:22:44.679Z",
+ "count": 176,
  "sources": {
-  "okx": 0,
+  "okx": 1,
   "binance": 0,
   "coincap": 0
  },
@@ -165,6 +165,7 @@
   "UNI": "UNI.png",
   "USELESS": "USELESS.png",
   "USUAL": "USUAL.png",
+  "VANA": "VANA.png",
   "VELVET": "VELVET.png",
   "VIRTUAL": "VIRTUAL.png",
   "VVV": "VVV.png",

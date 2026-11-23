@@ -270,7 +270,9 @@ public class AutoTradeService extends Service {
                 String text = String.format(Locale.US, "%s %s %s @ %s · TP %s / SL %s · 주문 %s",
                         AutoTradeStore.isDemo(this) ? "[모의]" : "[실거래]",
                         base, longSide ? "롱" : "숏", trim(plan.optDouble("qty", 0)),
-                        trim(plan.optDouble("target", 0)), trim(plan.optDouble("stop", 0)),
+                        // 실제로 보낸 호가 배수 가격을 남긴다(원본 target/stop 은 소수 꼬리가 있다).
+                        order.optString("presetStopSurplusPrice", trim(plan.optDouble("target", 0))),
+                        order.optString("presetStopLossPrice", trim(plan.optDouble("stop", 0))),
                         res.optString("orderId", res.optString("clientOid", "")));
                 AutoTradeStore.addLog(this, "fill", text);
                 notifySignal("🤖 자동매매 체결", text);

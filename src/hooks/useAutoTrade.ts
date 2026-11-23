@@ -503,7 +503,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       log({
         at: Date.now(),
         level: 'fill',
-        text: `${config.mode === 'live' ? '[실거래]' : '[모의]'} ${signal.base} ${signal.side === 'long' ? '롱' : '숏'} ${params.size} 주문 접수 · TP ${signal.target} / SL ${signal.stop} · 주문 ${res.orderId ?? res.clientOid ?? ''}`,
+        text: `${config.mode === 'live' ? '[실거래]' : '[모의]'} ${signal.base} ${signal.side === 'long' ? '롱' : '숏'} ${params.size} 주문 접수 · TP ${params.presetStopSurplusPrice} / SL ${params.presetStopLossPrice} · 주문 ${res.orderId ?? res.clientOid ?? ''}`,
         symbol: signal.symbol,
         side: signal.side,
       });
