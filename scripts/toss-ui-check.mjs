@@ -352,9 +352,14 @@ const run = async () => {
   await page.waitForTimeout(150);
   const clipEntry = await page.evaluate(() => navigator.clipboard.readText());
   const copyLabel = cleanText(await copyBtn.innerText());
+  // 화면은 0을 잘라 표기(0.234)하고 복사는 계약 자리수 그대로(0.2340)일 수 있다 — 값이 같으면 통과.
+  const clipNum = Number(String(clipEntry).replace(/,/g, ''));
+  const shownEntryNum = Number(card.values[1].replace(/,/g, ''));
   check(
     '진입가 복사 → 클립보드 값 = 콤마 없는 진입가',
-    clipEntry === card.values[1].replace(/,/g, ''),
+    !/,/.test(String(clipEntry)) &&
+      Number.isFinite(clipNum) &&
+      Math.abs(clipNum - shownEntryNum) <= Math.max(1e-9, shownEntryNum * 1e-6),
     `${clipEntry} vs ${card.values[1]}`,
   );
   check('복사 직후 버튼 피드백', copyLabel === '복사됨', copyLabel);

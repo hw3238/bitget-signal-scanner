@@ -107,7 +107,7 @@ export interface StrategyMeta {
 /** 전수 백테스트 기준일·표본 — UI 표기용 */
 export const BENCH_INFO = {
   at: '2026-11-23',
-  universe: 'USDT-M 60개 마켓 × 1H/4H 500봉',
+  universe: 'USDT-M 150개 마켓 × 1H/4H 500봉',
   fee: '테이커 왕복 0.12% 차감',
 };
 
@@ -120,7 +120,7 @@ export const STRATEGIES: StrategyMeta[] = [
     star: 5,
     warmup: 46,
     origin: 'CRT(Consolidation-Range-Truth) + FVG + CISD — 상위 스캘퍼 역추세 진입',
-    bench: { n: 39, winRate: 61.5, exp: 0.577, pf: 2.41, byTf: { '1H': 66.7, '4H': 53.3 } },
+    bench: { n: 82, winRate: 53.7, exp: 0.36, pf: 1.71, byTf: { '1H': 54.7, '4H': 51.7 } },
   },
   {
     id: 'sweep-ob',
@@ -130,7 +130,7 @@ export const STRATEGIES: StrategyMeta[] = [
     star: 5,
     warmup: 40,
     origin: 'Liquidity Sweep + Order Block Retest — ICT/SMC 실전 기법',
-    bench: { n: 112, winRate: 49.1, exp: 0.479, pf: 1.87, byTf: { '1H': 54.0, '4H': 45.2 } },
+    bench: { n: 256, winRate: 47.7, exp: 0.439, pf: 1.77, byTf: { '1H': 47.7, '4H': 47.6 } },
   },
   {
     id: 'ema-pullback-rsi',
@@ -140,7 +140,7 @@ export const STRATEGIES: StrategyMeta[] = [
     star: 4,
     warmup: 60,
     origin: 'EMA Pullback + RSI Divergence — 추세 지속 눌림 매매',
-    bench: { n: 2863, winRate: 42.3, exp: 0.097, pf: 1.15, byTf: { '1H': 41.7, '4H': 42.9 } },
+    bench: { n: 7296, winRate: 42.1, exp: 0.093, pf: 1.15, byTf: { '1H': 40.3, '4H': 43.8 } },
   },
   {
     id: 'eq-engulfing',
@@ -150,7 +150,7 @@ export const STRATEGIES: StrategyMeta[] = [
     star: 3,
     warmup: 36,
     origin: 'EQ(0.5) Mean Reversion + Engulfing — 구간 회귀 매매',
-    bench: { n: 136, winRate: 47.1, exp: 0.338, pf: 1.6, byTf: { '1H': 46.8, '4H': 47.3 } },
+    bench: { n: 392, winRate: 42.6, exp: 0.199, pf: 1.32, byTf: { '1H': 41.4, '4H': 43.7 } },
   },
   {
     id: 'supertrend-donchian',
@@ -160,7 +160,7 @@ export const STRATEGIES: StrategyMeta[] = [
     star: 5,
     warmup: 52,
     origin: 'SuperTrend + Donchian Breakout — 추세 추종 모멘텀',
-    bench: { n: 451, winRate: 51.4, exp: 0.334, pf: 1.66, byTf: { '1H': 59.7, '4H': 42.3 } },
+    bench: { n: 1151, winRate: 51.7, exp: 0.338, pf: 1.66, byTf: { '1H': 57.1, '4H': 45.4 } },
   },
   {
     id: 'trap-bar-fade',
@@ -170,7 +170,7 @@ export const STRATEGIES: StrategyMeta[] = [
     star: 4,
     warmup: 70,
     origin: 'Strat Trap-Bar Fade + HTF EMA50 Regime — 상위 트레이더 눌림 페이드',
-    bench: { n: 159, winRate: 51.6, exp: 0.368, pf: 1.71, byTf: { '1H': 51.2, '4H': 51.9 } },
+    bench: { n: 358, winRate: 45.8, exp: 0.206, pf: 1.35, byTf: { '1H': 44.3, '4H': 47.6 } },
   },
   {
     id: 'break-retest-20',
@@ -180,7 +180,7 @@ export const STRATEGIES: StrategyMeta[] = [
     star: 4,
     warmup: 46,
     origin: 'Break & Retest (20-bar range) — 돌파 후 리테스트 추세 편승',
-    bench: { n: 324, winRate: 43.5, exp: 0.246, pf: 1.41, byTf: { '1H': 47.2, '4H': 38.9 } },
+    bench: { n: 861, winRate: 45.5, exp: 0.302, pf: 1.52, byTf: { '1H': 49.4, '4H': 40.7 } },
   },
   {
     id: 'momentum-climax',
@@ -190,7 +190,7 @@ export const STRATEGIES: StrategyMeta[] = [
     star: 5,
     warmup: 70,
     origin: 'MTF Momentum Alignment + Volume Climax — 멀티타임프레임 모멘텀',
-    bench: { n: 33, winRate: 57.6, exp: 0.674, pf: 2.52, byTf: { '1H': 50.0, '4H': 63.2 } },
+    bench: { n: 51, winRate: 52.9, exp: 0.537, pf: 2.09, byTf: { '1H': 42.3, '4H': 64.0 } },
   },
 ];
 

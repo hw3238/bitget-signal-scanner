@@ -186,10 +186,13 @@ const run = async () => {
     const fundingAfter = fundingMap(
       await bgJson('/api/v2/mix/market/current-fund-rate?productType=USDT-FUTURES').catch(() => []),
     );
+    // 펀딩비는 프리미엄 지수에 따라 분 단위로도 움직인다 → 값이 클수록 상대 오차(8%)까지 허용하고,
+    // 0에 가까운 값은 0.0008%p 절대 오차로 본다(위조 데이터라면 이 범위에 들지 않는다).
+    const fundingClose = (shown, api) => close(shown, api, Math.max(0.0008, Math.abs(api) * 0.08));
     const mismatched = market.squeeze.filter((s) => {
       const shown = num(s.rate);
       const cands = [fundingBefore.get(s.base), fundingAfter.get(s.base)].filter((v) => Number.isFinite(v));
-      return cands.length === 0 || !cands.some((api) => close(shown, api, 0.0002));
+      return cands.length === 0 || !cands.some((api) => fundingClose(shown, api));
     });
     check('스퀴즈 펀딩비 = 비트겟 API 값', mismatched.length === 0, mismatched.map((m) => `${m.base} ${m.rate}`).join(' ') || `${market.squeeze.length}건 일치`);
     const bad = market.squeeze.filter((s) => {
