@@ -254,6 +254,19 @@ check('게이트: 키 없음 → no-keys', genie({ config: on, hasKeys: false })
 check('게이트: 종료된 시그널 → not-open', genie({ config: on, signal: { state: 'loss' } }).code === 'not-open');
 check('게이트: 메이저 아닌 종목 → symbol', genie({ config: on, signal: { symbol: 'DOGEUSDT', base: 'DOGE' } }).code === 'symbol');
 check('게이트: 승률 미달 → winrate', genie({ config: { ...on, minWinRate: 70 }, signal: { winRate: 62 } }).code === 'winrate');
+// 전수 검증(표본 부족) 채택 신호는 승률이 낮게 표기된다 — 기대값이 확실한 기법은 승률 기준을 우회한다.
+check(
+  '게이트: 전수 검증 · 기대값 0.30R 이상 → 승률 기준 우회',
+  genie({ config: { ...on, minWinRate: 55 }, signal: { winRate: 47, winRateBasis: 'bench', strategyExp: 0.34 } }).allowed,
+);
+check(
+  '게이트: 전수 검증 · 기대값 0.20R → 승률 기준 적용',
+  genie({ config: { ...on, minWinRate: 55 }, signal: { winRate: 47, winRateBasis: 'bench', strategyExp: 0.2 } }).code === 'winrate',
+);
+check(
+  '게이트: 마켓 실측 신호는 기대값과 무관하게 승률 기준',
+  genie({ config: { ...on, minWinRate: 55 }, signal: { winRate: 47, winRateBasis: 'market', strategyExp: 0.5 } }).code === 'winrate',
+);
 check('게이트: 손익비 미달 → rr', genie({ config: { ...on, minRR: 2 }, signal: { rr: 1.6 }, plan: planAutoOrder({ signal: sig({ rr: 1.6 }), seed: 1000, config: normalizeConfig({ ...on, minRR: 2 }), leverage: 10 }) }).code === 'rr');
 check('게이트: 같은 시그널 중복 진입 → duplicate', genie({ config: on, traded: [signalKeyOf(sig())] }).code === 'duplicate');
 check('게이트: 동시 포지션 초과 → max-positions', genie({ config: on, positions: 2 }).code === 'max-positions');

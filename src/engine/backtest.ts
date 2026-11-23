@@ -201,9 +201,10 @@ export function adoptionPriority(meta: StrategyMeta, tf: TF, local: StrategyStat
   const tfWeight = b.winRate > 0 ? Math.max(0.6, Math.min(1.2, tfWr / b.winRate)) : 1;
   let score = b.exp * b.winRate * tfWeight;
   if (basis === 'market' && local.n) {
+    // 마켓 실측 가점은 최대 18점 — 표본 3~5건짜리 최근 성적이 전수 최상위 기법을 통째로 뒤집지는 못하게 한다.
     const wrEdge = Math.max(0, Math.min(local.winRate - 50, 25));
     const expEdge = Math.max(0, Math.min(local.expectancy, 1.5));
-    score += wrEdge * 0.8 + expEdge * 8;
+    score += Math.min(18, wrEdge * 0.6 + expEdge * 5);
   }
   return score;
 }
