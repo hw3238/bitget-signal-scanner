@@ -12,7 +12,7 @@
  */
 import { fetchCandles, fetchContracts, fetchTickers } from '../src/api/bitget';
 import { buildSeries } from '../src/engine/indicators';
-import { aggregate, analyzeSymbol, HORIZON, type GateOptions, MIN_TRADES, MIN_RR, MIN_WINRATE, resolveTrade, RECENT_BARS } from '../src/engine/backtest';
+import { aggregate, analyzeSymbol, BENCH_GATE, HORIZON, type GateOptions, MIN_TRADES, MIN_RR, MIN_WINRATE, resolveTrade, RECENT_BARS } from '../src/engine/backtest';
 import { DETECTORS } from '../src/engine/strategies';
 import { LAB_STRATEGIES } from '../src/engine/strategyLab';
 import { STRATEGIES } from '../src/engine/types';
@@ -426,6 +426,8 @@ function enginePhase(markets: MarketData[]) {
   const openByStrategy = new Map<string, number>();
   const closedByStrategy = new Map<string, number>();
   const adoptedByStrategy = new Map<string, number>();
+  const adoptedByBasis = new Map<string, number>();
+  const marketsWithSignal = new Set<string>();
   const candidateAgg = new Map<string, { n: number; wins: number }>();
   let open = 0;
   let closed = 0;
@@ -436,7 +438,9 @@ function enginePhase(markets: MarketData[]) {
       if (candles.length < 120) continue;
       const a = analyzeSymbol(m.symbol, m.base, 'crypto', tf, candles);
       if (!a) continue;
-      adoptedByStrategy.set(a.activeStrategyId, (adoptedByStrategy.get(a.activeStrategyId) ?? 0) + 1);
+      if (a.activeStrategyId) adoptedByStrategy.set(a.activeStrategyId, (adoptedByStrategy.get(a.activeStrategyId) ?? 0) + 1);
+      if (a.activeBasis !== 'none') adoptedByBasis.set(a.activeBasis, (adoptedByBasis.get(a.activeBasis) ?? 0) + 1);
+      if (a.signals.length) marketsWithSignal.add(`${a.symbol}-${tf}`);
       for (const cand of a.candidates) {
         const cur = candidateAgg.get(cand.id) ?? { n: 0, wins: 0 };
         cur.n += cand.stats.n;
@@ -455,7 +459,10 @@ function enginePhase(markets: MarketData[]) {
     }
   }
   console.log('\n=== 앱 엔진 시뮬레이션 (200봉 · 최근 60봉) ===');
-  console.log(`진행 중 시그널 ${open}건 · 종료 시그널 ${closed}건 · 분석 마켓 ${markets.length * 2}개`);
+  console.log(`진행 중 시그널 ${open}건 · 종료 시그널 ${closed}건 · 신호 마켓 ${marketsWithSignal.size}개 · 분석 마켓 ${markets.length * 2}개`);
+  console.log(
+    `  채택 근거 — 마켓 실측 ${adoptedByBasis.get('market') ?? 0} · 전수 검증 ${adoptedByBasis.get('bench') ?? 0} (기준: 전수 승률 ${BENCH_GATE.minWinRate}% · 기대값 ${BENCH_GATE.minExp}R · 표본 ${BENCH_GATE.minN}건)`,
+  );
   for (const meta of STRATEGIES) {
     console.log(
       `  ${meta.short.padEnd(14)} 채택 ${String(adoptedByStrategy.get(meta.id) ?? 0).padStart(3)} 마켓 · 진행 ${String(openByStrategy.get(meta.id) ?? 0).padStart(3)} · 종료 ${String(closedByStrategy.get(meta.id) ?? 0).padStart(3)}`,
@@ -466,7 +473,14 @@ function enginePhase(markets: MarketData[]) {
     .sort((x, y) => y.wr - x.wr);
   console.log('  — 후보별 최근 60봉 합산 승률(모든 마켓):');
   for (const c of candRows) console.log(`    ${c.id.padEnd(16)} ${pct(c.wr)} (${c.n}건)`);
-  return { open, closed, adopted: Object.fromEntries(adoptedByStrategy), openByStrategy: Object.fromEntries(openByStrategy) };
+  return {
+    open,
+    closed,
+    adopted: Object.fromEntries(adoptedByStrategy),
+    adoptedByBasis: Object.fromEntries(adoptedByBasis),
+    marketsWithSignal: marketsWithSignal.size,
+    openByStrategy: Object.fromEntries(openByStrategy),
+  };
 }
 
 async function main() {
@@ -528,7 +542,7 @@ async function main() {
   const minN = MIN_TRADES;
   const gates = sorted.filter((r) => r.all.n >= 20 && r.oos.n >= 8);
   console.log(
-    `\n채택 후보(표본 20건+ & OOS 8건+): ${gates.map((g) => g.id).join(', ') || '없음'} — 앱 기준 승률 ${MIN_WINRATE}% · 손익비 ${MIN_RR}R · 최근 ${RECENT_BARS}봉 채점(min ${minN}건)`,
+    `\n채택 후보(표본 20건+ & OOS 8건+): ${gates.map((g) => g.id).join(', ') || '없음'} — 앱 기준 승률 ${MIN_WINRATE}% · 손익비 ${MIN_RR}R · 최근 ${RECENT_BARS}봉 채점(min ${minN}건) · 전수 채택 ${BENCH_GATE.minWinRate}%/${BENCH_GATE.minExp}R`,
   );
   void aggregate;
 }

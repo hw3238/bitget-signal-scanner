@@ -87,6 +87,8 @@ export interface StrategyBench {
   exp: number;
   /** Profit Factor */
   pf: number;
+  /** 1건당 평균 익절 R (손익비 표기용) */
+  avgWinR: number;
   /** 타임프레임별 승률(%) */
   byTf: Record<TF, number>;
 }
@@ -120,7 +122,7 @@ export const STRATEGIES: StrategyMeta[] = [
     star: 5,
     warmup: 46,
     origin: 'CRT(Consolidation-Range-Truth) + FVG + CISD — 상위 스캘퍼 역추세 진입',
-    bench: { n: 82, winRate: 53.7, exp: 0.36, pf: 1.71, byTf: { '1H': 54.7, '4H': 51.7 } },
+    bench: { n: 82, winRate: 53.7, exp: 0.36, pf: 1.71, avgWinR: 1.7, byTf: { '1H': 54.7, '4H': 51.7 } },
   },
   {
     id: 'sweep-ob',
@@ -130,27 +132,17 @@ export const STRATEGIES: StrategyMeta[] = [
     star: 5,
     warmup: 40,
     origin: 'Liquidity Sweep + Order Block Retest — ICT/SMC 실전 기법',
-    bench: { n: 256, winRate: 47.7, exp: 0.439, pf: 1.77, byTf: { '1H': 47.7, '4H': 47.6 } },
+    bench: { n: 256, winRate: 47.7, exp: 0.439, pf: 1.77, avgWinR: 2.2, byTf: { '1H': 47.7, '4H': 47.6 } },
   },
   {
     id: 'ema-pullback-rsi',
-    name: 'EMA 20/50 눌림 + RSI 다이버전스',
-    short: 'EMA 눌림·RSI',
-    desc: 'HTF 추세 방향에서 EMA20 눌림 + RSI 다이버전스/회복 + 거래량 확인 진입.',
+    name: 'EMA 20/50 눌림 + 반등 확인',
+    short: 'EMA 눌림·반등',
+    desc: 'HTF 추세 방향에서 EMA20 눌림 뒤 거래량·종가 위치·RSI 반등이 모두 확인된 봉에 진입.',
     star: 4,
     warmup: 60,
-    origin: 'EMA Pullback + RSI Divergence — 추세 지속 눌림 매매',
-    bench: { n: 7296, winRate: 42.1, exp: 0.093, pf: 1.15, byTf: { '1H': 40.3, '4H': 43.8 } },
-  },
-  {
-    id: 'eq-engulfing',
-    name: 'EQ 평균회귀 + 장악형 캔들',
-    short: 'EQ·장악형',
-    desc: '스윙 EQ(0.5) 지지·저항에서 장악형 캔들 반전을 HTF 추세 방향으로 받는다.',
-    star: 3,
-    warmup: 36,
-    origin: 'EQ(0.5) Mean Reversion + Engulfing — 구간 회귀 매매',
-    bench: { n: 392, winRate: 42.6, exp: 0.199, pf: 1.32, byTf: { '1H': 41.4, '4H': 43.7 } },
+    origin: 'EMA Pullback + RSI + Reclaim Confirmation — 추세 지속 눌림 매매',
+    bench: { n: 1198, winRate: 47.0, exp: 0.253, pf: 1.45, avgWinR: 1.8, byTf: { '1H': 47.7, '4H': 46.1 } },
   },
   {
     id: 'supertrend-donchian',
@@ -160,7 +152,7 @@ export const STRATEGIES: StrategyMeta[] = [
     star: 5,
     warmup: 52,
     origin: 'SuperTrend + Donchian Breakout — 추세 추종 모멘텀',
-    bench: { n: 1151, winRate: 51.7, exp: 0.338, pf: 1.66, byTf: { '1H': 57.1, '4H': 45.4 } },
+    bench: { n: 1151, winRate: 51.7, exp: 0.338, pf: 1.66, avgWinR: 1.7, byTf: { '1H': 57.1, '4H': 45.4 } },
   },
   {
     id: 'trap-bar-fade',
@@ -170,7 +162,7 @@ export const STRATEGIES: StrategyMeta[] = [
     star: 4,
     warmup: 70,
     origin: 'Strat Trap-Bar Fade + HTF EMA50 Regime — 상위 트레이더 눌림 페이드',
-    bench: { n: 358, winRate: 45.8, exp: 0.206, pf: 1.35, byTf: { '1H': 44.3, '4H': 47.6 } },
+    bench: { n: 358, winRate: 45.8, exp: 0.206, pf: 1.35, avgWinR: 1.8, byTf: { '1H': 44.3, '4H': 47.6 } },
   },
   {
     id: 'break-retest-20',
@@ -180,7 +172,7 @@ export const STRATEGIES: StrategyMeta[] = [
     star: 4,
     warmup: 46,
     origin: 'Break & Retest (20-bar range) — 돌파 후 리테스트 추세 편승',
-    bench: { n: 861, winRate: 45.5, exp: 0.302, pf: 1.52, byTf: { '1H': 49.4, '4H': 40.7 } },
+    bench: { n: 861, winRate: 45.5, exp: 0.302, pf: 1.52, avgWinR: 2.0, byTf: { '1H': 49.4, '4H': 40.7 } },
   },
   {
     id: 'momentum-climax',
@@ -190,7 +182,7 @@ export const STRATEGIES: StrategyMeta[] = [
     star: 5,
     warmup: 70,
     origin: 'MTF Momentum Alignment + Volume Climax — 멀티타임프레임 모멘텀',
-    bench: { n: 51, winRate: 52.9, exp: 0.537, pf: 2.09, byTf: { '1H': 42.3, '4H': 64.0 } },
+    bench: { n: 51, winRate: 52.9, exp: 0.537, pf: 2.09, avgWinR: 2.0, byTf: { '1H': 42.3, '4H': 64.0 } },
   },
 ];
 
@@ -239,6 +231,10 @@ export interface Signal {
   detectedAt: number;
   barsSince: number;
   winRate: number;
+  /** winRate 의 근거 — 'market': 이 마켓 최근 60봉 실측, 'bench': 기법 전수 백테스트 */
+  winRateBasis: AdoptBasis;
+  /** 전략 전수 백테스트 1건 기대값(R, 왕복 0.12% 차감) — 승률과 함께 판단 근거로 쓴다 */
+  strategyExp: number;
   strategyRR: number;
   leverage: number;
   levRoi: number;
@@ -251,17 +247,23 @@ export interface Signal {
   decimals?: number;
 }
 
+export type AdoptBasis = 'market' | 'bench';
+
 export interface SymbolAnalysis {
   symbol: string;
   base: string;
   asset: AssetClass;
   tf: TF;
   activeStrategyId: string;
+  /** 채택 근거 — 'market': 최근 60봉 표본 3건+ 로 검증, 'bench': 전수 검증 성적 + 마켓 반증 없음, 'none': 채택 없음 */
+  activeBasis: AdoptBasis | 'none';
+  /** 채택 우선순위 점수 (전수 기대값 × 승률 + 마켓 실측 가점) */
+  activePriority: number;
   activeWinRate: number;
   activeRR: number;
   activeN: number;
   activeStats: StrategyStats;
-  candidates: { id: string; stats: StrategyStats }[];
+  candidates: { id: string; stats: StrategyStats; proven?: boolean; priority?: number }[];
   signals: Signal[];
   replacement: Replacement | null;
   candlesLoaded: number;

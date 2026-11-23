@@ -17,6 +17,27 @@ const atrAt = (s: Series, i: number) => {
   return Number.isFinite(a) && a > 0 ? a : 0;
 };
 
+/** 고정 R 목표가 — 라이브 전략과 같은 규칙 */
+const fixedR = (side: 'long' | 'short', entry: number, risk: number, mult: number) =>
+  side === 'long' ? entry + mult * risk : entry - mult * risk;
+
+/** 상위 타임프레임 추세 편향 — 1H의 EMA200 ≈ 4H EMA50 (라이브와 동일) */
+function htfBias(s: Series, i: number, close: number): 1 | -1 | 0 {
+  const e = s.ema200[i];
+  const ePrev = s.ema200[i - 8];
+  if (!Number.isFinite(e) || !Number.isFinite(ePrev)) return 0;
+  if (close > e && e > ePrev) return 1;
+  if (close < e && e < ePrev) return -1;
+  return 0;
+}
+
+/** 트리거 봉 거래량 확인 */
+function volConfirmed(candles: Candle[], s: Series, i: number, mult: number): boolean {
+  const volMa = s.volMa20[i];
+  if (!Number.isFinite(volMa) || volMa <= 0) return false;
+  return candles[i].v >= volMa * mult;
+}
+
 function rangeOf(candles: Candle[], from: number, to: number) {
   let hi = -Infinity;
   let lo = Infinity;
@@ -168,6 +189,48 @@ export const postFlush: Detector = (candles, s, i, tf) => {
   return null;
 };
 
+/**
+ * EQ 평균회귀 + 장악형 캔들 — 2026-11-23 라이브 풀에서 제외된 기법.
+ *  전수 재측정에서 어떤 강화(거래량 1.2배·몸통 1ATR·구간 2ATR·EMA200 정렬·목표 2.3R)로도
+ *  승률 45%를 넘지 못했다(최고 42.6%/+0.199R). 장세가 바뀌면 다시 채점해 살아날 수 있다.
+ */
+export const eqEngulfing: Detector = (candles, s, i, tf) => {
+  if (i < 36) return null;
+  const a = atrAt(s, i);
+  if (!a) return null;
+  const c = candles[i];
+  const prev = candles[i - 1];
+  const { hi, lo } = rangeOf(candles, i - 30, i - 1);
+  const height = hi - lo;
+  if (height <= 0) return null;
+  const eq = (hi + lo) / 2;
+  if (lo + height * 0.15 > eq) return null;
+  if (Math.abs(prev.c - eq) > height * 0.32) return null;
+
+  const trendUp = s.ema20[i] > s.ema50[i];
+  const trendDown = s.ema20[i] < s.ema50[i];
+  const bullEngulf = c.c > c.o && prev.c < prev.o && c.c >= prev.o && c.o <= prev.c;
+  const bearEngulf = c.c < c.o && prev.c > prev.o && c.c <= prev.o && c.o >= prev.c;
+
+  if (bullEngulf && trendUp && c.c >= eq * 0.998) {
+    if (htfBias(s, i, c.c) !== 1) return null;
+    if (!volConfirmed(candles, s, i, 1.2)) return null;
+    return assembleSetup(tf, 'long', c.c, Math.min(prev.l, c.l) - 0.2 * a, a, (risk) => {
+      if ((Math.min(hi, c.c + 2.4 * risk) - c.c) / risk < 1.5) return 0;
+      return fixedR('long', c.c, risk, 2.0);
+    }, ['EQ 지지', '상승 장악형', 'HTF 동조']);
+  }
+  if (bearEngulf && trendDown && c.c <= eq * 1.002) {
+    if (htfBias(s, i, c.c) !== -1) return null;
+    if (!volConfirmed(candles, s, i, 1.2)) return null;
+    return assembleSetup(tf, 'short', c.c, Math.max(prev.h, c.h) + 0.2 * a, a, (risk) => {
+      if ((c.c - Math.max(lo, c.c - 2.4 * risk)) / risk < 1.5) return 0;
+      return fixedR('short', c.c, risk, 2.0);
+    }, ['EQ 저항', '하락 장악형', 'HTF 동조']);
+  }
+  return null;
+};
+
 export interface LabStrategy {
   id: string;
   name: string;
@@ -190,6 +253,16 @@ export const LAB_STRATEGIES: LabStrategy[] = [
     origin: 'PDH/PDL Liquidity Sweep + Structure Reversion',
     warmup: 30,
     detect: pdhPdlSweep,
+  },
+  {
+    id: 'eq-engulfing',
+    name: 'EQ 평균회귀 + 장악형 캔들',
+    short: 'EQ·장악형',
+    desc: '스윙 EQ(0.5) 지지·저항에서 장악형 캔들 반전을 HTF 추세 방향으로 받는다.',
+    star: 3,
+    origin: 'EQ(0.5) Mean Reversion + Engulfing — 구간 회귀 매매',
+    warmup: 36,
+    detect: eqEngulfing,
   },
   {
     id: 'post-flush',

@@ -209,7 +209,7 @@ export function SignalCard({
           잔여 <b>{signal.state === 'open' ? signal.remainingRR.toFixed(1) : '0.0'}R</b>
         </span>
         <span className="rr-pill muted">
-          최근 승률 <b>{signal.winRate.toFixed(0)}%</b>
+          {signal.winRateBasis === 'bench' ? '전수 승률' : '최근 승률'} <b>{signal.winRate.toFixed(0)}%</b>
         </span>
         <span className="rr-pill muted">
           {signal.barsSince === 0 ? '방금 감지' : `${signal.barsSince}봉 전`}

@@ -6,7 +6,7 @@
  *  2) 첫 실행 온보딩(시드 프리셋·보수적/공격적) → 저장 → 메인 진입
  *  3) 하단 5탭(스캐너|시황|메뉴|기록|설정) · 390px 가로 오버플로 0건
  *  4) 코인 집중: 기본 자산 필터 '코인', FX·랏(Lot)·벤티지 호가 보정 UI 0건
- *  5) 카드 한글 라벨(진입가·목표가·손절가·본전·손익비·최근 승률) + 천단위 콤마
+ *  5) 카드 한글 라벨(진입가·목표가·손절가·본전·손익비·최근/전수 승률) + 천단위 콤마
  *  6) COTA 추천 배지(보수적 2~5x · 공격적 10~25x) + 시드 예상 수익/손절 손실
  *  7) 공유 카드(캔버스) · 설정(프로필·알림) · 메뉴>전략엔진 · 콘솔 에러 0건
  *  8) 스크린샷 5장: 18-toss-scanner · 19-toss-engine · 20-toss-share-card · 21-toss-settings · 22-toss-onboarding
@@ -282,7 +282,13 @@ const run = async () => {
   });
   check('카드 방향·상태 배지 한글', /^(롱 · 매수|숏 · 매도)$/.test(card.side) && /^(진행 중|목표 달성|손절 종료)$/.test(card.state), `${card.side} / ${card.state}`);
   check('가격 박스 = 목표가·진입가·본전(EQ)·손절가', card.labels.join('|') === '목표가|진입가|본전 (EQ)|손절가', card.labels.join(' / '));
-  check('현재가 라벨 · 손익비 1 : n · 최근 승률', card.priceCap === '현재가' && /^손익비 1 : \d+\.\d$/.test(card.rr) && /^최근 승률 \d+%$/.test(card.winRate), `${card.rr} · ${card.winRate}`);
+  check(
+    '현재가 라벨 · 손익비 1 : n · 최근/전수 승률',
+    card.priceCap === '현재가' &&
+      /^손익비 1 : \d+\.\d$/.test(card.rr) &&
+      /^(최근|전수) 승률 \d+%$/.test(card.winRate),
+    `${card.rr} · ${card.winRate}`,
+  );
   check('카드에 영어 약어 없음', !card.english, card.sym);
   check(
     '가격 천단위 콤마',

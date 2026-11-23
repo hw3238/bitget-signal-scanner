@@ -264,11 +264,14 @@ export function evaluateEntry(ctx: EntryContext): EntryDecision {
   if (!symbolAllowed(config, signal.symbol)) {
     return { allowed: false, code: 'symbol', reason: `${base}는 허용 종목(메이저 4종)이 아닙니다.` };
   }
-  if (signal.winRate < config.minWinRate) {
+  // 승률 기준 — 전수 검증 채택 신호는 표본 부족으로 승률이 낮게 표기되므로,
+  // 기대값이 확실한 기법(전수 0.30R 이상)은 승률 기준을 우회해 진입한다.
+  const highExpectancy = signal.winRateBasis === 'bench' && (signal.strategyExp ?? 0) >= 0.3;
+  if (!highExpectancy && signal.winRate < config.minWinRate) {
     return {
       allowed: false,
       code: 'winrate',
-      reason: `최근 승률 ${signal.winRate.toFixed(0)}% < 기준 ${config.minWinRate}%`,
+      reason: `${signal.winRateBasis === 'bench' ? '전수' : '최근'} 승률 ${signal.winRate.toFixed(0)}% < 기준 ${config.minWinRate}%`,
     };
   }
   if (signal.rr < config.minRR) {

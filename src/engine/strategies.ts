@@ -160,6 +160,12 @@ function sweepOrderBlock(candles: Candle[], s: Series, i: number, tf: TF): Setup
 }
 
 /** 3. EMA 20/50 Pullback + RSI Divergence (HTF 추세 동조 + 거래량) */
+/**
+ * 3. EMA 20/50 눌림 + RSI — 눌림 뒤 **반등 확인 3종**(거래량·종가 위치·RSI 반등)까지 겹칠 때만 진입.
+ *  2026-11-23 전수 재측정: 확인 없이 잡던 기존 규칙은 42.1%/+0.093R(왕복 0.12% 차감)로
+ *  기대값이 수수료를 겨우 넘겼다. 세 조건을 더하니 47.0%/+0.253R(PF 1.45) — 표본 1,198건,
+ *  IS 46.3% / OOS 47.6% 로 최근 구간에서도 유지돼 저승률 기법에서 탈출했다.
+ */
 function emaPullbackRsi(candles: Candle[], s: Series, i: number, tf: TF): Setup | null {
   if (i < 60) return null;
   const a = atrAt(s, i);
@@ -207,7 +213,17 @@ function emaPullbackRsi(candles: Candle[], s: Series, i: number, tf: TF): Setup 
     if (p > 0 && c.h >= highP * 0.998 && r < s.rsi14[p] - 1.2) div = true;
   }
 
-  const tags = ['EMA20 눌림', div ? 'RSI 다이버전스' : 'RSI 회복', 'HTF 동조'];
+  // ── 반등 확인 3종: 거래량이 실린 봉 + 추세 방향으로 마감 + RSI가 꺾여 돌아섬 ──
+  if (!volConfirmed(candles, s, i, 1.2)) return null;
+  const span = c.h - c.l || 1;
+  if (trendUp && (c.c - c.l) / span < 0.6) return null;
+  if (trendDown && (c.h - c.c) / span < 0.6) return null;
+  const rPrev = s.rsi14[i - 1];
+  if (!Number.isFinite(rPrev)) return null;
+  if (trendUp && !(r > rPrev)) return null;
+  if (trendDown && !(r < rPrev)) return null;
+
+  const tags = ['EMA20 눌림', div ? 'RSI 다이버전스' : 'RSI 회복', '반등 확인', 'HTF 동조'];
   if (trendUp) {
     if (c.c <= e20) return null;
     if (!div && r < 50) return null;
@@ -221,8 +237,13 @@ function emaPullbackRsi(candles: Candle[], s: Series, i: number, tf: TF): Setup 
   return assembleSetup(tf, 'short', c.c, swingHigh + 0.2 * a, a, (risk) => fixedR('short', c.c, risk, 1.8), tags);
 }
 
-/** 4. EQ Mean Reversion + Engulfing (HTF 추세 동조 + 거래량) */
-function eqEngulfing(candles: Candle[], s: Series, i: number, tf: TF): Setup | null {
+/**
+ * EQ Mean Reversion + Engulfing (HTF 추세 동조 + 거래량)
+ * 2026-11-23 전수 재측정에서 어떤 강화 조합(거래량·몸통 1ATR·구간 2ATR·EMA200 정렬·목표 2.3R)으로도
+ * 승률 45%를 넘지 못해(최고 42.6%/+0.199R) 라이브 풀에서 제외하고 `strategyLab.ts` 로 옮겼다.
+ * 장세가 바뀌면 토너먼트가 다시 채점한다.
+ */
+export function eqEngulfing(candles: Candle[], s: Series, i: number, tf: TF): Setup | null {
   if (i < 36) return null;
   const a = atrAt(s, i);
   if (!a) return null;
@@ -432,7 +453,6 @@ export const DETECTORS: Record<string, Detector> = {
   'crt-fvg-cisd': crtFvgCisd,
   'sweep-ob': sweepOrderBlock,
   'ema-pullback-rsi': emaPullbackRsi,
-  'eq-engulfing': eqEngulfing,
   'supertrend-donchian': supertrendDonchian,
   'trap-bar-fade': trapBarFade,
   'break-retest-20': breakRetest20,

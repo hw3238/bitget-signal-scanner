@@ -93,7 +93,7 @@ export function buildSignalMessage(signal: Signal, options: { test?: boolean } =
   const body = `진입가 ${fmtPrice(signal.entry, signal.decimals)} · 목표가 ${fmtPrice(
     signal.target,
     signal.decimals,
-  )} · 손절가 ${fmtPrice(signal.stop, signal.decimals)} · 최근 승률 ${Math.round(signal.winRate)}%`;
+  )} · 손절가 ${fmtPrice(signal.stop, signal.decimals)} · ${signal.winRateBasis === 'bench' ? '전수' : '최근'} 승률 ${Math.round(signal.winRate)}%`;
   return { title, body };
 }
 

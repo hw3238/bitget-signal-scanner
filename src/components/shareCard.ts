@@ -444,7 +444,7 @@ export async function drawShareCard(
     weight: 700,
     color: C.ink2,
   });
-  text(ctx, `최근 승률 ${signal.winRate.toFixed(0)}%`, W / 2, gy - 10, {
+  text(ctx, `${signal.winRateBasis === 'bench' ? '전수' : '최근'} 승률 ${signal.winRate.toFixed(0)}%`, W / 2, gy - 10, {
     size: 13,
     weight: 700,
     color: C.ink2,

@@ -267,9 +267,18 @@ const run = async () => {
 
   /* ---------- 4) 주식선물 글자 아바타 ---------- */
   await page.locator('.segmented button', { hasText: '주식선물' }).first().click();
-  await page.waitForTimeout(800);
+  // 스캔이 도는 중에는 목록이 갱신되므로 필터가 반영된 뒤(스캔 종료) 카드 상태를 읽는다.
+  await page.waitForFunction(
+    () => {
+      const b = document.querySelector('.rescan');
+      return !!b && !b.classList.contains('busy');
+    },
+    { timeout: 180000 },
+  );
+  await page.waitForTimeout(1200);
   const stock = await page.evaluate(() => {
-    const row = document.querySelector('.signal-card:not(.skeleton)');
+    const cards = [...document.querySelectorAll('.signal-card:not(.skeleton)')];
+    const row = cards.find((c) => c.querySelector('.asset')?.textContent?.trim() === '주식선물');
     if (!row) return null;
     return {
       base: row.querySelector('.sym')?.textContent?.trim(),

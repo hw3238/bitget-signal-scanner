@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Settings } from '../lib/storage';
-import { MIN_RR, MIN_TRADES, MIN_WINRATE } from '../engine/backtest';
+import { BENCH_GATE, MIN_RR, MIN_TRADES, MIN_WINRATE } from '../engine/backtest';
 import { STOP_WIDTH } from '../engine/risk';
 import type { ScanState } from '../hooks/useScanner';
 import { BENCH_INFO, STRATEGIES, type Signal } from '../engine/types';
@@ -582,10 +582,14 @@ export function SettingsTab({
             {STOP_WIDTH['1H'].min}% — 상한을 넘는 넓은 손절폭 시그널은 만들지 않습니다
           </li>
           <li>
-            <b>채택 기준</b> 최근 60봉 검증 승률 {MIN_WINRATE}% 이상 · 손익비 {MIN_RR}R 이상 · 표본 {MIN_TRADES}건 이상
+            <b>마켓 실측 채택</b> 최근 60봉 표본 {MIN_TRADES}건 이상 · 승률 {MIN_WINRATE}% 이상 · 손익비 {MIN_RR}R 이상
           </li>
           <li>
-            <b>자동 교체</b> 기존 채택 전략이 기준 미달이면 현재 최고 성과 전략으로 즉시 전환하고 로그를 남깁니다
+            <b>전수 검증 채택</b> 마켓 표본이 모자라도 전수 백테스트 승률 {BENCH_GATE.minWinRate}% · 1건 기대값{' '}
+            {BENCH_GATE.minExp}R · 표본 {BENCH_GATE.minN}건 이상인 기법은 최근 반증(연속 손실)이 없으면 채택합니다
+          </li>
+          <li>
+            <b>우선순위</b> 채택 순서는 <b>기대값 × 승률</b> — 횟수가 많은 저승률 기법이 고승률 기법을 밀어내지 못합니다
           </li>
           <li>
             <b>판정</b> 진입 이후 최대 42봉 안에 목표가/손절가 도달 여부로 목표 달성·손절 종료를 판정합니다

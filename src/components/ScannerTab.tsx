@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Contract, Signal } from '../engine/types';
 import type { ScanState } from '../hooks/useScanner';
+import { BENCH_GATE, MIN_WINRATE } from '../engine/backtest';
 import { favoriteKey, type FavoriteEntry } from '../lib/favorites';
 import { fmtPct, tfLabel } from '../lib/format';
 import type { Settings } from '../lib/storage';
@@ -151,9 +152,8 @@ export function ScannerTab({
   const remaining = filtered.length - shown.length;
   const activeQuick = QUICK_FILTERS.find((q) => q.query.toLowerCase() === query.trim().toLowerCase());
 
-  const qualified = state.analyses.filter(
-    (a) => a.asset !== 'fx' && a.activeWinRate >= 55 && a.activeRR >= 1.5 && a.activeN >= 2,
-  ).length;
+  // 시그널이 실린 마켓 수 — 마켓 실측·전수 검증 어느 근거로 채택됐든 신호가 있는 마켓을 센다
+  const qualified = state.analyses.filter((a) => a.asset !== 'fx' && a.signals.length > 0).length;
   const marketCount = state.analyses.filter((a) => a.asset !== 'fx').length;
   const scanning = state.status === 'scanning';
   const pct = state.progress.total ? Math.round((state.progress.done / state.progress.total) * 100) : 0;
@@ -184,7 +184,7 @@ export function ScannerTab({
               진행 중 시그널 <span className="dot-live" /> <b>{openSignals.length}</b>
             </div>
             <div className="summary-sub">
-              비트겟 USDT-M 코인·주식선물 · {marketCount}개 마켓 · {qualified}개 고승률 전략 채택
+              비트겟 USDT-M 코인·주식선물 · {marketCount}개 마켓 · {qualified}개 마켓 시그널
             </div>
           </div>
           <div className="scan-actions">
@@ -367,7 +367,7 @@ export function ScannerTab({
         <span className="muted">
           {favOnly
             ? '찜한 시그널은 진행중/종료·필터와 무관하게 모두 표시됩니다'
-            : `승률 55%·손익비 ${settings.minRR.toFixed(1)}R 이상 전략만 시그널 생성 · ${
+            : `최근 승률 ${MIN_WINRATE}% 또는 전수 검증(승률 ${BENCH_GATE.minWinRate}%·기대 ${BENCH_GATE.minExp}R) 채택 · 손익비 ${settings.minRR.toFixed(1)}R 이상 · ${
                 settings.leverageMode === 'auto' && profile
                   ? `COTA 추천 배율(${profile.style === 'aggressive' ? '공격적' : '보수적'})`
                   : `레버리지 ${settings.leverage}x 고정`
