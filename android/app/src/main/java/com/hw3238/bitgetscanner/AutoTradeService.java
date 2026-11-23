@@ -118,6 +118,11 @@ public class AutoTradeService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
+        if (ACTION_SYNC.equals(action)) {
+            // 감시 목록·설정만 갱신 — 주기를 다시 시작하지 않아 거래소 호출을 늘리지 않는다.
+            notification("감시 중", statusText(config));
+            return START_STICKY;
+        }
         notification("감시 중", statusText(config));
         worker.removeCallbacks(tick);
         worker.post(tick);
