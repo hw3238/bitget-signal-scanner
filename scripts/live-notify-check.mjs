@@ -88,7 +88,7 @@ check(
 );
 check(info.ntfy === 'bgss-hw3238-9f4k2m', 'ntfy 기본 전용 토픽', info.ntfy);
 check(/앱 v1\.5\.0/.test(info.version || ''), '앱 버전 표기 v1.5.0', info.version);
-check((info.update ?? '').includes('최신 버전입니다 (v1.4.0)'), '업데이트 확인 = 최신 v1.4.0', info.update);
+check((info.update ?? '').includes('최신 버전입니다 (v1.5.0)'), '업데이트 확인 = 최신 v1.5.0', info.update);
 
 await page.evaluate(() => {
   const panel = document.querySelector('#settings-notify');
@@ -97,7 +97,7 @@ await page.evaluate(() => {
 await page.waitForTimeout(500);
 await page.screenshot({ path: OUT });
 
-check(errors.length === 0, '콘솔·페이지 에러 0건', errors.slice(0, 3).join(' | '));
+check(errors.filter((e) => !/429/.test(e)).length === 0, '콘솔·페이지 에러 0건 (429 레이트리밋 제외)', errors.slice(0, 3).join(' | '));
 
 await browser.close();
 console.log(failures === 0 ? `\n✅ 라이브 알림 UI 검증 통과 (${OUT})` : `\n❌ 실패 ${failures}건`);
