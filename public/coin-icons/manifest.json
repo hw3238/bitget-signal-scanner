@@ -1,9 +1,9 @@
 {
- "generatedAt": "2026-11-23T01:02:58.844Z",
- "count": 174,
+ "generatedAt": "2026-11-23T01:18:09.471Z",
+ "count": 175,
  "sources": {
   "okx": 0,
-  "binance": 0,
+  "binance": 1,
   "coincap": 0
  },
  "icons": {
@@ -96,6 +96,7 @@
   "LAB": "LAB.png",
   "LDO": "LDO.png",
   "LINK": "LINK.png",
+  "LISTA": "LISTA.png",
   "LIT": "LIT.png",
   "LSK": "LSK.png",
   "LTC": "LTC.png",
