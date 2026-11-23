@@ -16,7 +16,7 @@ import {
   writeCandles,
   type ScanSnapshot,
 } from '../lib/scanCache';
-import { loadHistory, loadSwapLog, saveHistory, saveSwapLog, type HistoryRecord, type SwapLogEntry } from '../lib/storage';
+import { HISTORY_LIMIT, loadHistory, loadSwapLog, saveHistory, saveSwapLog, type HistoryRecord, type SwapLogEntry } from '../lib/storage';
 
 export interface ScanState {
   status: 'idle' | 'scanning' | 'ready' | 'error';
@@ -337,7 +337,7 @@ export function useScanner({ refreshSec, autoStart = true, favoriteSymbols = [] 
             decimals: s.decimals,
           });
         }
-        const next = [...map.values()].sort((a, b) => b.detectedAt - a.detectedAt).slice(0, 400);
+        const next = [...map.values()].sort((a, b) => b.detectedAt - a.detectedAt).slice(0, HISTORY_LIMIT);
         saveHistory(next);
         return next;
       });

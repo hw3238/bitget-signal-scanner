@@ -72,9 +72,15 @@ export const loadSettings = (): Settings => {
 };
 export const saveSettings = (s: Settings) => localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
 
+/**
+ * 시그널 이력 보관 상한 — 하이브리드 채택으로 마켓당 여러 전략의 시그널이 쌓여
+ * 스캔 1회당 이력이 1.6배로 늘었다. 상한을 그대로 두면 복기 창이 1~2시간으로 줄어
+ * 승률·누적 R이 흔들리므로, 1건 ≈ 0.25KB 기준 1,200건(≈300KB)까지 보관한다.
+ */
+export const HISTORY_LIMIT = 1200;
 export const loadHistory = () => readArray<HistoryRecord>(HISTORY_KEY);
 export const saveHistory = (h: HistoryRecord[]) =>
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, 400)));
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, HISTORY_LIMIT)));
 
 export const loadSwapLog = () => readArray<SwapLogEntry>(LOG_KEY);
 export const saveSwapLog = (l: SwapLogEntry[]) => localStorage.setItem(LOG_KEY, JSON.stringify(l.slice(0, 200)));
