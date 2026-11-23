@@ -205,11 +205,11 @@ async function scenario(allowInstall) {
   });
   await page.waitForTimeout(900);
   const settings = await page.evaluate(() => ({
-    version: /COTA · 앱 v1\.5\.1/.test(document.body.innerText),
+    version: /COTA · 앱 v1\.5\.2/.test(document.body.innerText),
     updateBtn: [...document.querySelectorAll('button')].some((b) => /바로 업데이트 \(v1\.9\.0\)/.test(b.textContent ?? '')),
     hardReload: [...document.querySelectorAll('button')].some((b) => /웹 화면 즉시 새로고침/.test(b.textContent ?? '')),
   }));
-  check(settings.version, '설정 탭 현재 버전 v1.5.1');
+  check(settings.version, '설정 탭 현재 버전 v1.5.2');
   check(settings.updateBtn, '설정 탭 인앱 업데이트 버튼');
   check(settings.hardReload, '설정 탭 웹 화면 즉시 새로고침 버튼');
   check(errors.length === 0, '설정 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));

@@ -307,11 +307,26 @@ public class AutoTradeService extends Service {
         }
         body.put("orderType", "market");
         body.put("clientOid", clientOid(plan));
-        String target = trim(plan.optDouble("target", 0));
-        String stop = trim(plan.optDouble("stop", 0));
+        // TP/SL — 웹이 호가 배수로 맟춰 보낸 문자열(tpStr/slStr)을 그대로 쓴다.
+        // 없으면 계약 호가(pricePlace·priceEndStep)로 맞춘다. 예전에는 %.8f 로 소수 꼬리를 그대로 보내
+        // 비트겟이 45115(The price you enter should be a multiple of 0.01)로 거절했다.
+        int pricePlace = plan.has("pricePlace") ? plan.optInt("pricePlace", -1) : plan.optInt("decimals", -1);
+        int priceEndStep = plan.optInt("priceEndStep", 1);
+        String target = tickPrice(plan, "tpStr", "target", pricePlace, priceEndStep);
+        String stop = tickPrice(plan, "slStr", "stop", pricePlace, priceEndStep);
         if (!target.isEmpty()) body.put("presetStopSurplusPrice", target);
         if (!stop.isEmpty()) body.put("presetStopLossPrice", stop);
         return body;
+    }
+
+    /** 이미 호가 배수로 맞춘 문자열 → 없으면 계약 호가로 반올림 → 호가 정보도 없으면 종전 표기 */
+    private static String tickPrice(JSONObject plan, String strKey, String numKey, int pricePlace, int priceEndStep) {
+        String exact = plan.optString(strKey, "");
+        if (exact != null && !exact.isEmpty()) return exact;
+        double value = plan.optDouble(numKey, 0);
+        if (!(value > 0)) return "";
+        if (pricePlace >= 0 && pricePlace <= 8) return BitgetApi.roundToTick(value, pricePlace, priceEndStep);
+        return trim(value);
     }
 
     /** 시그널 키 → 고정 clientOid (재시도해도 거래소가 중복으로 거절) */

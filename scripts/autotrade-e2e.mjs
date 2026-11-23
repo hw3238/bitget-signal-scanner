@@ -212,7 +212,7 @@ const NATIVE_MOCK = () => {
   if (window.__oldApk) methods = methods.filter((m) => !/^(bitget|autoTrade)/.test(m.name));
 
   const handlers = {
-    appInfo: async () => ({ versionName: '1.5.1', versionCode: 7, packageName: 'com.hw3238.bitgetscanner' }),
+    appInfo: async () => ({ versionName: '1.5.2', versionCode: 8, packageName: 'com.hw3238.bitgetscanner' }),
     notificationPermission: async () => ({ granted: true, supported: true }),
     canInstallPackages: async () => ({ allowed: true }),
     bitgetSaveKeys: async (o) => {

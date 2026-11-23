@@ -292,13 +292,27 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
           hasKeys: keys.hasKeys || !supported,
         });
         decisions.push({ signal, decision });
-        if (decision.allowed) plans.push(toArmedPlan({ signal, plan, now, ttlMin: cfg.entryTtlMin }));
+        if (decision.allowed) {
+          // 감시 항목에 호가 배수로 맞춘 TP/SL 문자열을 실어 보낸다 — 네이티브가 그대로 주문에 쓴다(45115 방지).
+          const contract = contractBySymbol.get(signal.symbol);
+          plans.push(
+            toArmedPlan({
+              signal,
+              plan,
+              now,
+              ttlMin: cfg.entryTtlMin,
+              pricePlace: contract?.decimals ?? null,
+              priceEndStep: contract?.priceEndStep ?? 1,
+            }),
+          );
+        }
       }
       return { plans, decisions };
     },
     [
       account?.equity,
       config,
+      contractBySymbol,
       daily.locked,
       keys.hasKeys,
       leverageFor,
@@ -470,6 +484,8 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
         posMode: normalizePosMode(account?.posMode),
         orderType: 'market',
         clientOid: clientOidFor(signal.symbol),
+        pricePlace: contractBySymbol.get(signal.symbol)?.decimals ?? null,
+        priceEndStep: contractBySymbol.get(signal.symbol)?.priceEndStep ?? 1,
       });
       setBusy(`order:${signal.symbol}`);
       const res = await bitgetPlaceOrder({ ...params, leverage: plan.leverage, holdMode: account?.posMode });
@@ -495,7 +511,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       void refreshPositions();
       return { ok: true, simulated: false, message: `${config.mode === 'live' ? '실거래' : '모의투자'} 주문을 넣었습니다.` };
     },
-    [account?.equity, account?.posMode, config, daily.locked, keys.hasKeys, leverageFor, log, openPositions, profile, refreshPositions, runtime.tradedKeys, specFor, supported],
+    [account?.equity, account?.posMode, config, contractBySymbol, daily.locked, keys.hasKeys, leverageFor, log, openPositions, profile, refreshPositions, runtime.tradedKeys, specFor, supported],
   );
 
   /* ---------------- 부팅 · 주기 동기화 ---------------- */

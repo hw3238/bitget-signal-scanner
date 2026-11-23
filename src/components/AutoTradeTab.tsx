@@ -172,7 +172,7 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
             키 연결과 24시간 감시가 동작합니다. (설치 후 기존 설정·기록은 그대로 유지됩니다)
           </p>
           <button type="button" className="auto-primary" onClick={() => void openExternalUrl(APK_DOWNLOAD_URL)}>
-            ⬇︎ COTA v1.5.1 APK 받기
+            ⬇︎ COTA v1.5.2 APK 받기
           </button>
         </div>
       )}

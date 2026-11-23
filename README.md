@@ -7,9 +7,19 @@
 | --- | --- |
 | 웹 (GitHub Pages) | <https://hw3238.github.io/bitget-signal-scanner/> |
 | APK 다운로드 | <https://github.com/hw3238/bitget-signal-scanner/releases/latest/download/bitget-crt-scanner.apk> |
-| 현재 버전 | **v1.5.1** (versionCode 7) |
+| 현재 버전 | **v1.5.2** (versionCode 8) |
 
 ## 주요 기능
+
+- **🎯 호가 단위(45115) 수리(v1.5.2)** — 실기기 모의투자 테스트에서 모든 종목 주문이
+  `45115 The price you enter should be a multiple of 0.01` 로 거절되던 문제를 고쳤습니다.
+  - 원인: 감시 서비스가 `targets`/`stop` 숫자를 `%.8f` 로 다시 문자열화해 **호가 단위의 배수가 아닌 소수 꼬리**(예: `91234.567`)를
+    TP/SL 로 보냈습니다. BTC는 `0.1`, ETH·BNB·MSTR은 `0.01` 배수여야 합니다.
+  - 수리: 계약의 `pricePlace`(소수 자리)와 **`priceEndStep`**(스텝, `tick = step × 10^-pricePlace`)를 함께 읽어
+    `roundToTick` 으로 호가 배수 문자열을 만듭니다(웹 `src/lib/autotrade.ts` · 네이티브 `BitgetApi.java` 동일 알고리즘).
+    웹이 감시 항목에 `pricePlace`·`priceEndStep`·`tpStr`·`slStr` 를 실어 보내고, 네이티브는 **그 문자열을 손대지 않고** 주문에 씁니다.
+  - 안전망: 그래도 `45115` 가 오면 네이티브가 공개 계약 API에서 호가를 읽어 TP/SL·지정가를 다시 맞춰 **한 번 재시도**합니다.
+  - 회귀 검증: `check:autotrade` 에 BTC(0.1)·ETH/BNB/MSTR(0.01)·`priceEndStep=5`(0.0005) 케이스 추가.
 
 - **🔗 비트겟 계정 자동 감지(v1.5.1)** — 통합 거래 계정(UTA, v3)과 클래식 계정(v2)을 **앱이 스스로 판별**해
   같은 화면·같은 버튼으로 둘 다 연결합니다. `GET /api/v3/account/settings`가 `00000`이면 통합계정,

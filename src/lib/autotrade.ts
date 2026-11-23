@@ -411,18 +411,72 @@ export function priceText(value: number, decimals?: number | null): string {
   return trimmed === '-0' ? '0' : trimmed;
 }
 
+/* ------------------------------------------------------------------ *
+ * 호가 단위(tick) — 비트겟 45115 의 원인
+ * ------------------------------------------------------------------ */
+
+/**
+ * 최소 호가 = priceEndStep × 10^(-pricePlace).
+ *   예) BTC(1,1) = 0.1 · ETH/BNB/MSTR(2,1) = 0.01 · 스텝5 코인(4,5) = 0.0005
+ */
+export function tickSizeOf(pricePlace?: number | null, priceEndStep?: number | null): number {
+  const pp = pricePlace != null && Number.isFinite(pricePlace) ? clamp(Math.round(pricePlace), 0, 8) : 0;
+  const step =
+    priceEndStep != null && Number.isFinite(priceEndStep) && priceEndStep > 0 ? Math.round(priceEndStep) : 1;
+  return step / 10 ** pp;
+}
+
+/**
+ * 가격 → 호가 배수로 반올림한 고정 문자열.
+ * 비트겟은 TP/SL·지정가가 호가 단위의 배수가 아니면 `45115 The price you enter should be a multiple of 0.01`
+ * 처럼 거절한다. 신호의 목표가·손절가는 진입가 ± ATR 로 계산돼 소수 꼬리가 남기 때문에 주문 직전에 여기서 맞춘다.
+ *   roundToTick(91234.567, 1, 1) → '91234.6'  (BTC 0.1)
+ *   roundToTick(3456.789, 2, 1)  → '3456.79'  (ETH 0.01)
+ *   roundToTick(0.00062, 4, 5)   → '0.0005'   (0.0005 배수)
+ */
+export function roundToTick(value: number, pricePlace?: number | null, priceEndStep?: number | null): string {
+  if (!Number.isFinite(value) || value <= 0) return '';
+  if (pricePlace == null || !Number.isFinite(pricePlace)) return priceText(value, null);
+  const pp = clamp(Math.round(pricePlace), 0, 8);
+  const step =
+    priceEndStep != null && Number.isFinite(priceEndStep) && priceEndStep > 0 ? Math.round(priceEndStep) : 1;
+  const scale = 10 ** pp;
+  // 정수 스케일에서 반올림 — 부동소수 곱셈 오차가 문자열로 새지 않게 한다.
+  let ticks = Math.round((value * scale) / step);
+  if (!(ticks > 0)) ticks = 1; // 0 호가 방지 — 최소 한 틱
+  const digits = String(ticks * step).padStart(pp + 1, '0');
+  const intPart = digits.slice(0, digits.length - pp);
+  const frac = pp > 0 ? digits.slice(digits.length - pp).replace(/0+$/, '') : '';
+  return frac ? `${intPart}.${frac}` : intPart;
+}
+
+/** 주문에 넣는 가격 — 호가 정보가 있으면 배수로 맞추고, 없으면 종전 표기(네이티브가 계약 호가로 보정한다) */
+export function orderPriceText(
+  value: number,
+  pricePlace?: number | null,
+  priceEndStep?: number | null,
+): string {
+  if (pricePlace == null || !Number.isFinite(pricePlace)) return priceText(value, null);
+  return roundToTick(value, pricePlace, priceEndStep);
+}
+
 /** 주문 body — 네이티브 `bitgetPlaceOrder` 로 그대로 넘긴다. */
 export function buildOrderParams(input: {
-  signal: Pick<Signal, 'symbol' | 'side' | 'target' | 'stop' | 'decimals'>;
+  signal: Pick<Signal, 'symbol' | 'side' | 'target' | 'stop' | 'decimals' | 'priceEndStep'>;
   plan: Pick<OrderPlan, 'qty' | 'qtyDecimals'>;
   posMode: PosMode;
   orderType?: 'market' | 'limit';
   limitPrice?: number;
   clientOid?: string;
+  /** 계약 호가 정보 — 없으면 signal 의 decimals/priceEndStep 을 쓴다 */
+  pricePlace?: number | null;
+  priceEndStep?: number | null;
 }): PlaceOrderParams {
   const { signal, plan, posMode } = input;
   const orderType = input.orderType ?? 'market';
   const dir = orderSideFor(signal.side, 'open', posMode);
+  const pricePlace = input.pricePlace ?? signal.decimals;
+  const priceEndStep = input.priceEndStep ?? signal.priceEndStep;
   const params: PlaceOrderParams = {
     symbol: signal.symbol,
     productType: 'USDT-FUTURES',
@@ -432,11 +486,11 @@ export function buildOrderParams(input: {
     side: dir.side,
     orderType,
     clientOid: input.clientOid ?? clientOidFor(signal.symbol),
-    presetStopSurplusPrice: priceText(signal.target, signal.decimals),
-    presetStopLossPrice: priceText(signal.stop, signal.decimals),
+    presetStopSurplusPrice: orderPriceText(signal.target, pricePlace, priceEndStep),
+    presetStopLossPrice: orderPriceText(signal.stop, pricePlace, priceEndStep),
   };
   if (dir.tradeSide) params.tradeSide = dir.tradeSide;
-  if (orderType === 'limit') params.price = priceText(input.limitPrice ?? 0, signal.decimals);
+  if (orderType === 'limit') params.price = orderPriceText(input.limitPrice ?? 0, pricePlace, priceEndStep);
   return params;
 }
 
@@ -462,6 +516,13 @@ export interface ArmedPlan {
   qtyDecimals: number | null;
   leverage: number;
   decimals: number | null;
+  /** 거래소 호가 정보(pricePlace) — 네이티브가 없을 때 보정용으로도 쓴다 */
+  pricePlace: number | null;
+  /** 호가 스텝(priceEndStep) — TP/SL 을 호가 배수로 맞춘다 */
+  priceEndStep: number;
+  /** 이미 호가 배수로 맞춘 TP/SL 문자열 — 네이티브가 손대지 않고 그대로 보낸다 */
+  tpStr: string;
+  slStr: string;
   winRate: number;
   rr: number;
   detectedAt: number;
@@ -476,8 +537,13 @@ export function toArmedPlan(input: {
   plan: OrderPlan;
   now: number;
   ttlMin: number;
+  /** 계약 호가 정보 — 없으면 signal 의 decimals/priceEndStep 을 쓴다 */
+  pricePlace?: number | null;
+  priceEndStep?: number | null;
 }): ArmedPlan {
   const { signal, plan, now, ttlMin } = input;
+  const pricePlace = input.pricePlace ?? signal.decimals ?? null;
+  const priceEndStep = input.priceEndStep ?? signal.priceEndStep ?? 1;
   return {
     key: signalKeyOf(signal),
     symbol: signal.symbol,
@@ -490,6 +556,10 @@ export function toArmedPlan(input: {
     qtyDecimals: plan.qtyDecimals,
     leverage: plan.leverage,
     decimals: signal.decimals ?? null,
+    pricePlace,
+    priceEndStep,
+    tpStr: orderPriceText(signal.target, pricePlace, priceEndStep),
+    slStr: orderPriceText(signal.stop, pricePlace, priceEndStep),
     winRate: signal.winRate,
     rr: signal.rr,
     detectedAt: signal.detectedAt,

@@ -19,6 +19,12 @@ export interface Contract {
   isRwa: boolean;
   /** 소수점 자리수(거래소 pricePlace). FX·금 표기 정밀도에 사용 */
   decimals?: number;
+  /**
+   * 호가 스텝(거래소 priceEndStep). 실제 최소 호가 = priceEndStep × 10^(-pricePlace)
+   *   예) BTC pricePlace=1·step=1 → 0.1 · 스텝 5 코인 pricePlace=4·step=5 → 0.0005
+   * TP/SL 가 이 배수가 아니면 비트겟이 45115 로 거절한다.
+   */
+  priceEndStep?: number;
   /** 최소 주문 수량(코인 단위 · minTradeNum) */
   minTradeNum?: number;
   /** 주문 수량 소수 자리(거래소 volumePlace) */
@@ -245,6 +251,8 @@ export interface Signal {
   quoteVolume: number;
   /** FX·금처럼 고정 소수점 표기가 필요한 종목의 자리수 */
   decimals?: number;
+  /** 호가 스텝 — TP/SL 을 호가 배수로 맞추는 데 쓴다(계약 priceEndStep) */
+  priceEndStep?: number;
 }
 
 export type AdoptBasis = 'market' | 'bench';

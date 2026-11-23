@@ -9,6 +9,8 @@ import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -60,6 +62,8 @@ public final class BitgetApi {
     public static final String ERR_UTA_MODE = "40085";
     /** v3 호출이 클래식 계정에서 돌아오는 코드 — Classic 힌트 */
     public static final String ERR_CLASSIC_MODE = "40084";
+    /** 가격이 호가 단위(tick)의 배수가 아님 — TP/SL 소수 꼬리가 원인 */
+    public static final String ERR_PRICE_STEP = "45115";
 
     private static final long SETTINGS_TTL_MS = 5 * 60_000L;
 
@@ -98,6 +102,9 @@ public final class BitgetApi {
     }
 
     private static final ConcurrentHashMap<String, AccountCache> CACHE = new ConcurrentHashMap<>();
+
+    /** 종목 호가 정보(pricePlace, priceEndStep) 캐시 — 45115 보정용. 프로세스 수명 동안 유지. */
+    private static final ConcurrentHashMap<String, int[]> TICK_CACHE = new ConcurrentHashMap<>();
 
     private static AccountCache cache(Keys keys) {
         String id = keys == null ? "-" : keys.cacheKey();
@@ -156,6 +163,8 @@ public final class BitgetApi {
                 case "40005":
                 case "40008":
                     return "휴대폰 시각이 거래소와 맞지 않습니다. 설정에서 자동 시간(네트워크 시간)을 켠 뒤 다시 시도해 주세요.";
+                case ERR_PRICE_STEP:
+                    return "목표가·손절가가 거래소 호가 단위와 맞지 않습니다(45115). 호가 단위로 다시 맞춰 한 번 더 시도했지만 거절됐습니다 — 앱을 v1.5.2 이상으로 업데이트해 주세요.";
                 case "40040":
                     return "API 키 권한 설정을 확인해 주세요. 비트겟 API 관리에서 통합계정(UTA) 거래·계정 관리 권한을 켜야 합니다.";
                 default:
@@ -636,8 +645,21 @@ public final class BitgetApi {
     /**
      * 주문 — 정규형(v2 모양) 파라미터를 계정 모드에 맞춰 조립해 보낸다.
      * 성공 시 orderId/clientOid. 40085/40084 는 모드를 뒤집어 **한 번** 다시 보낸다.
+     * 45115(호가 단위 위반)는 계약 호가로 TP/SL·지정가를 보정해 **한 번** 다시 보낸다.
      */
     public static JSONObject placeOrder(Keys keys, JSONObject params) throws Exception {
+        try {
+            return sendOrder(keys, params);
+        } catch (ApiException e) {
+            if (!ERR_PRICE_STEP.equals(e.code) || params == null) throw e;
+            JSONObject fixed = withTickPrices(params);
+            if (fixed == null) throw e;
+            return sendOrder(keys, fixed);
+        }
+    }
+
+    /** 실제 전송 — 계정 모드별 엔드포인트 선택과 40084/40085 폴백 */
+    private static JSONObject sendOrder(Keys keys, JSONObject params) throws Exception {
         String mode = accountMode(keys);
         Object data;
         if (MODE_UTA.equals(mode)) {
@@ -665,6 +687,84 @@ public final class BitgetApi {
         }
         out.put("accountMode", knownMode(keys));
         return out;
+    }
+
+    /* ------------------------------------------------------------------ *
+     * 호가 단위(tick) — 45115 "The price you enter should be a multiple of 0.01"
+     * ------------------------------------------------------------------ */
+
+    /**
+     * 가격 → 호가 배수로 반올림한 문자열.
+     *   최소 호가 = priceEndStep × 10^(-pricePlace)  (BTC 0.1 · ETH/BNB/MSTR 0.01 · 스텝5 코인 0.0005)
+     * 신호의 목표가·손절가는 진입가 ± ATR 로 계산되어 소수 꼬리가 남는다 — 주문 직전에 여기서 맞춘다.
+     *   roundToTick(91234.567, 1, 1) → "91234.6"
+     *   roundToTick(3456.789, 2, 1)  → "3456.79"
+     *   roundToTick(0.00062, 4, 5)  → "0.0005"
+     */
+    public static String roundToTick(double price, int pricePlace, int priceEndStep) {
+        if (!(price > 0)) return "";
+        int pp = Math.max(0, Math.min(8, pricePlace));
+        int step = priceEndStep > 0 ? priceEndStep : 1;
+        BigDecimal scale = BigDecimal.TEN.pow(pp);
+        BigDecimal stepDec = BigDecimal.valueOf(step);
+        BigDecimal ticks = BigDecimal.valueOf(price).multiply(scale).divide(stepDec, 0, RoundingMode.HALF_UP);
+        if (ticks.signum() <= 0) ticks = BigDecimal.ONE; // 0 호가 방지 — 최소 한 틱
+        BigDecimal scaled = ticks.multiply(stepDec);
+        return new BigDecimal(scaled.toBigIntegerExact(), pp).stripTrailingZeros().toPlainString();
+    }
+
+    /** 종목 호가 정보 {pricePlace, priceEndStep} — 공개 계약 API에서 읽고 캐시한다. 실패하면 null. */
+    public static int[] contractTick(String symbol) {
+        if (symbol == null || symbol.isEmpty()) return null;
+        int[] cached = TICK_CACHE.get(symbol);
+        if (cached != null) return cached;
+        try {
+            Object data = publicGet("/api/v2/mix/market/contracts?symbol=" + encode(symbol) + "&productType=" + PRODUCT);
+            JSONObject row = null;
+            if (data instanceof JSONArray) {
+                JSONArray arr = (JSONArray) data;
+                if (arr.length() > 0) row = arr.optJSONObject(0);
+            } else if (data instanceof JSONObject) {
+                row = (JSONObject) data;
+            }
+            if (row == null) return null;
+            double place = num(row.optString("pricePlace", ""));
+            double step = num(row.optString("priceEndStep", ""));
+            if (place < 0 || place > 8) return null;
+            int pp = (int) Math.round(place);
+            int endStep = (int) Math.round(step);
+            if (endStep <= 0) endStep = 1;
+            int[] out = new int[]{pp, endStep};
+            TICK_CACHE.put(symbol, out);
+            return out;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 45115 대응 — 계약 호가로 TP/SL·지정가를 다시 맞춘 파라미터(바뀐 게 없으면 null) */
+    static JSONObject withTickPrices(JSONObject params) {
+        int[] tick = contractTick(params.optString("symbol", ""));
+        if (tick == null) return null;
+        try {
+            JSONObject out = new JSONObject(params.toString());
+            boolean changed = false;
+            String[] keys = {"presetStopSurplusPrice", "presetStopLossPrice", "price"};
+            for (String key : keys) {
+                String raw = out.optString(key, "");
+                if (raw.isEmpty()) continue;
+                double value = num(raw);
+                if (!(value > 0)) continue;
+                String exact = roundToTick(value, tick[0], tick[1]);
+                if (!exact.isEmpty() && !exact.equals(raw)) {
+                    out.put(key, exact);
+                    changed = true;
+                }
+            }
+            return changed ? out : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /** v2 주문 body — 예전 그대로(size·productType·presetStopSurplusPrice) */

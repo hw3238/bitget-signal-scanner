@@ -27,15 +27,18 @@ import {
   normalizeConfig,
   normalizePosMode,
   orderSideFor,
+  orderPriceText,
   planAutoOrder,
   planSeed,
   planTrigger,
   priceText,
   pushLog,
   rollDay,
+  roundToTick,
   signalKeyOf,
   statusBadge,
   symbolAllowed,
+  tickSizeOf,
   toArmedPlan,
   type AutoTradeConfig,
 } from '../src/lib/autotrade';
@@ -528,6 +531,123 @@ const settings = parseSettingsV3(settingsFixture);
 check('v3 settings: holdMode 파싱', settings.holdMode === 'hedge_mode');
 check('v3 settings: USDT-FUTURES 종목 마진 모드만', settings.marginModes.BTCUSDT === 'isolated' && settings.marginModes.ETHUSDT === 'crossed' && !('BTCUSD' in settings.marginModes));
 check('v3 settings: holdMode 없으면 단방향', parseSettingsV3({}).holdMode === 'one_way_mode');
+
+/* ------------------------------------------------------------------ *
+ * 11) 호가 단위(tick) — 비트겟 45115 "The price you enter should be a multiple of 0.01"
+ *     실기기 보고: MSTR·BNB·ETH(0.01) · BTC(0.1) 주문이 모두 45115 로 거절됐다.
+ * ------------------------------------------------------------------ */
+
+/** 문자열 가격이 호가 배수인지 (문자열 그대로 판정 — 부동소수 잔여 오차 허용) */
+const isMultiple = (price: string, tick: number): boolean => {
+  const v = Number(price);
+  if (!price || !Number.isFinite(v)) return false;
+  const n = v / tick;
+  return Math.abs(n - Math.round(n)) < 1e-6;
+};
+
+check('tick: BTC(pricePlace 1 · step 1) = 0.1', Math.abs(tickSizeOf(1, 1) - 0.1) < 1e-12);
+check('tick: ETH/BNB/MSTR(pricePlace 2 · step 1) = 0.01', Math.abs(tickSizeOf(2, 1) - 0.01) < 1e-12);
+check('tick: 스텝 5 코인(pricePlace 4 · step 5) = 0.0005', Math.abs(tickSizeOf(4, 5) - 0.0005) < 1e-12);
+check('tick: priceEndStep 없으면 1스텝', Math.abs(tickSizeOf(2) - 0.01) < 1e-12 && Math.abs(tickSizeOf(0, 1) - 1) < 1e-12);
+
+// BTC 0.1 — 소수 꼬리를 호가 배수로 맞춘다
+const btcTp = roundToTick(91234.567, 1, 1);
+check('BTC 목표 91234.567 → 91234.6 (0.1 배수)', btcTp === '91234.6' && isMultiple(btcTp, 0.1), btcTp);
+const btcSl = roundToTick(74567.4321, 1, 1);
+check('BTC 손절 74567.4321 → 74567.4 (0.1 배수)', btcSl === '74567.4' && isMultiple(btcSl, 0.1), btcSl);
+check('BTC 정수 가격은 그대로(불필요한 0 없음)', roundToTick(61000, 1, 1) === '61000');
+
+// ETH · BNB · MSTR 0.01
+for (const [name, price, want] of [
+  ['ETH', 3456.789, '3456.79'],
+  ['BNB', 612.344, '612.34'],
+  ['MSTR', 245.678, '245.68'],
+] as const) {
+  const out = roundToTick(price, 2, 1);
+  check(`${name} 목표 ${price} → ${want} (0.01 배수)`, out === want && isMultiple(out, 0.01), out);
+}
+
+// priceEndStep=5 — 0.0005 단위
+const step5a = roundToTick(0.00074, 4, 5);
+const step5b = roundToTick(0.00055, 4, 5);
+const step5c = roundToTick(0.00124, 4, 5);
+check('스텝5: 0.00074 → 0.0005 (0.0005 배수)', step5a === '0.0005' && isMultiple(step5a, 0.0005), step5a);
+check('스텝5: 0.00055 → 0.0005', step5b === '0.0005' && isMultiple(step5b, 0.0005), step5b);
+check('스텝5: 0.00124 → 0.001', step5c === '0.001' && isMultiple(step5c, 0.0005), step5c);
+check(
+  '스텝5 회귀: 예전 표기(priceText 4자리)는 0.0007 로 45115 대상이었다',
+  priceText(0.00074, 4) === '0.0007' && !isMultiple('0.0007', 0.0005),
+);
+check('호가 정보가 없으면 종전 표기 그대로', roundToTick(115.12345678, null, null) === '115.12345678');
+
+// 주문 파라미터 — TP/SL 이 반드시 호가 배수
+const btcSignal = sig({ entry: 90000, stop: 74567.4321, target: 91234.567, decimals: 1, priceEndStep: 1 });
+const btcPlan = planAutoOrder({ signal: btcSignal, seed: 1000, config: cfg, leverage: 10 });
+const btcOrder = buildOrderParams({
+  signal: btcSignal,
+  plan: btcPlan,
+  posMode: 'one_way_mode',
+});
+check(
+  '주문(웹): BTC TP 91234.6 · SL 74567.4 — 둘 다 0.1 배수',
+  btcOrder.presetStopSurplusPrice === '91234.6' &&
+    btcOrder.presetStopLossPrice === '74567.4' &&
+    isMultiple(btcOrder.presetStopSurplusPrice ?? '', 0.1) &&
+    isMultiple(btcOrder.presetStopLossPrice ?? '', 0.1),
+  `${btcOrder.presetStopSurplusPrice} / ${btcOrder.presetStopLossPrice}`,
+);
+const ethSignal = sig({ symbol: 'ETHUSDT', base: 'ETH', entry: 3400, stop: 3300.1234, target: 3456.789, decimals: 2, priceEndStep: 1 });
+const ethOrder = buildOrderParams({
+  signal: ethSignal,
+  plan: planAutoOrder({ signal: ethSignal, seed: 1000, config: cfg, leverage: 10 }),
+  posMode: 'one_way_mode',
+});
+check(
+  '주문(웹): ETH TP 3456.79 · SL 3300.12 — 둘 다 0.01 배수',
+  ethOrder.presetStopSurplusPrice === '3456.79' &&
+    ethOrder.presetStopLossPrice === '3300.12' &&
+    isMultiple(ethOrder.presetStopSurplusPrice ?? '', 0.01),
+  `${ethOrder.presetStopSurplusPrice} / ${ethOrder.presetStopLossPrice}`,
+);
+const stepSignal = sig({ symbol: 'PEPEUSDT', base: 'PEPE', entry: 0.00062, stop: 0.00055, target: 0.0008, decimals: 4, priceEndStep: 5 });
+const stepOrder = buildOrderParams({
+  signal: stepSignal,
+  plan: planAutoOrder({ signal: stepSignal, seed: 1000, config: cfg, leverage: 10, spec: { volumePlace: 0 } }),
+  posMode: 'one_way_mode',
+});
+check(
+  '주문(웹): 스텝5 TP 0.001 · SL 0.0005 — 둘 다 0.0005 배수',
+  stepOrder.presetStopSurplusPrice === '0.001' &&
+    stepOrder.presetStopLossPrice === '0.0005' &&
+    isMultiple(stepOrder.presetStopSurplusPrice ?? '', 0.0005) &&
+    isMultiple(stepOrder.presetStopLossPrice ?? '', 0.0005),
+  `${stepOrder.presetStopSurplusPrice} / ${stepOrder.presetStopLossPrice}`,
+);
+check(
+  '주문(웹): 계약 호가를 인자로 넘기면 signal 값보다 우선',
+  buildOrderParams({ signal: btcSignal, plan, posMode: 'one_way_mode', pricePlace: 2, priceEndStep: 1 })
+    .presetStopLossPrice === '74567.43',
+);
+
+// 감시 목록 — 네이티브가 그대로 쓰는 tpStr/slStr
+const armedTick = toArmedPlan({ signal: btcSignal, plan: btcPlan, now, ttlMin: 60 });
+check(
+  '감시 항목: pricePlace·priceEndStep·tpStr·slStr 를 담는다',
+  armedTick.pricePlace === 1 &&
+    armedTick.priceEndStep === 1 &&
+    armedTick.tpStr === '91234.6' &&
+    armedTick.slStr === '74567.4' &&
+    isMultiple(armedTick.tpStr, 0.1),
+  `${armedTick.pricePlace}/${armedTick.priceEndStep} · ${armedTick.tpStr}/${armedTick.slStr}`,
+);
+check(
+  '감시 항목: 호가 정보가 없으면 문자열이 비지 않고 종전 표기',
+  toArmedPlan({ signal: sig(), plan, now, ttlMin: 60 }).tpStr === '115',
+);
+check(
+  '감시 항목 JSON — 네이티브 AutoTradeService 가 읽는 키 순서(pricePlace·priceEndStep·tpStr·slStr)',
+  ['pricePlace', 'priceEndStep', 'tpStr', 'slStr'].every((k) => k in JSON.parse(JSON.stringify(armedTick))),
+);
 
 console.log('');
 console.log(`자동매매 단위 검증: ${pass}/${pass + fails.length} 통과`);
