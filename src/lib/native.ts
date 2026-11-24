@@ -44,10 +44,10 @@ interface AppShellPlugin {
     clientOid?: string;
   }): Promise<BitgetOrderResult>;
   /** 24시간 포그라운드 감시 서비스 */
-  autoTradeStart(options: { config: string; plans: string }): Promise<AutoTradeNativeStatus>;
+  autoTradeStart(options: { config: string; plans: string; exitSignals?: string }): Promise<AutoTradeNativeStatus>;
   autoTradeStop(): Promise<AutoTradeNativeStatus>;
-  /** 웹 엔진의 최신 설정·감시 목록을 서비스에 넘긴다 */
-  autoTradeSync(options: { config: string; plans: string }): Promise<AutoTradeNativeStatus>;
+  /** 웹 엔진의 최신 설정·감시 목록·반대 시그널을 서비스에 넘긴다 */
+  autoTradeSync(options: { config: string; plans: string; exitSignals?: string }): Promise<AutoTradeNativeStatus>;
   autoTradeStatus(): Promise<AutoTradeNativeStatus>;
   /** 1일 손실 한도 초기화 — 지금 잔고를 다시 조회해 오늘 기준선으로 잡고 잠금을 푼다(v1.5.4) */
   autoTradeResetDailyLimit(): Promise<AutoTradeNativeStatus & { ok: boolean; dayStartEquity?: number }>;
@@ -98,6 +98,10 @@ export interface BitgetAccount {
   unrealizedPL?: number;
   /** 포지션 모드: one_way_mode / hedge_mode */
   posMode?: string;
+  /** 오늘의 손실 기준 equity — 네이티브가 저장한 값(v1.5.4) */
+  dayStartEquity?: number;
+  /** 기준선 날짜(KST YYYY-MM-DD) */
+  dayKey?: string;
   /** 비트겟 계정 종류 — "uta"(통합계정, v3) / "classic"(클래식, v2) / "unknown" */
   accountMode?: string;
   error?: string;
@@ -418,10 +422,18 @@ export async function bitgetClosePosition(input: {
   }
 }
 
-export async function autoTradeStart(config: unknown, plans: unknown): Promise<AutoTradeNativeStatus | null> {
+export async function autoTradeStart(
+  config: unknown,
+  plans: unknown,
+  exitSignals: unknown = [],
+): Promise<AutoTradeNativeStatus | null> {
   if (!isNativeApp()) return null;
   try {
-    return await AppShell.autoTradeStart({ config: JSON.stringify(config), plans: JSON.stringify(plans) });
+    return await AppShell.autoTradeStart({
+      config: JSON.stringify(config),
+      plans: JSON.stringify(plans),
+      exitSignals: JSON.stringify(exitSignals),
+    });
   } catch (e) {
     return { running: false, error: errText(e) };
   }
@@ -436,10 +448,18 @@ export async function autoTradeStop(): Promise<AutoTradeNativeStatus | null> {
   }
 }
 
-export async function autoTradeSync(config: unknown, plans: unknown): Promise<AutoTradeNativeStatus | null> {
+export async function autoTradeSync(
+  config: unknown,
+  plans: unknown,
+  exitSignals: unknown = [],
+): Promise<AutoTradeNativeStatus | null> {
   if (!isNativeApp()) return null;
   try {
-    return await AppShell.autoTradeSync({ config: JSON.stringify(config), plans: JSON.stringify(plans) });
+    return await AppShell.autoTradeSync({
+      config: JSON.stringify(config),
+      plans: JSON.stringify(plans),
+      exitSignals: JSON.stringify(exitSignals),
+    });
   } catch (e) {
     return { running: false, error: errText(e) };
   }

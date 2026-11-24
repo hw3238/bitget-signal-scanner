@@ -202,7 +202,12 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
     setAccount(res);
     if (res.ok) {
       const equity = res.equity ?? 0;
-      setRuntime((prev) => rollDay(prev, Date.now(), equity));
+      // 기준선은 네이티브가 저장한 오늘 값을 따른다 — 웹이 옛 값으로 다시 잠그는 일을 막는다(v1.5.4).
+      const baseline = Number(res.dayStartEquity ?? 0);
+      setRuntime((prev) => {
+        const rolled = rollDay(prev, Date.now(), equity);
+        return baseline > 0 ? { ...rolled, dayStartEquity: baseline } : rolled;
+      });
       log({
         at: Date.now(),
         level: 'info',
@@ -242,6 +247,8 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
         level: 'info',
         text: `API 키 저장 완료 (${input.demo ? '모의투자' : '실거래'}) — 키는 기기 안에만 저장됩니다.`,
       });
+      // 새 키 = 새 계좌 → 옛 계좌의 기준선은 버리고, 연결 확인에서 새 잔고로 다시 잡는다.
+      setRuntime((prev) => ({ ...prev, dayStartEquity: null }));
       await testConnection();
       return true;
     },
@@ -258,6 +265,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
     if (config.enabled) await autoTradeStop();
     setConfig((prev) => ({ ...prev, enabled: false }));
     setNative(null);
+    setRuntime((prev) => ({ ...prev, dayStartEquity: null }));
     log({ at: Date.now(), level: 'info', text: 'API 키를 삭제하고 자동매매를 껐습니다.' });
   }, [config.enabled, log]);
 
@@ -298,6 +306,18 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
   const running = supported ? native?.running === true : config.enabled;
   /** 보유 중인 종목 — 같은 종목에 또 들어가면 수량이 겹쳐 리스크가 2배가 된다 */
   const openSymbols = useMemo(() => positions.map((p) => p.symbol), [positions]);
+  /**
+   * 조기 손절 판단용 — 진행 중 시그널의 최소 정보만 네이티브에 넘긴다(v1.5.4).
+   * 네이티브는 '포지션을 연 뒤 같은 종목에 반대 방향 시그널'이 생겼을 때 SL 전에 청산한다.
+   */
+  const exitSignals = useMemo(
+    () =>
+      signals
+        .filter((s) => s.state === 'open' && s.asset !== 'fx')
+        .slice(0, 40)
+        .map((s) => ({ symbol: s.symbol, side: s.side, tf: s.tf, detectedAt: s.detectedAt })),
+    [signals],
+  );
 
   /* ---------------- 웹 → 서비스 감시 목록 ---------------- */
 
@@ -428,7 +448,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
           const level = item.level as AutoLogEntry['level'];
           next = pushLog(next, {
             at,
-            level: ['fill', 'reject', 'block', 'info', 'error'].includes(level) ? level : 'info',
+            level: ['fill', 'reject', 'block', 'exit', 'info', 'error'].includes(level) ? level : 'info',
             text,
           });
         }
@@ -548,7 +568,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
     setRuntime((prev) => rollDay({ ...prev, dayStartEquity: prev.dayStartEquity ?? equity }, Date.now(), equity));
     if (supported) {
       const { plans } = buildPlans(signals, Date.now(), next);
-      const status = await autoTradeStart(next, plans);
+      const status = await autoTradeStart(next, plans, exitSignals);
       applyNative(status);
       if (!status || status.error) {
         setError(status?.error ?? '감시 서비스를 시작하지 못했습니다.');
@@ -568,7 +588,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       simulate(next);
     }
     return true;
-  }, [account?.equity, applyNative, buildPlans, config, keys.hasKeys, log, signals, simulate, supported, tradeMode]);
+  }, [account?.equity, applyNative, buildPlans, config, exitSignals, keys.hasKeys, log, signals, simulate, supported, tradeMode]);
 
   const stop = useCallback(
     async (reason = '사용자가 자동매매를 껐습니다.') => {
@@ -792,7 +812,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
     // 설정(허용 종목·유효시간)이 바뀌면 이미 감시 중인 목록에서도 빠져야 한다 — 만료·제외 종목은 버린다.
     const alive = armedRef.current.filter((p) => p.expiresAt > now && symbolAllowed(config, p.symbol));
     armedRef.current = mergeArmedPlans(alive, plans);
-    void autoTradeSync({ ...config, mode: tradeMode.mode }, armedRef.current).then(applyNative);
+    void autoTradeSync({ ...config, mode: tradeMode.mode }, armedRef.current, exitSignals).then(applyNative);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signals, config, config.enabled, config.autoEntry, supported]);
 

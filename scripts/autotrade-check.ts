@@ -52,6 +52,16 @@ import {
   toArmedPlan,
   type AutoTradeConfig,
 } from '../src/lib/autotrade';
+import {
+  EARLY_STOP_COOLDOWN_MS,
+  EARLY_STOP_MIN_AGE_MS,
+  EARLY_STOP_SIGNAL_MAX_AGE_MS,
+  earlyExitLogText,
+  emaLast,
+  evaluateEarlyExit,
+  rMultiple,
+  type EarlyExitCandle,
+} from '../src/lib/earlyStop';
 import { bitgetPrehash, bitgetSign, demoHeader, hmacSha256Base64, maskKey } from '../src/lib/bitgetSign';
 import {
   CLASSIC_MODE_ERROR,
@@ -865,6 +875,90 @@ check('갱신 표시: 방금 전', fmtSince(resetNow - 2_500, resetNow) === '방
 check('갱신 표시: N초 전', fmtSince(resetNow - 12_000, resetNow) === '12초 전', fmtSince(resetNow - 12_000, resetNow));
 check('갱신 표시: N분 전', fmtSince(resetNow - 90_000, resetNow) === '1분 전', fmtSince(resetNow - 90_000, resetNow));
 check('갱신 표시: 기록 없음 → —', fmtSince(0, resetNow) === '—');
+
+/* ------------------------------------------------------------------ *
+ * 12) 조기 손절(선제 청산) — v1.5.4
+ * ------------------------------------------------------------------ */
+const esNow = Date.UTC(2026, 10, 24, 3, 0);
+const esOpen = esNow - 10 * 60_000;
+// 평평한 15분봉 11개(몸통 0.05) + 마지막 봉
+const flat = (i: number): EarlyExitCandle => ({ ts: esNow - (12 - i) * 900_000, open: 100, high: 100.1, low: 99.9, close: 100.05 });
+const candlesLong = [
+  ...Array.from({ length: 11 }, (_, i) => flat(i)),
+  { ts: esNow - 900_000, open: 100, high: 100.2, low: 98.4, close: 98.5 },
+];
+const candlesShort = [
+  ...Array.from({ length: 11 }, (_, i) => flat(i)),
+  { ts: esNow - 900_000, open: 100, high: 101.6, low: 99.9, close: 101.5 },
+];
+const esBase = {
+  enabled: true,
+  side: 'long' as const,
+  entry: 99.5,
+  stop: 97,
+  price: 98.9,
+  openedAt: esOpen,
+  now: esNow,
+  peakR: 0,
+  oppositeSignalAt: 0,
+  candles: candlesLong,
+};
+check('조기 손절: 기본 설정 ON', DEFAULTS.earlyStop === true && normalizeConfig({}).earlyStop === true);
+check('조기 손절: 명시적 OFF 는 유지', normalizeConfig({ earlyStop: false }).earlyStop === false);
+check('조기 손절: 손익 R 부호(롱)', Math.abs(rMultiple('long', 100, 98, 99) + 0.5) < 1e-9);
+check('조기 손절: 손익 R 부호(숏)', Math.abs(rMultiple('short', 100, 102, 101) + 0.5) < 1e-9);
+check('조기 손절: 토글 OFF 면 청산하지 않는다', !evaluateEarlyExit({ ...esBase, enabled: false }).exit);
+check(
+  '조기 손절: 진입 2분 보호 — 반대 시그널이 와도 대기',
+  !evaluateEarlyExit({ ...esBase, openedAt: esNow - 60_000, oppositeSignalAt: esNow - 30_000 }).exit,
+  evaluateEarlyExit({ ...esBase, openedAt: esNow - 60_000, oppositeSignalAt: esNow - 30_000 }).reason,
+);
+const opp = evaluateEarlyExit({ ...esBase, oppositeSignalAt: esNow - 3 * 60_000 });
+check('조기 손절: 진입 뒤 반대 시그널 → 청산', opp.exit && opp.code === 'opposite-signal', opp.reason);
+check(
+  '조기 손절: 진입 전(옛) 반대 시그널은 사유로 쓰지 않는다',
+  evaluateEarlyExit({ ...esBase, oppositeSignalAt: esOpen - 60_000 }).code !== 'opposite-signal',
+);
+check(
+  '조기 손절: 이미 +0.3R 이상 이익이면 반대 시그널로 자르지 않는다',
+  !evaluateEarlyExit({ ...esBase, price: 100.6, oppositeSignalAt: esNow - 3 * 60_000 }).exit,
+);
+const struct = evaluateEarlyExit(esBase);
+check('조기 손절: 장대 음봉이 진입가·EMA9 이탈 → 구조 붕괴 청산', struct.exit && struct.code === 'structure-break', struct.reason);
+check('조기 손절: 사유에 추세 구조 이탈 문구', /추세 구조 이탈/.test(struct.reason), struct.reason);
+const noise = evaluateEarlyExit({
+  ...esBase,
+  candles: [...candlesLong.slice(0, 11), { ts: esNow - 900_000, open: 100, high: 100.1, low: 99.85, close: 99.9 }],
+});
+check('조기 손절: 작은 음봉(평균 몸통 수준)은 휩쏘로 보고 청산하지 않는다', !noise.exit, noise.reason);
+check(
+  '조기 손절: 손절가에 닿았으면 SL 처리에 맡긴다',
+  !evaluateEarlyExit({ ...esBase, price: 96.9 }).exit,
+);
+check(
+  '조기 손절: −0.95R 이내도 SL 처리에 맡긴다',
+  !evaluateEarlyExit({ ...esBase, price: 97.1 }).exit,
+);
+const shortBreak = evaluateEarlyExit({
+  ...esBase,
+  side: 'short',
+  entry: 100.5,
+  stop: 103,
+  price: 101.2,
+  candles: candlesShort,
+});
+check('조기 손절: 숏은 강한 양봉이 위로 이탈하면 청산', shortBreak.exit && shortBreak.code === 'structure-break', shortBreak.reason);
+const be = evaluateEarlyExit({ ...esBase, entry: 100, stop: 98, price: 100.04, peakR: 1.2 });
+check('조기 손절: +0.8R 뒤 본절 복귀 → 본절 보호 청산', be.exit && be.code === 'breakeven', be.reason);
+check(
+  '조기 손절: 최대 R 이 작으면 본절 보호 없음',
+  !evaluateEarlyExit({ ...esBase, entry: 100, stop: 98, price: 100.04, peakR: 0.4 }).exit,
+);
+check('조기 손절: EMA 계산', Math.abs(emaLast([1, 2, 3], 3) - 2.25) < 1e-9, String(emaLast([1, 2, 3], 3)));
+check('조기 손절: 보호 구간 2분 · 쿨다운 5분', EARLY_STOP_MIN_AGE_MS === 120_000 && EARLY_STOP_COOLDOWN_MS === 300_000);
+check('조기 손절: 반대 시그널 인정 6시간', EARLY_STOP_SIGNAL_MAX_AGE_MS === 6 * 3_600_000);
+const esLog = earlyExitLogText({ demo: true, base: 'BTC', side: 'long', qty: '0.025', reason: '반대 방향 시그널 감지', currentR: -0.42, entry: 61000 });
+check('조기 손절: 로그에 🛡 조기 손절·사유·R', /🛡 조기 손절/.test(esLog) && /반대 방향 시그널 감지/.test(esLog) && /-0\.42R/.test(esLog), esLog);
 
 console.log('');
 console.log(`자동매매 단위 검증: ${pass}/${pass + fails.length} 통과`);

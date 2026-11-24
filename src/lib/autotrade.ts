@@ -47,6 +47,8 @@ export interface AutoTradeConfig {
   intervalSec: number;
   /** 시그널(진입 대기) 유효 시간(분) */
   entryTtlMin: number;
+  /** SL 도달 전 반대 신호·구조 붕괴 시 선제 청산 (v1.5.4 · 기본 ON) */
+  earlyStop: boolean;
 }
 
 /** 메이저 4종 — 기본 허용 종목 */
@@ -65,6 +67,7 @@ export const DEFAULTS: AutoTradeConfig = {
   maxLeverage: 10,
   intervalSec: 60,
   entryTtlMin: 120,
+  earlyStop: true,
 };
 
 /** 설정 입력 허용 범위 — 오타 한 번으로 계좌를 걸지 않게 한다. */
@@ -107,6 +110,7 @@ export function normalizeConfig(raw: Partial<AutoTradeConfig> | null | undefined
     maxLeverage: num(src.maxLeverage, DEFAULTS.maxLeverage),
     intervalSec: num(src.intervalSec, DEFAULTS.intervalSec),
     entryTtlMin: num(src.entryTtlMin, DEFAULTS.entryTtlMin),
+    earlyStop: src.earlyStop !== false,
   };
   return {
     ...merged,

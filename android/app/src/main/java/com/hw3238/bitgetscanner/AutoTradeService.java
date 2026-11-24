@@ -55,6 +55,10 @@ public class AutoTradeService extends Service {
     private Handler worker;
     private PowerManager.WakeLock wakeLock;
     private volatile boolean running;
+    /** 보유 중 도달한 최대 유리 R — 본절 보호 판단(서비스 생존 동안 유지) */
+    private final java.util.Map<String, Double> peakR = new java.util.HashMap<>();
+    /** 조기 손절 시도 시각 — 같은 종목을 5분에 한 번만 건드린다 */
+    private final java.util.Map<String, Long> lastExitAt = new java.util.HashMap<>();
 
     private final Runnable tick = new Runnable() {
         @Override
@@ -232,6 +236,13 @@ public class AutoTradeService extends Service {
             }
         }
 
+        /* --- 🛡 조기 손절: SL 전에 진입 근거가 무너지면 선제 청산 (v1.5.4) --- */
+        java.util.Set<String> earlyClosed = new java.util.HashSet<>();
+        if (heldPositions.length() > 0) {
+            earlyClosed = checkEarlyExit(keys, config, heldPositions, posMode);
+            openPositions = Math.max(0, openPositions - earlyClosed.size());
+        }
+
         /* --- 감시 목록 확인 --- */
         JSONArray plans = AutoTradeStore.plans(this);
         JSONArray keep = new JSONArray();
@@ -248,6 +259,8 @@ public class AutoTradeService extends Service {
             if (p == null) continue;
             String sym = p.optString("symbol", "").toUpperCase(Locale.ROOT);
             if (sym.isEmpty()) continue;
+            // 방금 조기 청산한 포지션은 이번 주기 진입 판단에서 뺀다(청산 직후 재진입 방지).
+            if (earlyClosed.contains(sym + "|" + p.optString("holdSide", "").toLowerCase(Locale.ROOT))) continue;
             heldSymbols.add(sym);
             heldSides.add(sym + "|" + p.optString("holdSide", "").toLowerCase(Locale.ROOT));
         }
@@ -365,6 +378,108 @@ public class AutoTradeService extends Service {
         double shownEquity = equity > 0 ? equity : AutoTradeStore.lastEquity(this);
         AutoTradeStore.setSnapshot(this, now, shownEquity, available, unrealizedPL, openPositions);
         notification("감시 중", statusText(config));
+    }
+
+    /* ------------------------------------------------------------------ *
+     * 🛡 조기 손절 (v1.5.4)
+     * ------------------------------------------------------------------ */
+
+    /**
+     * 보유 포지션을 훑어 SL 전에 청산할 근거가 있는지 본다.
+     *  · 반대 시그널(웹이 넘긴 진행 중 시그널 중 포지션 진입 뒤 것) · 마감 캔들 구조 붕괴 · 본절 보호
+     *  · 청산한 포지션의 "SYMBOL|side" 집합을 돌려준다 — 같은 주기 중복 진입·포지션 수 계산에 쓴다.
+     */
+    private java.util.Set<String> checkEarlyExit(
+            BitgetApi.Keys keys, JSONObject config, JSONArray held, String posMode) {
+        java.util.Set<String> closed = new java.util.HashSet<>();
+        boolean enabled = config.optBoolean("earlyStop", true);
+        long now = System.currentTimeMillis();
+        JSONArray signals = AutoTradeStore.exitSignals(this);
+        java.util.Set<String> alive = new java.util.HashSet<>();
+
+        for (int i = 0; i < held.length(); i++) {
+            JSONObject p = held.optJSONObject(i);
+            if (p == null) continue;
+            String symbol = p.optString("symbol", "");
+            if (symbol.isEmpty()) continue;
+            String holdSide = p.optString("holdSide", "long").toLowerCase(Locale.ROOT);
+            String key = symbol + "|" + holdSide;
+            alive.add(key);
+            if (!enabled) continue;
+
+            double entry = p.optDouble("openPriceAvg", 0);
+            double stop = p.optDouble("presetStopLossPrice", 0);
+            double mark = p.optDouble("markPrice", 0);
+            double price = mark > 0 ? mark : BitgetApi.lastPriceCached(symbol);
+            if (!(entry > 0) || !(stop > 0) || !(price > 0)) continue;
+            boolean longSide = !"short".equals(holdSide);
+
+            // 최대 유리 R 갱신(본절 보호용)
+            double r = EarlyStopRule.rMultiple(longSide, entry, stop, price);
+            Double prevPeak = peakR.get(key);
+            double peak = Math.max(prevPeak == null ? 0 : prevPeak, r);
+            peakR.put(key, peak);
+
+            long openedAt = p.optLong("ctime", 0);
+            if (openedAt > 0 && openedAt < 10_000_000_000L) openedAt *= 1000L; // 초 단위 응답 방어
+            if (openedAt <= 0 || openedAt > now) {
+                // 진입 시각을 모르면 '진입 직후 보호' 판단을 할 수 없다 — 이번 주기는 건너뛴다.
+                continue;
+            }
+            Long last = lastExitAt.get(key);
+            if (last != null && now - last < EarlyStopRule.COOLDOWN_MS) continue;
+
+            long oppositeAt = 0;
+            for (int j = 0; j < signals.length(); j++) {
+                JSONObject s = signals.optJSONObject(j);
+                if (s == null) continue;
+                if (!symbol.equalsIgnoreCase(s.optString("symbol", ""))) continue;
+                boolean sigLong = "long".equalsIgnoreCase(s.optString("side", "long"));
+                if (sigLong == longSide) continue;
+                oppositeAt = Math.max(oppositeAt, s.optLong("detectedAt", 0));
+            }
+
+            double[][] candles = new double[0][];
+            try {
+                candles = BitgetApi.candlesClosed(symbol, "15m", 40, 900_000L);
+            } catch (Exception ignored) {
+                /* 캔들을 못 읽으면 반대 시그널·본절 보호만으로 판단한다 */
+            }
+
+            EarlyStopRule.Decision decision = EarlyStopRule.decide(
+                    enabled, longSide, entry, stop, price, openedAt, now, peak, oppositeAt, candles);
+            if (!decision.exit) continue;
+
+            String size = trim(p.optDouble("total", 0));
+            if (size.isEmpty()) continue;
+            String base = symbol.replace("USDT", "");
+            String oid = "ce" + Integer.toHexString(key.hashCode())
+                    + Long.toHexString(now % 10_000_000L);
+            if (oid.length() > 36) oid = oid.substring(0, 36);
+            try {
+                BitgetApi.closePosition(keys, symbol, holdSide, size, posMode, null, oid);
+                lastExitAt.put(key, now);
+                closed.add(key);
+                String text = String.format(Locale.US,
+                        "🛡 조기 손절 %s %s %s %s @ %s — %s · %.2fR",
+                        AutoTradeStore.isDemo(this) ? "[모의]" : "[실거래]",
+                        base,
+                        longSide ? "롱" : "숏",
+                        size,
+                        trim(entry),
+                        decision.reason,
+                        decision.currentR);
+                AutoTradeStore.addLog(this, "exit", text);
+                notifySignal("🛡 조기 손절", text);
+            } catch (Exception e) {
+                // 실패해도 5분은 조용히 — 같은 오류로 매 주기 폭주하지 않게.
+                lastExitAt.put(key, now);
+                AutoTradeStore.addLog(this, "error", base + " 조기 손절 실패 — " + friendly(e));
+            }
+        }
+
+        peakR.keySet().retainAll(alive);
+        return closed;
     }
 
     /** 감시 항목 → 비트겟 place-order body */

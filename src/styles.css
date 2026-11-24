@@ -5624,6 +5624,17 @@ textarea {
   color: #9c1019;
 }
 
+/* v1.5.4 — 조기 손절(선제 청산)은 파란 배지로 구분 */
+.auto-log.exit .auto-log-level {
+  background: #e6f0ff;
+  color: #1b64da;
+}
+
+.auto-log.exit .auto-log-text {
+  color: #1b64da;
+  font-weight: 700;
+}
+
 .auto-log-text {
   color: var(--ink-2);
   word-break: keep-all;

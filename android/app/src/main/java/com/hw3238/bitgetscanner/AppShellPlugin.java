@@ -636,6 +636,9 @@ public class AppShellPlugin extends Plugin {
             ret.put("posMode", posMode);
             /** "uta" = 통합계정(v3) · "classic" = 클래식(v2) · "unknown" */
             ret.put("accountMode", accountMode);
+            // 오늘의 손실 기준선 — 웹이 옛 기준선을 들고 다시 잠기는 일이 없도록 같이 내린다(v1.5.4).
+            ret.put("dayStartEquity", AutoTradeStore.dayStartEquity(getContext()));
+            ret.put("dayKey", AutoTradeStore.dayKey(getContext()));
             double equity = acc.optDouble("equity", 0);
             if (equity > 0) {
                 AutoTradeStore.setSnapshot(
@@ -689,7 +692,9 @@ public class AppShellPlugin extends Plugin {
             stopAutoTradeService();
             AutoTradeStore.savePlans(getContext(), new org.json.JSONArray());
             AutoTradeStore.clearTraded(getContext());
-            AutoTradeStore.addLog(getContext(), "info", "키가 바뀌어 이전 계좌의 감시 목록·중복 진입 기록을 비웠습니다.");
+            // 계좌가 바뀌면 옛 계좌의 1일 기준선도 버린다 — 새 잔고가 −90% 손실로 보이면 첫 진입과 동시에 잠긴다.
+            AutoTradeStore.clearDayBaseline(getContext());
+            AutoTradeStore.addLog(getContext(), "info", "키가 바뀌어 이전 계좌의 감시 목록·중복 진입 기록·손실 기준선을 비웠습니다.");
         }
         AutoTradeStore.addLog(getContext(), "info", "API 키 저장 — " + (demo ? "모의투자" : "실거래") + " (기기 안에만 저장)");
         call.resolve(toJsObject(AutoTradeStore.keyState(getContext())));
@@ -707,6 +712,7 @@ public class AppShellPlugin extends Plugin {
         BitgetApi.forgetAccountMode();
         AutoTradeStore.savePlans(getContext(), new org.json.JSONArray());
         AutoTradeStore.clearTraded(getContext());
+        AutoTradeStore.clearDayBaseline(getContext());
         AutoTradeStore.addLog(getContext(), "info", "API 키 삭제 — 자동매매를 껐습니다.");
         call.resolve(toJsObject(AutoTradeStore.keyState(getContext())));
     }
@@ -917,9 +923,13 @@ public class AppShellPlugin extends Plugin {
     public void autoTradeStart(PluginCall call) {
         String config = call.getString("config", "");
         String plans = call.getString("plans", "");
+        String exitSignals = call.getString("exitSignals", "");
         try {
             if (config != null && !config.isEmpty()) AutoTradeStore.saveConfig(getContext(), new org.json.JSONObject(config));
             if (plans != null && !plans.isEmpty()) AutoTradeStore.savePlans(getContext(), new org.json.JSONArray(plans));
+            if (exitSignals != null && !exitSignals.isEmpty()) {
+                AutoTradeStore.saveExitSignals(getContext(), new org.json.JSONArray(exitSignals));
+            }
         } catch (Exception e) {
             call.reject("설정을 읽을 수 없습니다: " + e.getMessage());
             return;
@@ -960,9 +970,14 @@ public class AppShellPlugin extends Plugin {
     public void autoTradeSync(PluginCall call) {
         String config = call.getString("config", "");
         String plans = call.getString("plans", "");
+        String exitSignals = call.getString("exitSignals", "");
         try {
             if (config != null && !config.isEmpty()) AutoTradeStore.saveConfig(getContext(), new org.json.JSONObject(config));
             if (plans != null && !plans.isEmpty()) AutoTradeStore.savePlans(getContext(), new org.json.JSONArray(plans));
+            // 조기 손절 판단용 진행 중 시그널 — 비어 있어도 넘어오면 그대로 반영한다.
+            if (exitSignals != null) {
+                AutoTradeStore.saveExitSignals(getContext(), new org.json.JSONArray(exitSignals));
+            }
         } catch (Exception e) {
             call.reject("감시 목록을 저장하지 못했습니다: " + e.getMessage());
             return;

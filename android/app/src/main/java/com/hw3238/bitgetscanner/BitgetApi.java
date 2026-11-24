@@ -121,6 +121,9 @@ public final class BitgetApi {
     private static final ConcurrentHashMap<String, ContractLimits> LIMITS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Long> LIMITS_FAILED_AT = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, double[]> QUOTE = new ConcurrentHashMap<>();
+    /** 조기 손절용 마감 캔들 캐시(60초) — 종목·주기별 */
+    private static final ConcurrentHashMap<String, Object[]> CANDLE_CACHE = new ConcurrentHashMap<>();
+    private static final long CANDLE_TTL_MS = 60_000L;
 
     private static AccountCache cache(Keys keys) {
         String id = keys == null ? "-" : keys.cacheKey();
@@ -993,6 +996,50 @@ public final class BitgetApi {
             return price;
         } catch (Exception e) {
             return cached == null ? 0 : cached[0];
+        }
+    }
+
+    /**
+     * 마감된 캔들(오래된 → 최신) — 조기 손절 판단용(v1.5.4). 각 행 {open, high, low, close}.
+     *
+     *  · 60초 캐시로 30~60초 감시 주기에서 거래소 호출을 늘리지 않는다.
+     *  · API 응답 순서에 의존하지 않고 시각으로 정렬하며, **아직 마감되지 않은 봉은 버린다**
+     *    (진행 중 봉의 꼬리로 조기 손절하지 않게).
+     */
+    public static double[][] candlesClosed(String symbol, String granularity, int limit, long barMs) {
+        if (symbol == null || symbol.isEmpty()) return new double[0][];
+        String key = symbol + "|" + granularity + "|" + limit;
+        long now = System.currentTimeMillis();
+        Object[] cached = CANDLE_CACHE.get(key);
+        if (cached != null && now - (Long) cached[1] < CANDLE_TTL_MS) return (double[][]) cached[0];
+        try {
+            String path = "/api/v2/mix/market/candles?symbol=" + symbol
+                    + "&productType=" + PRODUCT
+                    + "&granularity=" + granularity
+                    + "&limit=" + limit;
+            Object data = publicGet(path);
+            if (!(data instanceof JSONArray)) {
+                return cached == null ? new double[0][] : (double[][]) cached[0];
+            }
+            JSONArray arr = (JSONArray) data;
+            java.util.TreeMap<Long, double[]> rows = new java.util.TreeMap<>();
+            for (int i = 0; i < arr.length(); i++) {
+                JSONArray row = arr.optJSONArray(i);
+                if (row == null || row.length() < 5) continue;
+                long ts = row.optLong(0, 0);
+                double o = row.optDouble(1, 0);
+                double h = row.optDouble(2, 0);
+                double l = row.optDouble(3, 0);
+                double c = row.optDouble(4, 0);
+                if (ts <= 0 || !(c > 0)) continue;
+                if (ts + barMs > now) continue; // 진행 중 봉 제외
+                rows.put(ts, new double[]{o, h, l, c});
+            }
+            double[][] out = rows.values().toArray(new double[0][]);
+            CANDLE_CACHE.put(key, new Object[]{out, now});
+            return out;
+        } catch (Exception e) {
+            return cached == null ? new double[0][] : (double[][]) cached[0];
         }
     }
 

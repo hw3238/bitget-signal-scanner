@@ -30,6 +30,8 @@ public final class AutoTradeStore {
 
     private static final String K_CONFIG = "config";
     private static final String K_PLANS = "plans";
+    /** 조기 손절 판단용 — 웹이 넘긴 진행 중 시그널의 최소 정보(종목·방향·시각) */
+    private static final String K_EXIT_SIGNALS = "exit_signals";
     private static final String K_LOG = "log";
     private static final String K_TRADED = "traded_keys";
     private static final String K_DAY = "day_key";
@@ -167,6 +169,7 @@ public final class AutoTradeStore {
             fallback.put("maxLeverage", 10);
             fallback.put("intervalSec", 60);
             fallback.put("entryTtlMin", 120);
+            fallback.put("earlyStop", true);
         } catch (Exception ignored) {}
         return fallback;
     }
@@ -184,6 +187,19 @@ public final class AutoTradeStore {
 
     public static void savePlans(Context context, JSONArray plans) {
         prefs(context).edit().putString(K_PLANS, plans == null ? "[]" : plans.toString()).apply();
+    }
+
+    /** 진행 중 시그널(조기 손절 판단용) — 최대 40건만 보관한다. */
+    public static JSONArray exitSignals(Context context) {
+        return array(prefs(context).getString(K_EXIT_SIGNALS, ""));
+    }
+
+    public static void saveExitSignals(Context context, JSONArray signals) {
+        JSONArray next = new JSONArray();
+        if (signals != null) {
+            for (int i = 0; i < signals.length() && next.length() < 40; i++) next.put(signals.opt(i));
+        }
+        prefs(context).edit().putString(K_EXIT_SIGNALS, next.toString()).apply();
     }
 
     /* ---------------- 중복 진입 키 ---------------- */
@@ -275,6 +291,20 @@ public final class AutoTradeStore {
             .edit()
             .putString(K_DAY, todayKst())
             .putString(K_DAY_EQUITY, String.format(Locale.US, "%.4f", equity))
+            .putBoolean(K_DAILY_LOCKED, false)
+            .apply();
+    }
+
+    /**
+     * 기준선 비우기 — 계좌(키)가 바뀌었거나 키를 지웠을 때.
+     * 옛 계좌의 기준선이 남아 있으면 새 계좌의 작은 잔고가 −90% 손실로 보여 첫 진입과 동시에 잠긴다(v1.5.4).
+     * 다음 계좌 조회 때 그 계좌의 잔고로 다시 잡힌다.
+     */
+    public static void clearDayBaseline(Context context) {
+        prefs(context)
+            .edit()
+            .putString(K_DAY, "")
+            .putString(K_DAY_EQUITY, "0.0000")
             .putBoolean(K_DAILY_LOCKED, false)
             .apply();
     }

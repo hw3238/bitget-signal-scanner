@@ -280,6 +280,8 @@ const NATIVE_MOCK = () => {
     autoTradeStart: async (o) => {
       const config = JSON.parse(o.config);
       const plans = JSON.parse(o.plans);
+      const exitSignals = o.exitSignals ? JSON.parse(o.exitSignals) : [];
+      window.__auto.exitSignals = exitSignals;
       window.__auto.calls.push({
         method: 'autoTradeStart',
         enabled: config.enabled,
@@ -288,6 +290,8 @@ const NATIVE_MOCK = () => {
         planQty: plans[0]?.qty ?? null,
         riskPct: config.riskPct,
         maxPositions: config.maxPositions,
+        earlyStop: config.earlyStop,
+        exitSignals: exitSignals.length,
       });
       window.__auto.config = config;
       window.__auto.plans = plans;
@@ -298,6 +302,12 @@ const NATIVE_MOCK = () => {
       const plans = JSON.parse(o.plans);
       window.__auto.plans = plans;
       window.__auto.config = JSON.parse(o.config);
+      window.__auto.exitSignals = o.exitSignals ? JSON.parse(o.exitSignals) : window.__auto.exitSignals;
+      window.__auto.calls.push({
+        method: 'autoTradeSync',
+        earlyStop: window.__auto.config?.earlyStop,
+        exitSignals: (window.__auto.exitSignals ?? []).length,
+      });
       return statusOf();
     },
     autoTradeStop: async () => {
@@ -473,6 +483,32 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   check((await text(page, '[data-auto-badge]')) === '모의투자 가동 중', '배지 = 모의투자 가동 중');
   await page.locator('[data-auto-guards]').screenshot({ path: `${OUT}/55-autotrade-guards.png` }).catch(() => {});
 
+  // v1.5.4 — 조기 손절 보호 토글 (기본 ON) · 반대 시그널 전달
+  check(started[0]?.earlyStop === true, '자동매매 시작 설정에 조기 손절 ON 포함', String(started[0]?.earlyStop));
+  check(
+    started[0]?.exitSignals === 1,
+    '감시 시작 시 진행 중 시그널을 네이티브로 전달(반대 시그널 판단용)',
+    `${started[0]?.exitSignals}건`,
+  );
+  check(await page.locator('[data-auto-earlystop="on"].on').count() === 1, '조기 손절 보호 기본값 = 켜기');
+  const earlyText = await page.textContent('[data-auto-guards]');
+  check(/SL 전 반대 시그널·추세 붕괴/.test(earlyText ?? ''), '안전장치 카드에 조기 손절 설명', (earlyText ?? '').slice(0, 100));
+  await page.locator('[data-auto-earlystop="off"]').click();
+  await page.waitForTimeout(300);
+  const earlyOff = await page.evaluate(() => ({
+    stored: JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}').earlyStop,
+    hint: [...document.querySelectorAll('.auto-option em')].map((e) => e.textContent).join(' '),
+  }));
+  check(earlyOff.stored === false, '조기 손절 끄기 → 설정에 저장', String(earlyOff.stored));
+  check(/SL에서만 청산/.test(earlyOff.hint), '끄면 SL에서만 청산한다고 안내', earlyOff.hint.slice(0, 80));
+  await page.locator('[data-auto-earlystop="on"]').click();
+  await page.waitForTimeout(250);
+  check(
+    (await page.evaluate(() => JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}').earlyStop)) === true,
+    '다시 켜기 → 설정 ON',
+  );
+  await page.locator('.auto-options').screenshot({ path: `${OUT}/70-auto-early-stop.png` }).catch(() => {});
+
   // 네이티브 이벤트 — 체결 로그
   await page.evaluate(() =>
     window.__emitAuto({
@@ -486,6 +522,19 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   const logs = await text(page, '[data-auto-logs]');
   check(/BTC 롱 0\.025 주문 접수/.test(logs), '네이티브 체결 이벤트가 로그에 표시', logs.slice(0, 80));
   check(/손익비 1\.4R < 기준 1\.5R/.test(logs), '거부 사유 로그 표시');
+  // v1.5.4 — 조기 손절 이벤트가 '조기 손절' 배지로 로그에 남는다
+  await page.evaluate(() =>
+    window.__emitAuto({
+      nativeLog: [
+        { at: Date.now(), level: 'exit', text: '🛡 조기 손절 [모의] BTC 롱 0.025 @ 61000 — 반대 방향 시그널 감지 · -0.42R' },
+        ...(window.__auto.nativeLog ?? []),
+      ],
+    }),
+  );
+  await page.waitForTimeout(500);
+  check(await page.locator('.auto-log.exit').count() >= 1, '조기 손절 로그가 전용 배지로 표시');
+  check(/조기 손절/.test(await text(page, '[data-auto-logs]')), '조기 손절 사유가 로그에 남는다');
+  check(/반대 방향 시그널 감지/.test(await text(page, '[data-auto-logs]')), '조기 손절 사유 문구 표시');
   // v1.5.3 — `0건 진입` 오해 방지: 오늘 실제 체결 수 + 감시 건수
   const fillBadge = await text(page, '[data-auto-fillcount]');
   check(/오늘 체결 1건/.test(fillBadge) && /감시 \d+건/.test(fillBadge), '로그 배지 = 오늘 체결 수 · 감시 건수', fillBadge);

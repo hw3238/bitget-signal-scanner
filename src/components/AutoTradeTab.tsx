@@ -40,6 +40,7 @@ const LEVEL_LABEL: Record<string, string> = {
   fill: '체결',
   reject: '거부',
   block: '차단',
+  exit: '조기 손절',
   info: '안내',
   error: '오류',
 };
@@ -564,6 +565,32 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
               </button>
             </div>
             <em>{config.symbols === 'majors' ? MAJOR_SYMBOLS.map((s) => SYMBOL_LABEL[s] ?? s).join(' · ') : '모든 비트겟 USDT-M 종목'}</em>
+          </div>
+          <div className="auto-option">
+            <span>조기 손절 보호</span>
+            <div className="segmented slim">
+              <button
+                type="button"
+                className={config.earlyStop ? 'on' : ''}
+                onClick={() => api.patchConfig({ earlyStop: true })}
+                data-auto-earlystop="on"
+              >
+                켜기
+              </button>
+              <button
+                type="button"
+                className={!config.earlyStop ? 'on' : ''}
+                onClick={() => api.patchConfig({ earlyStop: false })}
+                data-auto-earlystop="off"
+              >
+                끄기
+              </button>
+            </div>
+            <em>
+              {config.earlyStop
+                ? 'SL 전 반대 시그널·추세 붕괴가 확인되면 선제 청산 · 진입 2분은 보호'
+                : '손절가는 거래소에 맡기고 SL에서만 청산합니다'}
+            </em>
           </div>
           <div className="auto-option">
             <span>새 시그널 자동 진입</span>
