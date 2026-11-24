@@ -12,17 +12,21 @@ import type { Signal } from '../src/engine/types';
 import {
   DEFAULTS,
   LIMITS,
+  LIVE_REFRESH_MS,
   MAJOR_SYMBOLS,
   MIN_STOP_DISTANCE,
   MIN_TARGET_GAP,
   RISK_HIGH_WARN,
   RISK_PRESET_CHOICES,
+  SNAPSHOT_FRESH_MS,
+  applyDailyReset,
   buildOrderParams,
   checkDailyLoss,
   clientOidFor,
   dayKeyKst,
   emptyRuntime,
   evaluateEntry,
+  fmtSince,
   fmtUsdt,
   markTraded,
   mergeArmedPlans,
@@ -30,6 +34,7 @@ import {
   normalizePosMode,
   orderSideFor,
   orderPriceText,
+  planDailyReset,
   qtyToStep,
   resolveTradeMode,
   planAutoOrder,
@@ -818,6 +823,48 @@ check(
   '상태 배지: 켰지만 서비스 미가동 → 대기',
   statusBadge(normalizeConfig({ ...cfg, enabled: true }), false).label === '대기 중 (앱 열림)',
 );
+
+/* ------------------------------------------------------------------ *
+ * 11) 1일 손실 한도 초기화 + 실시간 잔고 갱신 (v1.5.4)
+ * ------------------------------------------------------------------ */
+const resetNow = Date.UTC(2026, 10, 24, 3, 0); // KST 2026-11-24 12:00
+const lockedRt = {
+  ...emptyRuntime(resetNow, 1000),
+  tradedKeys: ['BTCUSDT|4H|long|1700000000000'],
+  logs: [{ at: resetNow, level: 'block' as const, text: '1일 손실 한도 도달(−4.5%) — 오늘 자동 진입을 멈춥니다.' }],
+};
+check(
+  '초기화 전: 기준 1,000 · 지금 950 → 잠김',
+  checkDailyLoss({ dayStartEquity: lockedRt.dayStartEquity, equity: 950, dailyLossPct: 4.5 }).locked,
+);
+const resetRt = applyDailyReset(lockedRt, resetNow, 942.5, 'native');
+check('초기화: 기준선 = 지금 잔고', resetRt.dayStartEquity === 942.5, `${resetRt.dayStartEquity}`);
+check(
+  '초기화 직후: 오늘 손익 0% · 잠금 없음',
+  !checkDailyLoss({ dayStartEquity: resetRt.dayStartEquity, equity: 942.5, dailyLossPct: 4.5 }).locked,
+);
+check(
+  '초기화 직후: 새 기준 −4.4% 는 아직 통과',
+  !checkDailyLoss({ dayStartEquity: 942.5, equity: 900.5, dailyLossPct: 4.5 }).locked,
+);
+check(
+  '초기화 직후: 새 기준에서 한도에 닿으면 다시 잠금',
+  checkDailyLoss({ dayStartEquity: 942.5, equity: 900, dailyLossPct: 4.5 }).locked,
+);
+check('초기화: 중복 진입 키는 유지(같은 시그널 재진입 방지)', resetRt.tradedKeys.length === 1);
+check('초기화: 로그에 남는다', /손실 한도 초기화/.test(resetRt.logs[0]?.text ?? ''), resetRt.logs[0]?.text);
+check('초기화: 기준선은 소수 4자리로', planDailyReset(1234.56789, resetNow).dayStartEquity === 1234.5679);
+check(
+  '초기화: 잔고를 모르면 거부(기준선을 0으로 덮지 않는다)',
+  !planDailyReset(0, resetNow).ok && !planDailyReset(null, resetNow).ok,
+);
+check('초기화: 거부되면 상태를 바꾸지 않는다', applyDailyReset(lockedRt, resetNow, null) === lockedRt);
+check('실시간 갱신 주기 10~15초', LIVE_REFRESH_MS >= 10_000 && LIVE_REFRESH_MS <= 15_000, `${LIVE_REFRESH_MS}ms`);
+check('스냅숏 신선 기준 > 갱신 주기', SNAPSHOT_FRESH_MS > LIVE_REFRESH_MS, `${SNAPSHOT_FRESH_MS}ms`);
+check('갱신 표시: 방금 전', fmtSince(resetNow - 2_500, resetNow) === '방금 전', fmtSince(resetNow - 2_500, resetNow));
+check('갱신 표시: N초 전', fmtSince(resetNow - 12_000, resetNow) === '12초 전', fmtSince(resetNow - 12_000, resetNow));
+check('갱신 표시: N분 전', fmtSince(resetNow - 90_000, resetNow) === '1분 전', fmtSince(resetNow - 90_000, resetNow));
+check('갱신 표시: 기록 없음 → —', fmtSince(0, resetNow) === '—');
 
 console.log('');
 console.log(`자동매매 단위 검증: ${pass}/${pass + fails.length} 통과`);

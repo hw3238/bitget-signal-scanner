@@ -38,6 +38,9 @@ public final class AutoTradeStore {
     private static final String K_RUNNING = "service_running";
     private static final String K_LAST_TICK = "last_tick";
     private static final String K_EQUITY = "last_equity";
+    /** 가용 잔고 · 미실현 손익 — 웹이 서비스 없이도 최신 값을 읽도록 스냅숏에 함께 저장(v1.5.4) */
+    private static final String K_AVAILABLE = "last_available";
+    private static final String K_UNREALIZED = "last_unrealized";
     private static final String K_POSITIONS = "last_positions";
     /** 마지막으로 판별된 비트겟 계정 종류 — "uta" / "classic" / "" (아직 모름) */
     private static final String K_ACCOUNT_MODE = "account_mode";
@@ -244,8 +247,16 @@ public final class AutoTradeStore {
     public static double dayStartEquity(Context context) {
         // v1.5.3 이전에는 float 로 저장해 USDT 잔고가 0.001 단위로 망가졌다 — 문자열(double) 로 읽고 backward 호환.
         // ⚠ 저장 타입이 섞여 있을 수 있어 getString/getFloat 직접 호출 대신 getAll() 로 타입을 확인한다(ClassCastException 방지).
+        return readDouble(context, K_DAY_EQUITY);
+    }
+
+    /**
+     * 저장 타입이 String/Number 어느 쪽이어도 double 로 읽는다.
+     * (SharedPreferences 에 float/int 로 쓰인 옛 스냅숏과 문자열로 쓴 새 값이 섞여도 죽지 않게)
+     */
+    private static double readDouble(Context context, String key) {
         try {
-            Object value = prefs(context).getAll().get(K_DAY_EQUITY);
+            Object value = prefs(context).getAll().get(key);
             if (value instanceof String) {
                 String raw = ((String) value).trim();
                 if (!raw.isEmpty()) return Double.parseDouble(raw);
@@ -256,6 +267,16 @@ public final class AutoTradeStore {
             /* 읽지 못하면 0 — 다음 주기에 다시 잡힌다 */
         }
         return 0;
+    }
+
+    /** 오늘 손실 한도 초기화 — 지금 잔고를 오늘의 기준선으로 다시 잡고 잠금을 푼다(v1.5.4). */
+    public static void resetDaily(Context context, double equity) {
+        prefs(context)
+            .edit()
+            .putString(K_DAY, todayKst())
+            .putString(K_DAY_EQUITY, String.format(Locale.US, "%.4f", equity))
+            .putBoolean(K_DAILY_LOCKED, false)
+            .apply();
     }
 
     public static void setDay(Context context, String dayKey, double equity) {
@@ -285,10 +306,18 @@ public final class AutoTradeStore {
     }
 
     public static void setSnapshot(Context context, long lastTick, double equity, int positions) {
+        setSnapshot(context, lastTick, equity, lastAvailable(context), lastUnrealized(context), positions);
+    }
+
+    /** 잔고 스냅숏 — equity/가용/미실현을 문자열로 저장해 소수 정밀도를 유지한다(v1.5.4). */
+    public static void setSnapshot(
+            Context context, long lastTick, double equity, double available, double unrealizedPL, int positions) {
         prefs(context)
             .edit()
             .putLong(K_LAST_TICK, lastTick)
-            .putFloat(K_EQUITY, (float) equity)
+            .putString(K_EQUITY, String.format(Locale.US, "%.4f", equity))
+            .putString(K_AVAILABLE, String.format(Locale.US, "%.4f", available))
+            .putString(K_UNREALIZED, String.format(Locale.US, "%.4f", unrealizedPL))
             .putInt(K_POSITIONS, positions)
             .apply();
     }
@@ -298,7 +327,15 @@ public final class AutoTradeStore {
     }
 
     public static double lastEquity(Context context) {
-        return prefs(context).getFloat(K_EQUITY, 0f);
+        return readDouble(context, K_EQUITY);
+    }
+
+    public static double lastAvailable(Context context) {
+        return readDouble(context, K_AVAILABLE);
+    }
+
+    public static double lastUnrealized(Context context) {
+        return readDouble(context, K_UNREALIZED);
     }
 
     public static int lastPositions(Context context) {
@@ -318,10 +355,14 @@ public final class AutoTradeStore {
             out.put("armed", plans(context).length());
             out.put("openPositions", lastPositions(context));
             out.put("equity", lastEquity(context) > 0 ? lastEquity(context) : JSONObject.NULL);
+            out.put("available", lastAvailable(context) > 0 ? lastAvailable(context) : JSONObject.NULL);
+            out.put("unrealizedPL", lastUnrealized(context));
             out.put("dailyLocked", dailyLocked(context));
             double start = dayStartEquity(context);
             double eq = lastEquity(context);
             out.put("dailyPnl", start > 0 && eq > 0 ? (eq - start) : 0);
+            out.put("dayStartEquity", start > 0 ? start : JSONObject.NULL);
+            out.put("dayKey", dayKey(context));
             out.put("lastTickAt", lastTick(context));
             out.put("accountMode", accountMode(context));
             out.put("riskPct", config.optDouble("riskPct", 1.5));

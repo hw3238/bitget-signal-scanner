@@ -722,6 +722,14 @@ export function emptyRuntime(now: number, dayStartEquity: number | null = null):
   return { dayKey: dayKeyKst(now), dayStartEquity, tradedKeys: [], logs: [], openPositions: 0 };
 }
 
+/**
+ * 실시간 잔고 자동 갱신 주기(v1.5.4) — 자동매매 화면이 열려 있는 동안 12초마다.
+ * 10초 미만으로 줄이면 비트겟 계좌·포지션 조회가 겹쳐 429(레이트리밋) 위험이 커진다.
+ */
+export const LIVE_REFRESH_MS = 12_000;
+/** 네이티브 서비스 스냅숏을 '신선하다'고 보는 시간 — 이보다 오래됐으면 웹이 직접 계좌를 조회한다. */
+export const SNAPSHOT_FRESH_MS = 45_000;
+
 /** 날짜가 바뀌면 tradedKeys·로그는 남기고 하루 손실 기준선만 새로 잡는다. */
 export function rollDay(runtime: AutoRuntime, now: number, equity: number | null): AutoRuntime {
   const key = dayKeyKst(now);
@@ -735,6 +743,75 @@ export function rollDay(runtime: AutoRuntime, now: number, equity: number | null
       ...runtime.logs,
     ].slice(0, LOG_LIMIT),
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * 1일 손실 한도 초기화 (v1.5.4)
+ * ------------------------------------------------------------------ */
+
+export interface DailyResetPlan {
+  ok: boolean;
+  dayKey: string;
+  /** 초기화 후 오늘의 기준 equity — 잔고를 모르면 null */
+  dayStartEquity: number | null;
+  reason?: string;
+}
+
+/**
+ * 손실 한도 초기화 계획 — '지금 잔고'를 오늘의 기준선으로 다시 잡는다.
+ * 잔고를 확인하지 못했으면 기준선을 0/null 로 덮어쓰지 않고 초기화를 거부한다(다음 손실 한도가 꺼지는 것 방지).
+ */
+export function planDailyReset(equity: number | null | undefined, now: number): DailyResetPlan {
+  const value = Number(equity ?? 0);
+  if (!Number.isFinite(value) || value <= 0) {
+    return {
+      ok: false,
+      dayKey: dayKeyKst(now),
+      dayStartEquity: null,
+      reason: '잔고를 확인하지 못해 손실 한도를 초기화하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.',
+    };
+  }
+  return { ok: true, dayKey: dayKeyKst(now), dayStartEquity: round(value, 4) };
+}
+
+/**
+ * 초기화 적용 — 기준선을 현재 잔고로 바꾸고 오늘 손익을 0%부터 다시 센다.
+ * 중복 진입 키(tradedKeys)는 남긴다: 같은 시그널로 두 번 들어가 수량이 겹치는 쪽이 더 위험하다.
+ */
+export function applyDailyReset(
+  runtime: AutoRuntime,
+  now: number,
+  equity: number | null,
+  source: 'native' | 'web' = 'web',
+): AutoRuntime {
+  const plan = planDailyReset(equity, now);
+  if (!plan.ok) return runtime;
+  return {
+    ...runtime,
+    dayKey: plan.dayKey,
+    dayStartEquity: plan.dayStartEquity,
+    logs: [
+      {
+        at: now,
+        level: 'info' as AutoLogLevel,
+        text: `1일 손실 한도 초기화 — 기준 equity ${fmtUsdt(plan.dayStartEquity)} (${
+          source === 'native' ? '계좌에서 새로 조회' : '화면 잔고'
+        }) · 오늘 손익은 0%부터 다시 셉니다.`,
+      },
+      ...runtime.logs,
+    ].slice(0, LOG_LIMIT),
+  };
+}
+
+/** 마지막 갱신 표시 — 방금 전 / N초 전 / N분 전 / 시:분:초 */
+export function fmtSince(ts: number | null | undefined, now: number): string {
+  if (!ts) return '—';
+  const diff = now - ts;
+  if (!Number.isFinite(diff) || diff < 0) return fmtClock(ts);
+  if (diff < 5_000) return '방금 전';
+  if (diff < 60_000) return `${Math.floor(diff / 1_000)}초 전`;
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}분 전`;
+  return fmtClock(ts);
 }
 
 export function pushLog(runtime: AutoRuntime, entry: AutoLogEntry): AutoRuntime {

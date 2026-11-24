@@ -10,10 +10,14 @@ import type { Contract, Signal } from '../engine/types';
 import type { Profile } from '../lib/profile';
 import {
   DEFAULTS,
+  LIVE_REFRESH_MS,
   LOG_LIMIT,
+  SNAPSHOT_FRESH_MS,
+  applyDailyReset,
   buildOrderParams,
   checkDailyLoss,
   clientOidFor,
+  dayKeyKst,
   emptyRuntime,
   evaluateEntry,
   fmtUsdt,
@@ -22,6 +26,7 @@ import {
   normalizeConfig,
   normalizePosMode,
   planAutoOrder,
+  planDailyReset,
   planSeed,
   priceText,
   pushLog,
@@ -39,6 +44,7 @@ import {
 } from '../lib/autotrade';
 import { accountKindLabel } from '../lib/bitgetUta';
 import {
+  autoTradeResetDailyLimit,
   autoTradeStart,
   autoTradeStatus,
   autoTradeStop,
@@ -118,6 +124,12 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
   const [bridgeMissing, setBridgeMissing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  /** 마지막으로 잔고를 실제로 받아온 시각 — 화면의 `방금 전 / HH:MM:SS` 표시 */
+  const [lastRefreshAt, setLastRefreshAt] = useState(0);
+  /** 자동매매 화면이 열려 있는 동안만 실시간 잔고 갱신을 켠다 */
+  const [liveRefresh, setLiveRefresh] = useState(false);
+  /** 중복 요청 방지 — 12초 주기와 포그라운드 복귀가 겹쳐도 한 번만 조회한다 */
+  const refreshGuard = useRef({ busy: false, round: 0 });
 
   const supported = autoTradeSupported();
   /**
@@ -266,12 +278,21 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
     if (locked) {
       return { pnlUsd: native?.dailyPnl ?? 0, pnlPct: 0, limitUsd: 0, locked: true, remainingUsd: 0 };
     }
+    // 잔고는 **방금 조회한 계좌**를 먼저 쓴다 — 네이티브 스냅숏은 서비스가 30초 주기로 쓴 값이다.
     return checkDailyLoss({
-      dayStartEquity: runtime.dayStartEquity,
-      equity: native?.equity ?? account?.equity ?? null,
+      dayStartEquity: runtime.dayStartEquity ?? native?.dayStartEquity ?? null,
+      equity: account?.equity ?? native?.equity ?? null,
       dailyLossPct: config.dailyLossPct,
     });
-  }, [account?.equity, config.dailyLossPct, native?.dailyLocked, native?.dailyPnl, native?.equity, runtime.dayStartEquity]);
+  }, [
+    account?.equity,
+    config.dailyLossPct,
+    native?.dailyLocked,
+    native?.dailyPnl,
+    native?.dayStartEquity,
+    native?.equity,
+    runtime.dayStartEquity,
+  ]);
 
   const openPositions = native?.openPositions ?? positions.length;
   const running = supported ? native?.running === true : config.enabled;
@@ -386,6 +407,12 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
     if (status.enabled === false) {
       setConfig((prev) => (prev.enabled ? { ...prev, enabled: false } : prev));
     }
+    // ★ 서비스가 잡은 오늘 기준선을 웹도 그대로 쓴다.
+    //   초기화 후 웹이 옛 기준선을 들고 있으면 켜자마자 다시 '한도 도달'로 꺼지는 버그가 난다(v1.5.4).
+    const baseline = Number(status.dayStartEquity ?? 0);
+    if (baseline > 0 && (!status.dayKey || status.dayKey === dayKeyKst(Date.now()))) {
+      setRuntime((prev) => (prev.dayStartEquity === baseline ? prev : { ...prev, dayStartEquity: baseline }));
+    }
     if (typeof status.openPositions === 'number') {
       setRuntime((prev) => ({ ...prev, openPositions: status.openPositions ?? prev.openPositions }));
     }
@@ -409,6 +436,97 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       });
     }
   }, []);
+
+  /* ---------------- 실시간 잔고 갱신 (v1.5.4) ---------------- */
+
+  /**
+   * 계좌 잔고·가용·미실현 손익을 지금 새로 읽는다.
+   *  · 네이티브 status(저장된 스냅숏)는 공짜지만 서비스가 30초 주기로만 쓴다.
+   *  · 서비스가 돌고 있고 스냅숏이 신선하면 그것을 쓰고, 아니면 계좌를 직접 조회한다.
+   */
+  const refreshAccount = useCallback(async (): Promise<BitgetAccount | null> => {
+    if (!supported || !keys.hasKeys) return null;
+    const status = await autoTradeStatus();
+    const snapshotFresh =
+      status?.running === true &&
+      typeof status.lastTickAt === 'number' &&
+      Date.now() - status.lastTickAt < SNAPSHOT_FRESH_MS &&
+      Number(status.equity ?? 0) > 0;
+    if (status) applyNative(status);
+    const res = await bitgetTestConnection();
+    if (!res) {
+      setError('네이티브 연결에 실패했습니다.');
+      return null;
+    }
+    if (res.ok) {
+      setAccount(res);
+      setLastRefreshAt(Date.now());
+    } else if (!snapshotFresh) {
+      // 스냅숏도 없이 조회까지 실패했을 때만 빨간 안내를 띄운다(주기 갱신이 화면을 오류로 덮지 않게).
+      setError(res.error ?? '잔고를 불러오지 못했습니다.');
+    }
+    return res;
+  }, [applyNative, keys.hasKeys, supported]);
+
+  /**
+   * 1일 손실 한도 초기화 — 지금 계좌 잔고를 오늘의 기준선으로 다시 잡고 잠금을 푼다.
+   * 네이티브는 계좌를 새로 조회해 저장하므로, 초기화 직후 켜도 옛 기준선으로 다시 잠기지 않는다.
+   */
+  const resetDailyLimit = useCallback(async (): Promise<{ ok: boolean; message: string }> => {
+    const now = Date.now();
+    setBusy('reset');
+    setError(null);
+    try {
+      if (supported && keys.hasKeys) {
+        const res = await autoTradeResetDailyLimit();
+        if (res?.ok) {
+          const equity = Number(res.dayStartEquity ?? res.equity ?? 0);
+          setRuntime((prev) => applyDailyReset(prev, now, equity, 'native'));
+          if (Number(res.equity ?? 0) > 0) {
+            setAccount((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    ok: true,
+                    equity: Number(res.equity ?? prev.equity),
+                    available: Number(res.available ?? prev.available ?? 0),
+                    unrealizedPL: Number(res.unrealizedPL ?? prev.unrealizedPL ?? 0),
+                  }
+                : prev,
+            );
+          }
+          setLastRefreshAt(now);
+          applyNative(res);
+          return {
+            ok: true,
+            message: res.stale
+              ? `계좌 조회가 지연돼 마지막 확인 잔고 ${fmtUsdt(equity)} 기준으로 초기화했습니다. 자동매매를 다시 켤 수 있습니다.`
+              : `오늘 손실 한도를 지금 잔고 ${fmtUsdt(equity)} 기준으로 초기화했습니다. 자동매매를 다시 켤 수 있습니다.`,
+          };
+        }
+        const message = res?.error ?? '손실 한도를 초기화하지 못했습니다. 연결 상태를 확인해 주세요.';
+        setError(message);
+        return { ok: false, message };
+      }
+      // 브라우저 — 실제 계좌가 없으므로 화면에 있는 모의 잔고를 기준으로 맞춘다.
+      const equity = account?.equity ?? null;
+      const plan = planDailyReset(equity, now);
+      if (!plan.ok) {
+        const message = plan.reason ?? '잔고를 확인하지 못해 초기화하지 못했습니다.';
+        setError(message);
+        return { ok: false, message };
+      }
+      setRuntime((prev) => applyDailyReset(prev, now, equity, 'web'));
+      setLastRefreshAt(now);
+      return { ok: true, message: `오늘 손실 한도를 화면 잔고 ${fmtUsdt(equity)} 기준으로 초기화했습니다.` };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : '손실 한도를 초기화하지 못했습니다.';
+      setError(message);
+      return { ok: false, message };
+    } finally {
+      setBusy(null);
+    }
+  }, [account?.equity, applyNative, keys.hasKeys, supported]);
 
   const start = useCallback(async () => {
     if (!keys.hasKeys && supported) {
@@ -626,6 +744,39 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
     };
   }, [applyNative, refreshPositions, supported]);
 
+  /**
+   * 실시간 잔고 자동 갱신(v1.5.4) — 자동매매 화면이 열려 있는 동안 12초마다.
+   *  · 잔고(총 자산·가용·미실현)는 계좌에서 직접, 포지션은 2번에 1번(24초)만 읽어 호출을 반으로 줄인다.
+   *  · 탭이 숨겨지면(포그라운드 아님) 쉬고, 다시 보이면 즉시 한 번 더 맞춘다.
+   *  · 이미 요청이 떠 있으면 건너뛰어 12초 간격과 복귀가 겹쳐도 거래소에 두 번 쏘지 않는다.
+   */
+  useEffect(() => {
+    if (!liveRefresh || !supported || !keys.hasKeys) return;
+    const run = async () => {
+      if (document.visibilityState === 'hidden') return;
+      if (refreshGuard.current.busy) return;
+      refreshGuard.current.busy = true;
+      try {
+        await refreshAccount();
+        refreshGuard.current.round += 1;
+        if (refreshGuard.current.round % 2 === 0) await refreshPositions();
+      } finally {
+        refreshGuard.current.busy = false;
+      }
+    };
+    void run();
+    const id = window.setInterval(() => void run(), LIVE_REFRESH_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void run();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      refreshGuard.current.busy = false;
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [keys.hasKeys, liveRefresh, refreshAccount, refreshPositions, supported]);
+
   /** 켜져 있는 동안 새 시그널을 감시 목록으로 계속 넘긴다(중복은 키로 병합). */
   const armedRef = useRef<ArmedPlan[]>([]);
   const lastSyncRef = useRef(0);
@@ -676,11 +827,17 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
     openPositions,
     openSymbols,
     tick,
+    /** 마지막 잔고 갱신 시각 · 실시간 갱신 켜짐 여부 (v1.5.4) */
+    lastRefreshAt,
+    liveRefresh,
+    setLiveRefresh,
     patchConfig: (patch: Partial<AutoTradeConfig>) => setConfig((prev) => normalizeConfig({ ...prev, ...patch })),
     saveKeys,
     forgetKeys,
     testConnection,
     refreshPositions,
+    resetDailyLimit,
+    refreshAccount,
     start,
     stop,
     quickOrder,

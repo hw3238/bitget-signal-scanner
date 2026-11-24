@@ -171,12 +171,17 @@ public class AutoTradeService extends Service {
     /** 한 주기 본체 — 어떤 경로로 끝나도 wake lock 은 tickOnce 의 finally 가 푼다. */
     private void tickBody(BitgetApi.Keys keys, JSONObject config) {
         double equity = 0;
+        // 가용 잔고 · 미실현 손익 — 웹이 서비스와 무관하게 최신 잔고를 읽도록 스냅숏에 함께 저장한다(v1.5.4).
+        double available = 0;
+        double unrealizedPL = 0;
         String posMode = "one_way_mode";
         int openPositions = 0;
         JSONArray heldPositions = new JSONArray();
         try {
             JSONObject account = BitgetApi.accounts(keys);
             equity = account.optDouble("equity", 0);
+            available = account.optDouble("available", 0);
+            unrealizedPL = account.optDouble("unrealizedPL", 0);
             // 통합계정(UTA)·클래식 계정 중 어느 쪽인지 화면에 남긴다.
             AutoTradeStore.setAccountMode(this, account.optString("accountMode", BitgetApi.knownMode(keys)));
         } catch (Exception e) {
@@ -356,7 +361,9 @@ public class AutoTradeService extends Service {
             }
         }
         AutoTradeStore.savePlans(this, keep);
-        AutoTradeStore.setSnapshot(this, now, equity, openPositions);
+        // 잔고를 못 읽은 주기(equity=0)에는 마지막으로 알던 값을 유지한다 — 화면이 $0 로 깜빡이지 않게.
+        double shownEquity = equity > 0 ? equity : AutoTradeStore.lastEquity(this);
+        AutoTradeStore.setSnapshot(this, now, shownEquity, available, unrealizedPL, openPositions);
         notification("감시 중", statusText(config));
     }
 

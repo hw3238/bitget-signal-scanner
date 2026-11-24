@@ -642,10 +642,16 @@ public class AppShellPlugin extends Plugin {
                     getContext(),
                     System.currentTimeMillis(),
                     equity,
+                    acc.optDouble("available", 0),
+                    acc.optDouble("unrealizedPL", 0),
                     AutoTradeStore.lastPositions(getContext())
                 );
-                if (AutoTradeStore.dayStartEquity(getContext()) <= 0) {
-                    AutoTradeStore.setDay(getContext(), AutoTradeStore.todayKst(), equity);
+                // 날짜가 바뀌었거나 기준선이 없으면 지금 잔고로 다시 잡는다 — 1일 손실 한도의 기준.
+                String today = AutoTradeStore.todayKst();
+                if (!today.equals(AutoTradeStore.dayKey(getContext())) || AutoTradeStore.dayStartEquity(getContext()) <= 0) {
+                    AutoTradeStore.setDay(getContext(), today, equity);
+                    AutoTradeStore.setDailyLocked(getContext(), false);
+                    AutoTradeStore.clearTraded(getContext());
                 }
             }
             call.resolve(ret);
@@ -739,6 +745,8 @@ public class AppShellPlugin extends Plugin {
                     getContext(),
                     System.currentTimeMillis(),
                     AutoTradeStore.lastEquity(getContext()),
+                    AutoTradeStore.lastAvailable(getContext()),
+                    AutoTradeStore.lastUnrealized(getContext()),
                     positions.length()
                 );
                 call.resolve(ret);
@@ -974,6 +982,79 @@ public class AppShellPlugin extends Plugin {
     @PluginMethod
     public void autoTradeStatus(PluginCall call) {
         call.resolve(toJsObject(AutoTradeStore.status(getContext())));
+    }
+
+    /**
+     * 1일 손실 한도 초기화 (v1.5.4).
+     *
+     *  · 사용자가 '손실한도 초기화'를 누르면 **지금 계좌 잔고를 새로 조회**해 오늘의 기준선으로 다시 잡고 잠금을 푼다.
+     *  · 웹에서 넘긴 값이 아니라 거래소에서 읽은 값을 쓴다 — 화면이 오래된 잔고를 기준으로 삼지 않게.
+     *  · 조회가 실패하면 마지막으로 저장된 잔고로 초기화하고 stale=true 로 알린다(잔고가 0이면 거부).
+     *  · 중복 진입 키는 지우지 않는다(같은 시그널로 두 번 들어가 수량이 겹치는 쪽이 더 위험하다).
+     */
+    @PluginMethod
+    public void autoTradeResetDailyLimit(PluginCall call) {
+        final BitgetApi.Keys keys = AutoTradeStore.keys(getContext());
+        if (keys == null) {
+            JSObject ret = new JSObject();
+            ret.put("ok", false);
+            ret.put("running", false);
+            ret.put("error", "API 키가 저장되어 있지 않습니다. 먼저 비트겟 키를 연결해 주세요.");
+            call.resolve(ret);
+            return;
+        }
+        new Thread(() -> {
+            double equity = 0;
+            double available = 0;
+            double unrealizedPL = 0;
+            String error = null;
+            try {
+                org.json.JSONObject acc = BitgetApi.accounts(keys);
+                equity = acc.optDouble("equity", 0);
+                available = acc.optDouble("available", 0);
+                unrealizedPL = acc.optDouble("unrealizedPL", 0);
+                AutoTradeStore.setAccountMode(getContext(), acc.optString("accountMode", BitgetApi.knownMode(keys)));
+            } catch (Exception e) {
+                error = errorText(e);
+            }
+            boolean stale = false;
+            if (!(equity > 0)) {
+                // 잔고 조회 실패 — 마지막으로 알던 잔고가 있으면 그것으로 초기화하고 stale 로 알린다.
+                equity = AutoTradeStore.lastEquity(getContext());
+                available = AutoTradeStore.lastAvailable(getContext());
+                unrealizedPL = AutoTradeStore.lastUnrealized(getContext());
+                stale = equity > 0;
+            }
+            if (!(equity > 0)) {
+                JSObject ret = new JSObject();
+                ret.put("ok", false);
+                ret.put("running", AutoTradeStore.running(getContext()));
+                ret.put("error", "계좌 잔고를 불러오지 못해 손실 한도를 초기화하지 못했습니다."
+                        + (error == null ? " 연결 상태를 확인해 주세요." : " (" + error + ")"));
+                call.resolve(ret);
+                return;
+            }
+            AutoTradeStore.resetDaily(getContext(), equity);
+            AutoTradeStore.setSnapshot(
+                getContext(),
+                System.currentTimeMillis(),
+                equity,
+                available,
+                unrealizedPL,
+                AutoTradeStore.lastPositions(getContext())
+            );
+            AutoTradeStore.addLog(getContext(), "info", String.format(Locale.US,
+                    "1일 손실 한도 초기화 — 기준 equity $%,.2f (일일 손익 0%%부터 다시 계산)", equity));
+            JSObject ret = toJsObject(AutoTradeStore.status(getContext()));
+            ret.put("ok", true);
+            ret.put("equity", equity);
+            ret.put("available", available);
+            ret.put("unrealizedPL", unrealizedPL);
+            ret.put("dayStartEquity", equity);
+            ret.put("dayKey", AutoTradeStore.todayKst());
+            ret.put("stale", stale);
+            call.resolve(ret);
+        }).start();
     }
 
     /** org.json.JSONObject → Capacitor JSObject (call.resolve 는 JSObject 만 받는다) */

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AutoTradeApi } from '../hooks/useAutoTrade';
 import type { Signal } from '../engine/types';
 import { fmtUsd, formatQty } from '../lib/orderCockpit';
@@ -7,10 +7,12 @@ import type { Profile } from '../lib/profile';
 import {
   DEFAULTS,
   LIMITS,
+  LIVE_REFRESH_MS,
   MAJOR_SYMBOLS,
   RISK_HIGH_WARN,
   RISK_PRESET_CHOICES,
   fmtClock,
+  fmtSince,
   fmtUsdt,
   planSeed,
   statusBadge,
@@ -47,14 +49,36 @@ const LEVEL_LABEL: Record<string, string> = {
  * 실제 주문은 앱(안드로이드) 네이티브가 넣고, 이 화면은 명령과 결과만 다룬다.
  */
 export function AutoTradeTab({ api, signals, profile }: Props) {
-  const { config, keys, account, positions, native, running, busy, error, daily, openPositions, runtime, tradeMode } =
-    api;
+  const {
+    config,
+    keys,
+    account,
+    positions,
+    native,
+    running,
+    busy,
+    error,
+    daily,
+    openPositions,
+    runtime,
+    tradeMode,
+    lastRefreshAt,
+    liveRefresh,
+  } = api;
   const [apiKey, setApiKey] = useState('');
   const [secret, setSecret] = useState('');
   const [passphrase, setPassphrase] = useState('');
   const [demoChoice, setDemoChoice] = useState(config.mode !== 'live');
   const [liveAck, setLiveAck] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  /** 앞선 토스트의 3.2초 타이머가 새 토스트를 지워 버리지 않게 하나만 유지한다 */
+  const toastTimer = useRef<number | null>(null);
+
+  /** 이 화면이 열려 있는 동안만 12초 실시간 잔고 갱신을 돌린다(나가면 interval 정리). */
+  useEffect(() => {
+    api.setLiveRefresh(true);
+    return () => api.setLiveRefresh(false);
+  }, [api.setLiveRefresh]);
 
   useEffect(() => {
     setDemoChoice(config.mode !== 'live');
@@ -71,8 +95,28 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
   const modeLabel = tradeMode.mode === 'live' ? '실거래' : '모의투자';
 
   const notify = (text: string) => {
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
     setToast(text);
-    window.setTimeout(() => setToast(null), 3200);
+    toastTimer.current = window.setTimeout(() => {
+      toastTimer.current = null;
+      setToast(null);
+    }, 3200);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    };
+  }, []);
+
+  /** 손실 한도 초기화 — 실수로 누르면 하루 손실 기록이 0%부터 다시 세지므로 한 번 확인을 받는다. */
+  const onResetDaily = async () => {
+    const ok = window.confirm(
+      '현재 잔고 기준으로 오늘 손실 한도를 초기화할까요?\n\n· 지금 계좌 잔고를 오늘의 기준선으로 다시 잡습니다.\n· 오늘 손익은 0%부터 다시 셉니다.\n· 초기화하면 자동매매를 다시 켤 수 있습니다.',
+    );
+    if (!ok) return;
+    const res = await api.resetDailyLimit();
+    notify(res.message);
   };
 
   const onToggle = async () => {
@@ -135,6 +179,23 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
           </div>
         </div>
 
+        {/* 실시간 잔고 (v1.5.4) — 총 자산 · 가용 · 미실현 + 마지막 갱신 시각 */}
+        <div className="auto-balance" data-auto-balance data-auto-refresh-sec={LIVE_REFRESH_MS / 1000}>
+          <span>
+            가용 <b>{keys.hasKeys ? fmtUsdt(account?.available ?? native?.available ?? null) : '—'}</b>
+          </span>
+          <span>
+            미실현{' '}
+            <b className={(account?.unrealizedPL ?? native?.unrealizedPL ?? 0) >= 0 ? 'up' : 'down'}>
+              {keys.hasKeys ? fmtUsdt(account?.unrealizedPL ?? native?.unrealizedPL ?? null) : '—'}
+            </b>
+          </span>
+          <em data-auto-refresh>
+            <i className={`auto-live-dot ${liveRefresh && keys.hasKeys ? 'on' : ''}`} />
+            {!keys.hasKeys ? '키를 연결하면 자동 갱신' : liveRefresh ? `실시간 · ${fmtSince(lastRefreshAt, Date.now())}` : '자동 갱신 대기'}
+          </em>
+        </div>
+
         <div className="auto-actions">
           <button
             type="button"
@@ -160,6 +221,20 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
         {error && (
           <div className="auto-error" data-auto-error>
             {error}
+          </div>
+        )}
+        {daily.locked && (
+          <div className="auto-reset-row" data-auto-reset-row>
+            <p>오늘 손실 한도에 닿아 자동 진입이 멈췄습니다. 지금 잔고를 기준으로 다시 시작할 수 있습니다.</p>
+            <button
+              type="button"
+              className="auto-reset"
+              onClick={() => void onResetDaily()}
+              disabled={busy === 'reset' || (api.supported && !keys.hasKeys)}
+              data-auto-reset
+            >
+              {busy === 'reset' ? '초기화 중…' : '🔓 손실한도 초기화'}
+            </button>
           </div>
         )}
         <div className="auto-hero-foot">
@@ -419,6 +494,16 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
                 끄기
               </button>
             </div>
+            <button
+              type="button"
+              className="auto-mini auto-reset-mini"
+              onClick={() => void onResetDaily()}
+              disabled={busy === 'reset' || (api.supported && !keys.hasKeys)}
+              title="지금 잔고를 오늘의 기준선으로 다시 잡습니다"
+              data-auto-reset-guard
+            >
+              {busy === 'reset' ? '초기화 중…' : '↺ 손실한도 초기화'}
+            </button>
           </div>
           <NumField
             label="레버리지 상한"

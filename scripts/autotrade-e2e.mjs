@@ -180,6 +180,11 @@ const NATIVE_MOCK = () => {
     armed: window.__auto.plans.length,
     openPositions: window.__auto.positions.length,
     equity: 1234.56,
+    // v1.5.4 — 가용·미실현·오늘 기준선도 서비스 스냅숏에서 내려온다
+    available: 1000.5,
+    unrealizedPL: 12.34,
+    dayStartEquity: window.__auto.dayStartEquity ?? 1234.56,
+    dayKey: new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10),
     dailyPnl: window.__auto.dailyPnl,
     dailyLocked: window.__auto.dailyLocked,
     lastTickAt: Date.now(),
@@ -209,6 +214,7 @@ const NATIVE_MOCK = () => {
     'autoTradeStop',
     'autoTradeSync',
     'autoTradeStatus',
+    'autoTradeResetDailyLimit',
   ].map((name) => ({ name, rtype: 'promise' }));
   methods.push({ name: 'addListener', rtype: 'callback' }, { name: 'removeListener', rtype: 'callback' });
   // v1.4.0 이하 APK 흉내 — 자동매매 메서드가 아예 없다
@@ -301,6 +307,18 @@ const NATIVE_MOCK = () => {
       return statusOf();
     },
     autoTradeStatus: async () => statusOf(),
+    // v1.5.4 — 손실한도 초기화: 네이티브가 계좌를 새로 조회해 기준선을 다시 잡고 잠금을 푼다
+    autoTradeResetDailyLimit: async () => {
+      window.__auto.calls.push({ method: 'autoTradeResetDailyLimit' });
+      window.__auto.dailyLocked = false;
+      window.__auto.dailyPnl = 0;
+      window.__auto.dayStartEquity = 1234.56;
+      window.__auto.nativeLog = [
+        { at: Date.now(), level: 'info', text: '1일 손실 한도 초기화 — 기준 equity $1,234.56 (일일 손익 0%부터 다시 계산)' },
+        ...window.__auto.nativeLog,
+      ];
+      return { ...statusOf(), ok: true, equity: 1234.56, available: 1000.5, unrealizedPL: 12.34, dayStartEquity: 1234.56 };
+    },
   };
 
   window.Capacitor = {
@@ -481,6 +499,35 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   check(/1일 손실 한도 도달/.test(await text(page, '[data-auto-logs]')), '한도 도달 차단 로그');
   const stops = await page.evaluate(() => window.__auto.calls.filter((c) => c.method === 'autoTradeStop').length);
   check(stops >= 1, '한도 도달 시 네이티브 서비스 stop 호출');
+
+  /* ---------- v1.5.4: 손실한도 초기화 ---------- */
+  check(await page.locator('[data-auto-reset]').count() === 1, '한도 잠김 → 손실한도 초기화 버튼 표시');
+  check(await page.locator('[data-auto-reset-guard]').count() === 1, '안전장치 카드에도 초기화 버튼');
+  await page.locator('[data-auto-hero]').screenshot({ path: `${OUT}/64-auto-daily-locked.png` }).catch(() => {});
+  await page.locator('[data-auto-reset]').click();
+  await page.waitForTimeout(900);
+  const resets = await page.evaluate(() => window.__auto.calls.filter((c) => c.method === 'autoTradeResetDailyLimit'));
+  check(resets.length === 1, '초기화 클릭 → 네이티브 autoTradeResetDailyLimit 1건', `${resets.length}건`);
+  check(
+    page.__dialogs.some((m) => /현재 잔고 기준으로 오늘 손실 한도를 초기화할까요/.test(m)),
+    '초기화 전 확인 모달(실수 방지)',
+    page.__dialogs.slice(-1).join(' | '),
+  );
+  const heroAfterReset = await text(page, '[data-auto-hero]');
+  check(!/⛔ 잠김/.test(heroAfterReset), '초기화 후 잠김 해제', heroAfterReset.slice(0, 60));
+  check(/손실 한도를 지금 잔고/.test(await text(page, '.auto-toast')), '초기화 성공 토스트', await text(page, '.auto-toast'));
+  const resetRuntime = await page.evaluate(() => JSON.parse(localStorage.getItem('cota.autotrade.runtime.v1') || '{}'));
+  check(
+    Math.abs((resetRuntime.dayStartEquity ?? 0) - 1234.56) < 1e-6,
+    '초기화 후 웹 기준선 = 지금 잔고(즉시 다시 잠기지 않게)',
+    String(resetRuntime.dayStartEquity),
+  );
+  await page.locator('[data-auto-toggle]').click();
+  await page.waitForTimeout(900);
+  const restarted = await page.evaluate(() => window.__auto.calls.filter((c) => c.method === 'autoTradeStart'));
+  check(restarted.length === 2, '초기화 후 자동매매를 다시 켤 수 있다(start 2번째)', `${restarted.length}회`);
+  check(!/⛔ 잠김/.test(await text(page, '[data-auto-hero]')), '다시 켠 뒤에도 잠김으로 돌아가지 않는다');
+  await page.locator('[data-auto-hero]').screenshot({ path: `${OUT}/65-auto-daily-reset.png` }).catch(() => {});
 
   // 즉시 중지 버튼
   await page.locator('[data-auto-stop]').click();
@@ -691,6 +738,47 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   await page.waitForTimeout(300);
   check(/보유 중인 USDT-M 포지션이 없습니다/.test(await text(page, '[data-auto-positions]')), '청산 후 포지션 목록 갱신');
   check(errors.length === 0, '청산 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+/* ================================================================== *
+ * 7) 실시간 잔고 자동 갱신 (v1.5.4) — 화면이 열려 있으면 10~15초 주기, 나가면 정리
+ * ================================================================== */
+{
+  const { ctx, page, errors } = await open();
+  await page.evaluate(() => document.querySelector('[data-tab="menu"]')?.click());
+  await page.waitForTimeout(300);
+  await page.locator('[data-menu="auto"]').click();
+  await page.waitForTimeout(400);
+  await page.fill('[data-auto-input="key"]', 'bg_demokey_1234567890abcdef');
+  await page.fill('[data-auto-input="secret"]', 'secretsecretsecretsecretsecret12');
+  await page.fill('[data-auto-input="passphrase"]', 'cota-passphrase');
+  await page.locator('[data-auto-save]').click();
+  await page.waitForTimeout(1200);
+
+  const sec = await page.getAttribute('[data-auto-balance]', 'data-auto-refresh-sec');
+  check(Number(sec) >= 10 && Number(sec) <= 15, '실시간 갱신 주기 10~15초', `${sec}초`);
+  const balance = await text(page, '[data-auto-balance]');
+  check(/가용 \$1,001/.test(balance) && /미실현/.test(balance), '가용 잔고·미실현 손익 표시', balance.slice(0, 80));
+  check(/실시간 · (방금 전|\d+초 전)/.test(await text(page, '[data-auto-refresh]')), '실시간 갱신 표시(방금 전)', await text(page, '[data-auto-refresh]'));
+
+  const before = await page.evaluate(() => window.__auto.calls.filter((c) => c.method === 'bitgetTestConnection').length);
+  await page.waitForTimeout(13_000);
+  const after = await page.evaluate(() => window.__auto.calls.filter((c) => c.method === 'bitgetTestConnection').length);
+  check(after > before, '화면이 열려 있으면 잔고를 주기적으로 다시 조회', `${before} → ${after}회`);
+  check(/초 전|방금 전/.test(await text(page, '[data-auto-refresh]')), '갱신 시각이 계속 따라온다', await text(page, '[data-auto-refresh]'));
+  await page.locator('[data-auto-balance]').screenshot({ path: `${OUT}/63-auto-live-balance.png` }).catch(() => {});
+  await page.locator('[data-auto-hero]').screenshot({ path: `${OUT}/66-auto-hero-live.png` }).catch(() => {});
+  await page.locator('[data-auto-guards]').screenshot({ path: `${OUT}/67-auto-reset-guard.png` }).catch(() => {});
+
+  // 화면을 나가면 interval 정리 → 더 이상 계좌를 조회하지 않는다
+  await page.evaluate(() => document.querySelector('.bottom-nav [data-tab="scanner"]')?.click());
+  await page.waitForTimeout(700);
+  const left = await page.evaluate(() => window.__auto.calls.filter((c) => c.method === 'bitgetTestConnection').length);
+  await page.waitForTimeout(13_000);
+  const leftAfter = await page.evaluate(() => window.__auto.calls.filter((c) => c.method === 'bitgetTestConnection').length);
+  check(leftAfter === left, '자동매매 화면을 나가면 실시간 갱신 중지', `${left} → ${leftAfter}회`);
+  check(errors.length === 0, '실시간 갱신 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
   await ctx.close();
 }
 

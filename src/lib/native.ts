@@ -49,6 +49,8 @@ interface AppShellPlugin {
   /** 웹 엔진의 최신 설정·감시 목록을 서비스에 넘긴다 */
   autoTradeSync(options: { config: string; plans: string }): Promise<AutoTradeNativeStatus>;
   autoTradeStatus(): Promise<AutoTradeNativeStatus>;
+  /** 1일 손실 한도 초기화 — 지금 잔고를 다시 조회해 오늘 기준선으로 잡고 잠금을 푼다(v1.5.4) */
+  autoTradeResetDailyLimit(): Promise<AutoTradeNativeStatus & { ok: boolean; dayStartEquity?: number }>;
   addListener(
     eventName: 'autoTradeEvent',
     listener: (data: AutoTradeNativeStatus) => void,
@@ -142,7 +144,15 @@ export interface AutoTradeNativeStatus {
   armed?: number;
   openPositions?: number;
   equity?: number | null;
+  /** 가용 잔고 — 서비스가 주기마다 저장한 최신 값(v1.5.4) */
+  available?: number | null;
+  /** 미실현 손익 — 서비스가 주기마다 저장한 최신 값(v1.5.4) */
+  unrealizedPL?: number | null;
   dailyPnl?: number | null;
+  /** 오늘의 손실 기준 equity — 웹이 이 값으로 기준선을 맞춘다(v1.5.4) */
+  dayStartEquity?: number | null;
+  /** 기준선 날짜(KST YYYY-MM-DD) */
+  dayKey?: string;
   dailyLocked?: boolean;
   lastTickAt?: number;
   /** 1일 손실 한도로 서비스가 스스로 꺼졌는지 — 웹 설정도 같이 꺼야 배지가 맞는다 */
@@ -441,6 +451,18 @@ export async function autoTradeStatus(): Promise<AutoTradeNativeStatus | null> {
     return await AppShell.autoTradeStatus();
   } catch {
     return null;
+  }
+}
+
+/** 1일 손실 한도 초기화 — 네이티브가 계좌를 새로 조회해 기준선을 다시 잡는다(웹에서 잔고를 넘기지 않는다). */
+export async function autoTradeResetDailyLimit(): Promise<
+  (AutoTradeNativeStatus & { ok: boolean; dayStartEquity?: number; stale?: boolean }) | null
+> {
+  if (!isNativeApp()) return null;
+  try {
+    return await AppShell.autoTradeResetDailyLimit();
+  } catch (e) {
+    return { running: false, ok: false, error: errText(e) };
   }
 }
 
