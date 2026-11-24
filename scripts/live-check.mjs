@@ -50,8 +50,7 @@ const onb = await page.evaluate(() => ({
 check(onb.seedInputs === 0, '라이브 온보딩에 수동 시드 입력 없음(v1.5.5)', String(onb.seedInputs));
 check(onb.styles.join('|') === '보수적 매매|공격적 매매', '라이브 온보딩 매매 성향 2택', onb.styles.join(' / '));
 
-// $1,000 · 보수적으로 시작
-await page.locator('.seed-chip', { hasText: '$1,000' }).click();
+// 보수적 성향으로 시작 (v1.5.5 — 시드 입력 없음)
 await page.locator('.onb-start').click();
 await page.waitForSelector('.onboarding', { state: 'detached', timeout: 15000 });
 await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 180000 });
@@ -80,6 +79,7 @@ const ui = await page.evaluate(() => {
     rec: clean(c?.querySelector('.badge.rec')?.textContent),
     cockpitCells: [...c.querySelectorAll('.cockpit-cell b')].map((b) => clean(b.textContent)),
     cockpitRisk: clean(c?.querySelector('.cockpit-risk')?.textContent),
+    unlinked: clean(c?.querySelector('[data-cockpit-unlinked]')?.textContent),
     chartLabels: [...c.querySelectorAll('.mini-label')].map((l) => clean(l.textContent)),
     scripts: [...document.querySelectorAll('script[src]')].map((s) => s.getAttribute('src')),
     fxLeft: /FX|벤티지|Lot|랏/.test(document.querySelector('.scanner-tab')?.innerText || ''),
@@ -94,9 +94,9 @@ check(/^(롱 · 매수|숏 · 매도)$/.test(ui.side), '라이브 방향 배지 
 check(ui.labels.join('|') === '목표가|진입가|본전 (EQ)|손절가', '라이브 가격 박스 한글', ui.labels.join(' / '));
 check(/^COTA 추천 \d+x$/.test(ui.rec), '라이브 COTA 추천 배지', ui.rec);
 check(
-  ui.cockpitCells.length === 4 && /^시드 \$1,000의 1\.5%/.test(ui.cockpitRisk),
-  '라이브 실전 주문 콕핏(수량·증거금·손절·목표)',
-  `${ui.cockpitRisk} · ${ui.cockpitCells.join(' / ')}`,
+  ui.cockpitCells.length === 0 && ui.cockpitRisk === '실계좌 미연결' && /계좌를 연결하면 실시간 잔고 기준/.test(ui.unlinked),
+  '라이브 실전 주문 콕핏 = 실계좌 미연결 안내(수동 시드 없음)',
+  `${ui.cockpitRisk} · ${ui.unlinked.slice(0, 40)}`,
 );
 check(ui.chartLabels.length === 3, '라이브 차트 목표·진입·손절 라벨', ui.chartLabels.join(' / '));
 check(
@@ -143,7 +143,11 @@ const settings = await page.evaluate(() => ({
   ntfy: document.querySelector('.td-key-input')?.value,
   version: [...document.querySelectorAll('.setting-desc')].map((d) => d.textContent).find((t) => t?.includes('앱 v')),
 }));
-check(settings.seed === '$1,000' && settings.headings[0] === '💼 내 투자 프로필', '라이브 내 투자 프로필 카드', `${settings.seed} · ${settings.headings[0]}`);
+check(
+  settings.seed === '실계좌 미연결' && settings.headings[0] === '💼 내 매매 기준',
+  '라이브 내 매매 기준 카드(계좌 잔고)',
+  `${settings.seed} · ${settings.headings[0]}`,
+);
 check(settings.target === '주요 코인' && settings.ntfy === 'bgss-hw3238-9f4k2m', '라이브 알림 기본값', `${settings.target} · ${settings.ntfy}`);
 check(/앱 v1\.5\.5/.test(settings.version || ''), '라이브 앱 버전 v1.5.5', settings.version);
 
