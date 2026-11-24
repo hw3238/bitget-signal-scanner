@@ -11,6 +11,7 @@
  * 화면에 보이는 모든 수치는 이 파일의 순수 함수로만 만든다 (scripts/cockpit-check.ts 검증).
  */
 import type { Side, Signal } from '../engine/types';
+import { AVAILABLE_MARGIN_RATIO } from './account';
 import type { TradeStyle } from './profile';
 import { stopDistancePct, targetDistancePct } from './profile';
 
@@ -69,6 +70,7 @@ export interface ContractSpec {
 }
 
 export interface OrderPlanInput {
+  /** 리스크 기준 자본 — 연결된 계좌의 총 자산(equity). 없으면 주문 계획을 만들지 않는다(v1.5.5) */
   seed: number;
   /** 1회 허용 손실률(%) */
   riskPct: number;
@@ -79,6 +81,11 @@ export interface OrderPlanInput {
   target: number;
   /** 거래소 주문 단위 — 없으면 코인 수량 그대로 계산한다. */
   spec?: ContractSpec;
+  /**
+   * 가용 잔고(USDT) — 있으면 필요 증거금이 **가용의 95%** 를 넘지 않게 수량을 줄인다.
+   * (이미 잡힌 증거금·미실현 손실 때문에 총 자산보다 가용이 작을 수 있다)
+   */
+  available?: number | null;
 }
 
 export interface OrderPlan {
@@ -116,6 +123,10 @@ export interface OrderPlan {
   belowMinNotional: boolean;
   /** 최소 주문 수량(코인 단위) — 없으면 null */
   minQty: number | null;
+  /** 가용 잔고에 맞춰 수량을 줄였는가 (계획한 손실보다 작아진다) */
+  cappedByAvailable: boolean;
+  /** 계산에 쓴 가용 잔고 — 모르면 null */
+  available: number | null;
 }
 
 const EMPTY: OrderPlan = {
@@ -139,6 +150,8 @@ const EMPTY: OrderPlan = {
   belowMinQty: false,
   belowMinNotional: false,
   minQty: null,
+  cappedByAvailable: false,
+  available: null,
 };
 
 /** 시그널 한 건의 실전 주문 계획 — 방향·가격이 어긋나면 계산하지 않는다. */
@@ -174,7 +187,31 @@ export function planOrder(input: OrderPlanInput): OrderPlan {
   // 거래소 수량 단위로 내림 — 계획한 리스크를 넘지 않게
   if (step > 0) qty = Math.floor(qty / step + 1e-9) * step;
   qty = Number(qty.toPrecision(12));
-  if (!(qty > 0)) return { ...EMPTY, error: '주문 수량이 거래소 최소 단위보다 작습니다.' };
+
+  // 가용 잔고 캡 — 필요 증거금이 가용의 95%를 넘으면 그 안으로 수량을 줄인다.
+  //  (총 자산은 그대로인데 이미 쓴 증거금이 있어 주문이 거절되는 경우를 미리 막는다)
+  const available =
+    input.available != null && Number.isFinite(input.available) && input.available > 0
+      ? Math.min(Number(input.available), seed)
+      : null;
+  let cappedByAvailable = false;
+  if (available != null && qty > 0) {
+    const maxQty = (available * AVAILABLE_MARGIN_RATIO * leverage) / entry;
+    if (qty > maxQty) {
+      qty = maxQty;
+      if (step > 0) qty = Math.floor(qty / step + 1e-9) * step;
+      qty = Number(qty.toPrecision(12));
+      cappedByAvailable = true;
+    }
+  }
+  if (!(qty > 0)) {
+    return {
+      ...EMPTY,
+      error: cappedByAvailable
+        ? '가용 USDT 증거금이 부족해 최소 주문 수량을 만들 수 없습니다.'
+        : '주문 수량이 거래소 최소 단위보다 작습니다.',
+    };
+  }
 
   const notional = qty * entry;
   const margin = notional / leverage;
@@ -207,13 +244,15 @@ export function planOrder(input: OrderPlanInput): OrderPlan {
     belowMinQty: minQty != null && qty < minQty - 1e-12,
     belowMinNotional: minNotional != null && notional < minNotional - 1e-9,
     minQty,
+    cappedByAvailable,
+    available,
   };
 }
 
 /** 시그널 값으로 바로 쓰는 편의 함수 */
 export function planOrderForSignal(
   signal: Pick<Signal, 'side' | 'entry' | 'stop' | 'target'>,
-  opts: { seed: number; riskPct: number; leverage: number; spec?: ContractSpec },
+  opts: { seed: number; riskPct: number; leverage: number; spec?: ContractSpec; available?: number | null },
 ): OrderPlan {
   return planOrder({
     seed: opts.seed,
@@ -224,6 +263,7 @@ export function planOrderForSignal(
     stop: signal.stop,
     target: signal.target,
     spec: opts.spec,
+    available: opts.available,
   });
 }
 

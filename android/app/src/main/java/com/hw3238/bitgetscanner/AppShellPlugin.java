@@ -25,6 +25,7 @@ import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -816,6 +817,9 @@ public class AppShellPlugin extends Plugin {
                 body.put("marginCoin", call.getString("marginCoin", BitgetApi.MARGIN_COIN));
                 body.put("size", size);
                 body.put("side", requestedSide);
+                // 자동 보정(포지션 모드 전환·증거금 캡)이 쓸 힌트 — 화면이 아는 값을 그대로 넘긴다(v1.5.5).
+                body.put("posMode", hedge ? "hedge_mode" : "one_way_mode");
+                body.put("leverageHint", leverage);
                 body.put("orderType", orderType);
                 if ("limit".equals(orderType) && price != null && !price.isEmpty()) {
                     body.put("price", price);
@@ -848,12 +852,29 @@ public class AppShellPlugin extends Plugin {
                 ret.put("orderId", res.optString("orderId", ""));
                 ret.put("clientOid", res.optString("clientOid", clientOid));
                 ret.put("tradeSide", hedge ? body.optString("tradeSide") : "");
+                org.json.JSONArray recovery = res.optJSONArray("recovery");
+                if (recovery != null && recovery.length() > 0) {
+                    JSArray list = new JSArray();
+                    for (int i = 0; i < recovery.length(); i++) list.put(recovery.optString(i, ""));
+                    ret.put("recovery", list);
+                }
                 call.resolve(ret);
             } catch (Exception e) {
                 JSObject ret = new JSObject();
                 ret.put("ok", false);
+                // 한글 사유(원문 코드 포함) — 화면 로그에 그대로 남는다.
                 ret.put("error", errorText(e));
-                if (e instanceof BitgetApi.ApiException) ret.put("code", ((BitgetApi.ApiException) e).code);
+                if (e instanceof BitgetApi.ApiException) {
+                    BitgetApi.ApiException api = (BitgetApi.ApiException) e;
+                    ret.put("code", api.code);
+                    // 원문(거래소 영문 메시지)은 표기에만 쓴다.
+                    ret.put("raw", api.getMessage());
+                    if (!api.recovery.isEmpty()) {
+                        JSArray list = new JSArray();
+                        for (String item : api.recovery) list.put(item);
+                        ret.put("recovery", list);
+                    }
+                }
                 call.resolve(ret);
             }
         }).start();

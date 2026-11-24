@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
-import type { Profile } from '../lib/profile';
 import { fmtUsdAmount } from '../lib/profile';
+import type { AccountBase } from '../lib/account';
 import { feeCalculator, FEE_MAKER_PCT, FEE_TAKER_PCT } from '../lib/calc';
 import { NumField } from './ui';
 
-export function FeeCalc({ profile }: { profile: Profile | null }) {
-  const [seed, setSeed] = useState(profile?.seed ?? 1000);
+export function FeeCalc({ account }: { account: AccountBase }) {
+  const [seed, setSeed] = useState(account.seed > 0 ? Math.round(account.seed) : 1000);
   const [leverage, setLeverage] = useState(10);
   const [tradesPerDay, setTradesPerDay] = useState(5);
   const [makerShare, setMakerShare] = useState(0.3);

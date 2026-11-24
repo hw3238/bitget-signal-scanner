@@ -1,13 +1,13 @@
 /**
  * COTA UI 검증 — 토스 스타일 라이트 UI · 5탭 코인 집중 · 전면 한글화 · 가격 가독성 ·
- * 첫 실행 온보딩 · COTA 추천 레버리지 · 시드 기반 예상 손익
+ * 첫 실행 온보딩 · COTA 추천 레버리지 · 실계좌 잔고 기준 예상 손익(v1.5.5)
  *
  *  1) 라이트 테마(#F2F4F6 · #FFFFFF · 네온 0건) · COTA 브랜드/로고/파비콘
- *  2) 첫 실행 온보딩(시드 프리셋·보수적/공격적) → 저장 → 메인 진입
+ *  2) 첫 실행 온보딩(매매 성향만 — 수동 시드 입력 없음) → 저장 → 메인 진입
  *  3) 하단 5탭(스캐너|시황|메뉴|기록|설정) · 390px 가로 오버플로 0건
  *  4) 코인 집중: 기본 자산 필터 '코인', FX·랏(Lot)·벤티지 호가 보정 UI 0건
  *  5) 카드 한글 라벨(진입가·목표가·손절가·본전·손익비·최근/전수 승률) + 천단위 콤마
- *  6) COTA 추천 배지(보수적 2~5x · 공격적 10~25x) + 시드 예상 수익/손절 손실
+ *  6) COTA 추천 배지(보수적 2~5x · 공격적 10~25x) + 계좌 미연결 시 연결 안내
  *  7) 공유 카드(캔버스) · 설정(프로필·알림) · 메뉴>전략엔진 · 콘솔 에러 0건
  *  8) 스크린샷 5장: 18-toss-scanner · 19-toss-engine · 20-toss-share-card · 21-toss-settings · 22-toss-onboarding
  *
@@ -111,15 +111,15 @@ const run = async () => {
     return {
       visible: !!el,
       title: clean(el.querySelector('h2')?.textContent),
-      seedValue: el.querySelector('.seed-input input')?.value,
-      presets: [...el.querySelectorAll('.seed-chip')].map((b) => clean(b.textContent)),
-      presetOn: clean(el.querySelector('.seed-chip.on')?.textContent),
+      seedInputs: el.querySelectorAll('.seed-input, .seed-chip, input').length,
       styles: [...el.querySelectorAll('.style-card')].map((b) => ({
         label: clean(b.querySelector('b')?.textContent),
         range: clean(b.querySelector('.style-range')?.textContent),
         on: b.classList.contains('on'),
       })),
+      accountNote: clean(el.querySelector('[data-onb-account]')?.textContent),
       startText: clean(el.querySelector('.onb-start')?.textContent),
+      startDisabled: el.querySelector('.onb-start')?.disabled === true,
       closeBtn: !!el.querySelector('.onboarding-x'),
       overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
       logoLoaded: (() => {
@@ -129,28 +129,23 @@ const run = async () => {
     };
   });
   check('첫 실행: 온보딩 모달 표시', onb.visible, onb.title);
-  check('시드 기본값 $1,000 · 프리셋 4개', onb.seedValue === '1,000' && onb.presets.join('|') === '$100|$500|$1,000|$5,000', `${onb.seedValue} · ${onb.presets.join(' ')}`);
+  check('온보딩 제목 = 매매 성향(시드 입력 없음)', /매매 성향/.test(onb.title) && onb.seedInputs === 0, `${onb.title} · 입력칸 ${onb.seedInputs}개`);
   check('매매 성향 2택(보수적 2~5x · 공격적 10~25x)', onbstyles(onb) === '보수적 매매:추천 2x ~ 5x|공격적 매매:추천 10x ~ 25x', onb.styles.map((s) => `${s.label}:${s.range}`).join(' | '));
   check('보수적 기본 선택 · 시작하기 버튼 · 로고', onb.styles[0]?.on && onb.startText === '시작하기' && onb.logoLoaded, `${onb.startText}`);
   check('첫 실행 온보딩은 닫기 버튼 없음', !onb.closeBtn);
+  check('계좌 연결 안내(시드 대신 실계좌 잔고 기준)', /계좌를 연결하면/.test(onb.accountNote) && /자동매매/.test(onb.accountNote), onb.accountNote.slice(0, 60));
   check('390px 온보딩 가로 오버플로 0건', !onb.overflow);
 
-  // 시드 비우면 시작하기 비활성
-  await page.fill('.seed-input input', '');
-  const disabled = await page.evaluate(() => document.querySelector('.onb-start')?.disabled === true);
-  check('시드가 비면 시작하기 비활성', disabled);
-
-  // $5,000 + 공격적 → 스크린샷 22
-  await page.fill('.seed-input input', '5000');
+  // 공격적 선택 → 스크린샷 22 (수동 시드 없이 성향만)
   await page.locator('.style-card.aggressive').click();
   await page.waitForTimeout(200);
   await page.screenshot({ path: `${OUT}/22-toss-onboarding.png` });
   const onbState = await page.evaluate(() => ({
-    seed: document.querySelector('.seed-input input')?.value,
     aggressiveOn: document.querySelector('.style-card.aggressive')?.classList.contains('on'),
     summary: clean(document.querySelector('.onb-summary')?.textContent),
+    startDisabled: document.querySelector('.onb-start')?.disabled === true,
   }));
-  check('시드 $5,000 입력 · 공격적 선택 반영', onbState.seed === '5,000' && onbState.aggressiveOn && /5,000/.test(onbState.summary), onbState.summary);
+  check('공격적 선택 반영 · 시작하기 활성', onbState.aggressiveOn && /공격적/.test(onbState.summary) && !onbState.startDisabled, onbState.summary);
 
   // 보수적으로 시작 → 메인 진입
   await page.locator('.style-card.conservative').click();
@@ -166,7 +161,11 @@ const run = async () => {
   );
   await page.waitForTimeout(1200);
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('cota.profile.v1') || 'null'));
-  check('시작하기 → cota.profile.v1 저장 · 온보딩 닫힘', stored?.seed === 5000 && stored?.style === 'conservative', JSON.stringify(stored));
+  check(
+    '시작하기 → cota.profile.v1 저장(성향만 · 시드 없음)',
+    stored?.style === 'conservative' && stored?.seed === undefined,
+    JSON.stringify(stored),
+  );
 
   /* ---------- 2) 라이트 토스 테마 ---------- */
   const theme = await page.evaluate(() => {
@@ -302,54 +301,34 @@ const run = async () => {
   const recLev = Number((card.rec.match(/(\d+)x/) || [])[1]);
   check('COTA 추천 배지 = 보수적 2x~5x', /^COTA 추천 \d+x$/.test(card.rec) && recLev >= 2 && recLev <= 5, card.rec);
 
-  /* ---------- 4-1) 실전 주문 콕핏 ---------- */
+  /* ---------- 4-1) 실전 주문 콕핏 — 실계좌 미연결(v1.5.5) ---------- */
+  const unlinked = await page.evaluate(() => {
+    const c = document.querySelector('.scanner-tab .signal-card:not(.skeleton)');
+    return {
+      cockpit: !!c.querySelector('.cockpit:not(.unlinked)'),
+      notice: clean(c.querySelector('[data-cockpit-unlinked]')?.textContent),
+      connect: !!c.querySelector('.cockpit-connect'),
+      cells: c.querySelectorAll('.cockpit-cell').length,
+      quick: c.querySelectorAll('[data-quick-order]').length,
+      roiSub: clean(c.querySelector('.roi-sub')?.textContent),
+      copyBtns: [...c.querySelectorAll('.copy-btn')].map((b) => clean(b.textContent)),
+      chartLabels: [...c.querySelectorAll('.mini-label')].map((l) => clean(l.textContent)),
+    };
+  });
   check(
-    '실전 주문 콕핏 4칸 = 주문 수량·필요 증거금·손절·목표',
-    card.cockpitTitle === '🎯 실전 주문' &&
-      card.cockpitCells.map((x) => x.label).join('|') === '주문 수량|필요 증거금|손절 도달 시|목표 도달 시',
-    `${card.cockpitTitle} · ${card.cockpitCells.map((x) => x.label).join(' / ')}`,
+    '계좌 미연결: 시드 숫자 대신 연결 안내 + 연결 버튼',
+    !unlinked.cockpit && unlinked.cells === 0 && /계좌를 연결하면 실시간 잔고 기준/.test(unlinked.notice) && unlinked.connect,
+    unlinked.notice.slice(0, 70),
   );
-  check(
-    '콕핏 리스크 = 시드 $5,000의 보수적 1.5% · COTA 추천 배율',
-    /^시드 \$5,000의 1\.5% · \d+x$/.test(card.cockpitRisk),
-    card.cockpitRisk,
-  );
-  const entryVal = Number(card.values[1].replace(/,/g, ''));
-  const targetVal = Number(card.values[0].replace(/,/g, ''));
-  const stopVal = Number(card.values[3].replace(/,/g, ''));
-  const shownQty = Number((card.cockpitCells[0]?.value || '').replace(/[^0-9.]/g, ''));
-  const expectQty = (5000 * 0.015) / Math.abs(entryVal - stopVal);
-  check(
-    '주문 수량 = (시드 × 1.5%) ÷ |진입가 − 손절가| (거래소 단위 내림)',
-    Number.isFinite(shownQty) &&
-      shownQty > 0 &&
-      Math.abs(shownQty - expectQty) <= Math.max(0.0002, expectQty * 0.04),
-    `표시 ${card.cockpitCells[0]?.value} · 계산 ${expectQty.toFixed(6)}`,
-  );
-  const shownMargin = Number((card.cockpitCells[1]?.value || '').replace(/[^0-9.]/g, ''));
-  const expectMargin = (shownQty * entryVal) / recLev;
-  check(
-    '필요 증거금 = 수량 × 진입가 ÷ 추천 배율',
-    Math.abs(shownMargin - expectMargin) <= Math.max(1, expectMargin * 0.01),
-    `표시 $${shownMargin} · 계산 $${expectMargin.toFixed(2)} @ ${recLev}x`,
-  );
-  const shownProfit = Number((card.cockpitCells[3]?.value || '').replace(/[^0-9.]/g, ''));
-  const expectProfit = shownQty * Math.abs(targetVal - entryVal);
-  check(
-    '손절 손실 = —$75 (시드의 1.5%) · 목표 수익 = 수량 × 목표 거리',
-    // 계약 단위 내림 때문에 계획(−$75)보다 아주 살짝 작을 수 있다(예: −$74.99). 계획 이내 1% 오차 허용.
-    Math.abs(Number((card.cockpitCells[2]?.value || '').replace(/[^0-9.]/g, ''))) <= 75.001 &&
-      Math.abs(Number((card.cockpitCells[2]?.value || '').replace(/[^0-9.]/g, ''))) >= 74.25 &&
-      card.cockpitCells[2]?.sub === '-1.50%' &&
-      Math.abs(shownProfit - expectProfit) <= Math.max(3, expectProfit * 0.03),
-    `${card.cockpitCells[2]?.value} · ${card.cockpitCells[3]?.value} (계산 $${expectProfit.toFixed(2)})`,
-  );
+  check('계좌 미연결이면 원클릭 주문 없음 · 수량 복사 없음', unlinked.quick === 0 && unlinked.copyBtns.join('|') === '진입가', unlinked.copyBtns.join(' / '));
+  check('수익률 표기는 레버리지만(가짜 평가손익 없음)', /^\d+x 레버리지 적용$/.test(unlinked.roiSub), unlinked.roiSub);
   check(
     '차트 우측 가격 라벨 = 목표/진입/손절 3개가 가격 박스와 일치',
-    card.chartLabels.join('|') === [card.values[0], card.values[1], card.values[3]].join('|'),
-    card.chartLabels.join(' / '),
+    unlinked.chartLabels.join('|') === [card.values[0], card.values[1], card.values[3]].join('|'),
+    unlinked.chartLabels.join(' / '),
   );
-  check('원클릭 복사 버튼 = 진입가·수량', card.copyBtns.join('|') === '진입가|수량', card.copyBtns.join(' / '));
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.locator('.scanner-tab .signal-card:not(.skeleton)').first().screenshot({ path: `${OUT}/49-cockpit-unlinked.png` }).catch(() => {});
 
   // 진입가 복사 → 클립보드에 콤마 없는 원본 가격
   const copyBtn = page.locator('.scanner-tab .signal-card:not(.skeleton) .copy-btn').first();
@@ -358,7 +337,6 @@ const run = async () => {
   await page.waitForTimeout(150);
   const clipEntry = await page.evaluate(() => navigator.clipboard.readText());
   const copyLabel = cleanText(await copyBtn.innerText());
-  // 화면은 0을 잘라 표기(0.234)하고 복사는 계약 자리수 그대로(0.2340)일 수 있다 — 값이 같으면 통과.
   const clipNum = Number(String(clipEntry).replace(/,/g, ''));
   const shownEntryNum = Number(card.values[1].replace(/,/g, ''));
   check(
@@ -371,31 +349,10 @@ const run = async () => {
   check('복사 직후 버튼 피드백', copyLabel === '복사됨', copyLabel);
   await page.waitForTimeout(1600);
 
-  // 수량 복사 → 숫자만(지수·콤마 없음)
-  const qtyBtn = page.locator('.scanner-tab .signal-card:not(.skeleton) .copy-btn').nth(1);
-  await qtyBtn.click();
-  await page.waitForTimeout(150);
-  const clipQty = await page.evaluate(() => navigator.clipboard.readText());
-  check(
-    '수량 복사 → 콤마·지수 없는 주문 수량',
-    /^[0-9]+(\.[0-9]+)?$/.test(clipQty) && Math.abs(Number(clipQty) - shownQty) <= Math.max(1e-8, shownQty * 1e-6),
-    clipQty,
-  );
-  await page.waitForTimeout(1600);
-
-  // 대표 스크린샷 — 실전 주문 콕핏이 한 장에 보이게
-  await page.evaluate(() => window.scrollTo(0, 0));
-  const firstCard = page.locator('.scanner-tab .signal-card:not(.skeleton)').first();
-  await firstCard.scrollIntoViewIfNeeded();
-  await page.waitForTimeout(400);
-  await firstCard.screenshot({ path: `${OUT}/45-signal-cockpit.png` });
-
   check(
     '현재 수익률·발송 시각 표기',
-    /^(현재|최종) 수익률 \(진입가 기준\)$/.test(card.cap) &&
-      /^\d+x 적용 · 평가손익 [+-]?\$/.test(card.roiSub) &&
-      /^발송 \d{2}\. \d{2}\. \d{2}:\d{2}$/.test(card.sentTime),
-    `${card.cap} · ${card.roiSub} · ${card.sentTime}`,
+    /^(현재|최종) 수익률 \(진입가 기준\)$/.test(card.cap) && /^발송 \d{2}\. \d{2}\. \d{2}:\d{2}$/.test(card.sentTime),
+    `${card.cap} · ${card.sentTime}`,
   );
 
   // 진입가 기준 실시간 수익률이 롱/숏 방향과 레버리지에 맞게 표시되는지 전 카드 검증
@@ -410,35 +367,29 @@ const run = async () => {
     const rows = allCards
       .filter((c) => /현재 수익률/.test(c.querySelector('.roi-cap')?.textContent || ''))
       .map((c) => {
-      const side = c.querySelector('.badge.long') ? 'long' : 'short';
-      const priceText = c.querySelector('.price')?.textContent;
-      const entryText = c.querySelectorAll('.lvl-value')[1]?.textContent;
-      const price = num(priceText);
-      const entry = num(entryText);
-      const roiText = c.querySelector('.roi-value')?.textContent?.trim() ?? '';
-      const roi = num(roiText);
-      const sub = c.querySelector('.roi-sub')?.textContent ?? '';
-      const lev = Number((sub.match(/(\d+(?:\.\d+)?)x/) || [])[1] || 0);
-      const pnlText = (sub.match(/평가손익 ([+-]?\$[\d,.]+)/) || [])[1] ?? null;
-      const raw = ((price - entry) / entry) * 100 * (side === 'long' ? 1 : -1);
-      // 표시 가격의 최소 단위(틱) 반올림 오차를 레버리지만큼 허용 — 마이크로 프라이스 코인(SHIB 등) 대응
-      const tick = Math.pow(10, -Math.max(dec(priceText), dec(entryText)));
-      const tol = Math.max(0.2, entry > 0 ? (lev * 100 * (0.75 * tick)) / entry : 0.2);
-      return { side, price, entry, roi, lev, raw, expect: raw * lev, pnlText, roiText, tol };
+        const side = c.querySelector('.badge.long') ? 'long' : 'short';
+        const priceText = c.querySelector('.price')?.textContent;
+        const entryText = c.querySelectorAll('.lvl-value')[1]?.textContent;
+        const price = num(priceText);
+        const entry = num(entryText);
+        const roiText = c.querySelector('.roi-value')?.textContent?.trim() ?? '';
+        const roi = num(roiText);
+        const sub = c.querySelector('.roi-sub')?.textContent ?? '';
+        const lev = Number((sub.match(/(\d+(?:\.\d+)?)x/) || [])[1] || 0);
+        const pnlText = (sub.match(/평가손익 ([+-]?\$[\d,.]+)/) || [])[1] ?? null;
+        const raw = ((price - entry) / entry) * 100 * (side === 'long' ? 1 : -1);
+        const tick = Math.pow(10, -Math.max(dec(priceText), dec(entryText)));
+        const tol = Math.max(0.2, entry > 0 ? (lev * 100 * (0.75 * tick)) / entry : 0.2);
+        return { side, price, entry, roi, lev, raw, expect: raw * lev, pnlText, roiText, tol };
       });
     const off = rows.filter((r) => !r.entry || !r.lev || Math.abs(r.expect - r.roi) > r.tol);
-    const seedPnlOff = rows.filter((r) => {
-      if (!r.pnlText) return false;
-      const shown = num(r.pnlText);
-      return Math.abs(shown - (5000 * r.roi) / 100) > 40;
-    });
     return {
       total: rows.length,
       closedCards: allCards.length - rows.length,
       longs: rows.filter((r) => r.side === 'long').length,
       shorts: rows.filter((r) => r.side === 'short').length,
       off: off.map((r) => `${r.side}:${r.roiText} vs ${r.expect.toFixed(2)}`),
-      seedPnlOff: seedPnlOff.map((r) => r.pnlText),
+      pnlShown: rows.filter((r) => r.pnlText).length,
       sample: rows.slice(0, 3).map((r) => `${r.side} ${r.price}→${r.entry} ${r.roiText} (${r.lev}x)`),
     };
   });
@@ -447,11 +398,7 @@ const run = async () => {
     live.total > 0 && live.off.length === 0,
     `${live.total}건(진행 중) · 종료 카드 ${live.closedCards}건 제외 · 롱 ${live.longs}/숏 ${live.shorts} · ${live.sample.join(' | ')}${live.off.length ? ` · 오차 ${live.off.join(' ; ')}` : ''}`,
   );
-  check(
-    '시드 평가손익 = 시드 × 실시간 수익률',
-    live.seedPnlOff.length === 0,
-    live.seedPnlOff.length ? live.seedPnlOff.join(' ') : '전 카드 일치',
-  );
+  check('계좌 미연결이면 평가손익($)을 지어내지 않는다', live.pnlShown === 0, `${live.pnlShown}건 표시`);
 
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(300);
@@ -481,7 +428,11 @@ const run = async () => {
   await page.waitForTimeout(500);
   const hasDrawn = (re) => share.drawn.some((d) => re.test(d));
   check('공유 카드 한글 라벨 + COTA 브랜드', ['진입가', '목표가', '손절가', 'COTA'].every((t) => share.drawn.includes(t)) && hasDrawn(/^본전 \(EQ\)$/) && hasDrawn(/^COTA · 셋업 기록 공유/), share.drawn.slice(0, 12).join(' | '));
-  check('공유 카드 COTA 추천 배지·시드 손익', hasDrawn(/^COTA 추천 \d+x$/) && hasDrawn(/내 시드 \$5,000/) && hasDrawn(/^손익비 1 : \d+\.\d$/), share.drawn.filter((d) => /COTA 추천|시드/.test(d)).join(' | '));
+  check(
+    '공유 카드 COTA 추천 배지 · 계좌 미연결이면 시드 금액 없음',
+    hasDrawn(/^COTA 추천 \d+x$/) && hasDrawn(/^손익비 1 : \d+\.\d$/) && !hasDrawn(/내 시드|계좌 \$/),
+    share.drawn.filter((d) => /COTA 추천|시드|계좌/.test(d)).join(' | '),
+  );
   check('공유 카드 라이트 배경·해상도', /rgb\(2[45]\d, 2[45]\d, 2[45]\d\)/.test(share.bg) && share.w > 0, `${share.bg} ${share.w}px`);
 
   /* ---------- 6) 설정 탭 ---------- */
@@ -492,7 +443,10 @@ const run = async () => {
     const panel = document.querySelector('#settings-notify');
     const profile = document.querySelector('#settings-profile');
     return {
-      profileSeed: clean(profile.querySelector('.profile-cell b')?.textContent),
+      balance: clean(profile.querySelector('[data-settings-balance] b')?.textContent),
+      balanceSub: clean(profile.querySelector('[data-settings-balance] i')?.textContent),
+      connectNote: clean(profile.querySelector('[data-settings-connect]')?.textContent),
+      hasSeedWord: /내 시드/.test(profile.innerText),
       profileStyle: clean(profile.querySelectorAll('.profile-cell b')[1]?.textContent),
       headings: [...document.querySelectorAll('.settings-tab .panel h3')].map((h) => clean(h.textContent)),
       heading: clean(panel.querySelector('h3')?.textContent),
@@ -512,17 +466,21 @@ const run = async () => {
       })(),
     };
   });
-  check('설정 최상단 내 투자 프로필 카드', /^💼 내 투자 프로필$/.test(settings.headings[0]) && settings.profileSeed === '$5,000', `${settings.headings[0]} · ${settings.profileSeed} · ${settings.profileStyle}`);
+  check(
+    '설정 최상단 내 매매 기준 카드 = 계좌 잔고(미연결 안내)',
+    /^💼 내 매매 기준$/.test(settings.headings[0]) && settings.balance === '실계좌 미연결' && !settings.hasSeedWord && /계좌를 연결하면/.test(settings.connectNote),
+    `${settings.headings[0]} · ${settings.balance} · ${settings.balanceSub}`,
+  );
   check('매매 성향 표시(보수적)', /보수적 매매/.test(settings.profileStyle), settings.profileStyle);
   check('🔔 핸드폰 알림 유지 · 코인 알림 3택', settings.heading === '🔔 핸드폰 알림' && settings.targets.join('|') === '비트·이더·솔|주요 코인|전체 종목' && settings.targetOn === '주요 코인', settings.targets.join(' / '));
-  check('ntfy 토픽 유지 · 앱 버전 v1.5.4', settings.ntfy === 'bgss-hw3238-9f4k2m' && /COTA · 앱 v1\.5\.4/.test(settings.version || ''), `${settings.ntfy} · ${settings.version}`);
+  check('ntfy 토픽 유지 · 앱 버전 v1.5.5', settings.ntfy === 'bgss-hw3238-9f4k2m' && /COTA · 앱 v1\.5\.5/.test(settings.version || ''), `${settings.ntfy} · ${settings.version}`);
   check('설정에 FX 랏·벤티지·트웰브 데이터 없음', !settings.lotSection);
   check(
     '실전 주문 리스크 설정 = 성향 추천 + 1/2/3/5/10/20/30/50% + 직접 입력',
     settings.risk.value === 'auto' &&
       settings.risk.options.length === 10 &&
       /성향 추천 \(1\.5%\)/.test(settings.risk.options[0]) &&
-      settings.risk.options.slice(1, 9).join('|') === '시드의 1%|시드의 2%|시드의 3%|시드의 5%|시드의 10%|시드의 20%|시드의 30%|시드의 50%' &&
+      settings.risk.options.slice(1, 9).join('|') === '잔고의 1%|잔고의 2%|잔고의 3%|잔고의 5%|잔고의 10%|잔고의 20%|잔고의 30%|잔고의 50%' &&
       settings.risk.options[9] === '직접 입력',
     `${settings.risk.value} · ${settings.risk.options.join(' / ')}`,
   );
@@ -557,11 +515,11 @@ const run = async () => {
   await page.locator('#settings-profile .ghost-btn', { hasText: '다시 설정' }).click();
   await page.waitForSelector('.onboarding', { timeout: 15000 });
   const reopen = await page.evaluate(() => ({
-    seed: document.querySelector('.seed-input input')?.value,
+    seedInputs: document.querySelectorAll('.onboarding .seed-input, .onboarding .seed-chip').length,
     style: document.querySelector('.style-card.on b')?.textContent?.trim(),
     canClose: !!document.querySelector('.onboarding-x'),
   }));
-  check('설정에서 온보딩 다시 열기(기존 값 유지)', reopen.seed === '5,000' && /보수적/.test(reopen.style || '') && reopen.canClose, `${reopen.seed} · ${reopen.style}`);
+  check('설정에서 온보딩 다시 열기(성향 유지 · 시드 입력 없음)', reopen.seedInputs === 0 && /보수적/.test(reopen.style || '') && reopen.canClose, `${reopen.style}`);
   await page.locator('.style-card.aggressive').click();
   await page.locator('.onb-start').click();
   await page.waitForSelector('.onboarding', { state: 'detached', timeout: 15000 });
@@ -569,28 +527,18 @@ const run = async () => {
   await page.waitForTimeout(700);
   const aggressive = await page.evaluate(() => {
     const rec = document.querySelector('.scanner-tab .badge.rec')?.textContent || '';
-    const cells = [...document.querySelectorAll('.scanner-tab .cockpit-cell')].map((s) => ({
-      label: clean(s.querySelector('span')?.textContent),
-      value: clean(s.querySelector('b')?.textContent),
-      sub: clean(s.querySelector('i')?.textContent),
-    }));
     const risk = clean(document.querySelector('.scanner-tab .cockpit-risk')?.textContent);
+    const notice = clean(document.querySelector('.scanner-tab [data-cockpit-unlinked]')?.textContent);
     const stored = JSON.parse(localStorage.getItem('cota.profile.v1') || '{}');
-    return { rec: clean(rec), cells, risk, stored };
+    return { rec: clean(rec), risk, notice, stored };
   });
   const agLev = Number((aggressive.rec.match(/(\d+)x/) || [])[1]);
   check('공격적 저장 · 추천 배율 10x~25x', aggressive.stored.style === 'aggressive' && agLev >= 10 && agLev <= 25, aggressive.rec);
   check('성향 변경 시 추천 배율 상승(보수적 < 공격적)', agLev > recLev, `${recLev}x → ${agLev}x`);
-  // 손실은 계약 단위 내림 때문에 계획(−$150)보다 아주 살짝 작을 수 있다(예: −$149.99).
-  //  · 계획을 넘지 않고 1% 이내여야 한다.
-  const lossNum = Math.abs(Number((aggressive.cells[2]?.value || '').replace(/[^0-9.]/g, '')));
   check(
-    '공격적 리스크 3%로 갱신 · 손절 손실 −$150',
-    /^시드 \$5,000의 3% · \d+x$/.test(aggressive.risk) &&
-      lossNum <= 150.001 &&
-      lossNum >= 148.5 &&
-      aggressive.cells[2]?.sub === '-3.00%',
-    `${aggressive.risk} · ${aggressive.cells[2]?.value}`,
+    '계좌 미연결이면 성향이 바뀌어도 실계좌 미연결 안내 유지',
+    aggressive.risk === '실계좌 미연결' && /계좌를 연결하면/.test(aggressive.notice),
+    `${aggressive.risk} · ${aggressive.notice.slice(0, 40)}`,
   );
 
   /* ---------- 8) 메뉴 > 전략엔진 · 나머지 탭 ---------- */
@@ -671,7 +619,7 @@ const run = async () => {
   });
   await desktop.addInitScript(() => {
     window.clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
-    localStorage.setItem('cota.profile.v1', JSON.stringify({ seed: 1000, style: 'conservative', updatedAt: Date.now() }));
+    localStorage.setItem('cota.profile.v1', JSON.stringify({ style: 'conservative', updatedAt: Date.now() }));
   });
   const dpage = await desktop.newPage();
   dpage.on('console', (m) => {

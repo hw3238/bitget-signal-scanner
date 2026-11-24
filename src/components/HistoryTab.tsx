@@ -12,7 +12,8 @@ import {
 } from '../lib/journal';
 import { fmtDateTime, fmtPct, fmtPrice, stateLabel, tfLabel } from '../lib/format';
 import { resolveRiskPct } from '../lib/orderCockpit';
-import { fmtSeed, fmtUsdAmount, type Profile } from '../lib/profile';
+import { fmtUsdAmount, type Profile } from '../lib/profile';
+import { fmtUsdtBalance, type AccountBase } from '../lib/account';
 import { EquityCurve } from './EquityCurve';
 import { StrategyBoard } from './StrategyBoard';
 import { CloseIcon, SearchIcon } from './Icons';
@@ -31,8 +32,10 @@ function matchesQuery(h: HistoryRecord, terms: string[]): boolean {
 interface Props {
   history: HistoryRecord[];
   leverage: number;
-  /** 시드·매매 성향 — 누적 손익($) 기준 */
+  /** 매매 성향 — 1회 리스크 기본값 */
   profile?: Profile | null;
+  /** 연결된 계좌 잔고 — 누적 손익($) 기준(v1.5.5) */
+  account?: AccountBase;
   /** 설정의 1회 허용 손실률(%). null이면 성향 기본값 */
   riskPct?: number | null;
   /** 내 진입으로 표시한 시그널 */
@@ -50,6 +53,7 @@ export function HistoryTab({
   history,
   leverage,
   profile = null,
+  account,
   riskPct = null,
   myTrades,
   onToggleMyTrade,
@@ -74,12 +78,13 @@ export function HistoryTab({
     setVisible(PAGE_SIZE);
   }, [query, filter, mode]);
 
+  const seed = account?.seed ?? 0;
   const basis = useMemo(
     () => ({
-      seed: profile?.seed ?? 0,
+      seed,
       riskPct: profile ? resolveRiskPct(profile.style, riskPct) : 0,
     }),
-    [profile, riskPct],
+    [profile, riskPct, seed],
   );
 
   const view = mode === 'mine' ? mine : all;
@@ -211,13 +216,11 @@ export function HistoryTab({
               </div>
               <div className="stat">
                 <span className="stat-label">누적 손익</span>
-                <b className={tone(stats.pnlUsd)}>
-                  {profile ? fmtUsdAmount(stats.pnlUsd) : '-'}
-                </b>
+                <b className={tone(stats.pnlUsd)}>{seed > 0 ? fmtUsdAmount(stats.pnlUsd) : '-'}</b>
                 <span className="stat-sub">
-                  {profile
-                    ? `시드 $${fmtSeed(profile.seed)} · 1회 ${basis.riskPct}%`
-                    : '투자 프로필을 설정하면 표시'}
+                  {seed > 0
+                    ? `계좌 ${fmtUsdtBalance(seed)} · 1회 ${basis.riskPct}%`
+                    : '실계좌를 연결하면 표시'}
                 </span>
               </div>
             </>
@@ -267,11 +270,11 @@ export function HistoryTab({
         <EquityCurve curve={curve} streaks={streak} mine={mode === 'mine'} />
         {curve.trades > 0 && (
           <div className="equity-basis">
-            {profile
-              ? `시드 $${fmtSeed(profile.seed)} · 1회 리스크 ${basis.riskPct}% 기준 누적 손익 ${fmtUsdAmount(
+            {seed > 0
+              ? `계좌 ${fmtUsdtBalance(seed)} · 1회 리스크 ${basis.riskPct}% 기준 누적 손익 ${fmtUsdAmount(
                   stats.pnlUsd,
                 )}`
-              : '투자 프로필(시드·매매 성향)을 설정하면 누적 손익($)을 함께 보여줍니다.'}
+              : '비트겟 실계좌를 연결하면 계좌 잔고 기준 누적 손익($)을 함께 보여줍니다.'}
           </div>
         )}
       </section>

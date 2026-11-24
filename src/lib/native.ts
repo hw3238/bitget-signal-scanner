@@ -136,8 +136,12 @@ export interface BitgetOrderResult {
   clientOid?: string;
   /** 서버가 돌려준 주문 파라미터(디버그용) */
   tradeSide?: string;
+  /** 한글 설명(error)과 원문(거래소 영문 메시지) — 원문은 표기에만 쓴다(v1.5.5) */
   error?: string;
+  raw?: string;
   code?: string;
+  /** 실패 전에 네이티브가 스스로 했던 보정(한글) — 로그에 그대로 남긴다 */
+  recovery?: string[];
 }
 
 export interface AutoTradeNativeStatus {

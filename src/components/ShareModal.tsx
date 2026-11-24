@@ -10,13 +10,24 @@ interface Props {
   signal: Signal;
   leverage: number;
   profile?: Profile | null;
+  /** 연결된 계좌 잔고 — 손익 표기 기준(v1.5.5) */
+  seed?: number;
   auto?: boolean;
   isFavorite: boolean;
   onToggleFavorite: (signal: Signal) => void;
   onClose: () => void;
 }
 
-export function ShareModal({ signal, leverage, profile = null, auto = false, isFavorite, onToggleFavorite, onClose }: Props) {
+export function ShareModal({
+  signal,
+  leverage,
+  profile = null,
+  seed = 0,
+  auto = false,
+  isFavorite,
+  onToggleFavorite,
+  onClose,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [ready, setReady] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -27,7 +38,7 @@ export function ShareModal({ signal, leverage, profile = null, auto = false, isF
     const draw = async () => {
       if (cancelled || !canvasRef.current) return;
       try {
-        await drawShareCard(canvasRef.current, signal, leverage, profile, auto);
+        await drawShareCard(canvasRef.current, signal, leverage, profile, auto, seed);
       } finally {
         if (!cancelled) setReady(true);
       }
@@ -40,7 +51,7 @@ export function ShareModal({ signal, leverage, profile = null, auto = false, isF
     return () => {
       cancelled = true;
     };
-  }, [signal, leverage, profile, auto]);
+  }, [signal, leverage, profile, auto, seed]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

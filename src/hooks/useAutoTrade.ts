@@ -7,9 +7,11 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Contract, Signal } from '../engine/types';
-import type { Profile } from '../lib/profile';
+import { accountBaseOf } from '../lib/account';
+import { formatBitgetErrorKo } from '../lib/bitgetErrors';
 import {
   DEFAULTS,
+  IDLE_REFRESH_MS,
   LIVE_REFRESH_MS,
   LOG_LIMIT,
   SNAPSHOT_FRESH_MS,
@@ -27,7 +29,6 @@ import {
   normalizePosMode,
   planAutoOrder,
   planDailyReset,
-  planSeed,
   priceText,
   pushLog,
   resolveTradeMode,
@@ -68,6 +69,12 @@ import {
 const CONFIG_KEY = 'cota.autotrade.config.v1';
 const RUNTIME_KEY = 'cota.autotrade.runtime.v1';
 
+/** 네이티브가 남긴 자동 보정 기록 → ` (자동 보정: 호가 단위 보정 · …)` */
+function recoveryText(recovery?: string[] | null): string {
+  if (!recovery || !recovery.length) return '';
+  return ` (자동 보정: ${recovery.join(' · ')})`;
+}
+
 function readConfig(): AutoTradeConfig {
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
@@ -96,7 +103,6 @@ function readRuntime(): AutoRuntime {
 
 interface UseAutoTradeInput {
   signals: Signal[];
-  profile: Profile | null;
   contracts: Contract[];
   /** 시그널별 적용 배율 (COTA 추천 / 고정) */
   leverageFor: (signal: Signal) => number;
@@ -108,7 +114,7 @@ export interface QuickOrderResult {
   simulated: boolean;
 }
 
-export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAutoTradeInput) {
+export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeInput) {
   const [config, setConfig] = useState<AutoTradeConfig>(readConfig);
   const [runtime, setRuntime] = useState<AutoRuntime>(readRuntime);
   const [keys, setKeysState] = useState<BitgetKeyState & { supported: boolean }>({
@@ -137,6 +143,35 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
    * 모의투자 키로 실거래를 고르거나 실거래 키로 모의투자를 고르면 라벨과 다른 주문이 나간다.
    */
   const tradeMode = useMemo(() => resolveTradeMode(config, keys), [config, keys]);
+
+  /**
+   * 🔗 v1.5.5 — 모든 시그널·주문 계산의 기준이 되는 **실계좌 잔고**.
+   *  · 자동매매 화면이 닫혀 있어도(스캐너 탭) 이 훅이 앱 수준에서 돌기 때문에 잔고가 유지된다.
+   *  · 키가 없거나 잔고를 못 읽으면 seed 0 = 계산 불가.
+   */
+  const accountBase = useMemo(
+    () =>
+      accountBaseOf({
+        hasKeys: keys.hasKeys,
+        equity: account?.equity ?? native?.equity ?? null,
+        available: account?.available ?? native?.available ?? null,
+        unrealizedPL: account?.unrealizedPL ?? native?.unrealizedPL ?? null,
+        updatedAt: lastRefreshAt || native?.lastTickAt || 0,
+        demo: keys.demo,
+      }),
+    [
+      account?.available,
+      account?.equity,
+      account?.unrealizedPL,
+      keys.demo,
+      keys.hasKeys,
+      lastRefreshAt,
+      native?.available,
+      native?.equity,
+      native?.lastTickAt,
+      native?.unrealizedPL,
+    ],
+  );
   const contractBySymbol = useMemo(() => {
     const map = new Map<string, Contract>();
     for (const c of contracts) map.set(c.symbol, c);
@@ -328,7 +363,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       override?: AutoTradeConfig,
     ): { plans: ArmedPlan[]; decisions: Array<{ signal: Signal; decision: EntryDecision }> } => {
       const cfg = override ?? config;
-      const seed = planSeed(profile, account?.equity ?? null);
+      const seed = accountBase.seed;
       const decisions: Array<{ signal: Signal; decision: EntryDecision }> = [];
       const plans: ArmedPlan[] = [];
       if (!(seed > 0)) return { plans, decisions };
@@ -336,7 +371,14 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
         if (signal.asset === 'fx') continue;
         if (signal.state !== 'open') continue;
         if (!symbolAllowed(cfg, signal.symbol)) continue;
-        const plan = planAutoOrder({ signal, seed, config: cfg, leverage: leverageFor(signal), spec: specFor(signal.symbol) });
+        const plan = planAutoOrder({
+          signal,
+          seed,
+          config: cfg,
+          leverage: leverageFor(signal),
+          spec: specFor(signal.symbol),
+          available: accountBase.available,
+        });
         const decision = evaluateEntry({
           config: cfg,
           signal,
@@ -367,7 +409,8 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       return { plans, decisions };
     },
     [
-      account?.equity,
+      accountBase.available,
+      accountBase.seed,
       config,
       contractBySymbol,
       daily.locked,
@@ -375,7 +418,6 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       leverageFor,
       openPositions,
       openSymbols,
-      profile,
       runtime.tradedKeys,
       specFor,
       supported,
@@ -385,6 +427,15 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
   /** 브라우저 모의 시뮬레이션 — 같은 게이트를 태우고 통과분을 '체결'로 기록 */
   const simulate = useCallback((override?: AutoTradeConfig): EntryDecision[] => {
     const now = Date.now();
+    const seed = accountBase.seed;
+    if (!(seed > 0)) {
+      log({
+        at: now,
+        level: 'info',
+        text: '실계좌 잔고가 없어 계산할 수 없습니다 — 메뉴 → 비트겟 자동매매에서 API 키를 연결하면 실시간 잔고 기준으로 시뮬레이션합니다.',
+      });
+      return [];
+    }
     const { plans, decisions } = buildPlans(signals, now, override);
     if (!decisions.length) {
       log({ at: now, level: 'info', text: '시뮬레이션: 평가할 진행 중 시그널이 없습니다.' });
@@ -416,7 +467,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       return next;
     });
     return decisions.map((d) => d.decision);
-  }, [buildPlans, log, signals]);
+  }, [accountBase.seed, buildPlans, log, signals]);
 
   /* ---------------- 시작 · 정지 ---------------- */
 
@@ -608,9 +659,22 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
 
   const quickOrder = useCallback(
     async (signal: Signal): Promise<QuickOrderResult> => {
-      const seed = planSeed(profile, account?.equity ?? null);
-      if (!(seed > 0)) return { ok: false, simulated: false, message: '시드가 없습니다. 설정에서 투자 프로필을 먼저 입력하세요.' };
-      const plan = planAutoOrder({ signal, seed, config, leverage: leverageFor(signal), spec: specFor(signal.symbol) });
+      const seed = accountBase.seed;
+      if (!(seed > 0)) {
+        return {
+          ok: false,
+          simulated: false,
+          message: '연결된 비트겟 계좌 잔고가 없습니다. 메뉴 → 비트겟 자동매매에서 API 키를 연결하면 실시간 잔고 기준으로 주문합니다.',
+        };
+      }
+      const plan = planAutoOrder({
+        signal,
+        seed,
+        config,
+        leverage: leverageFor(signal),
+        spec: specFor(signal.symbol),
+        available: accountBase.available,
+      });
       const decision = evaluateEntry({
         config: { ...config, enabled: true },
         signal,
@@ -658,16 +722,21 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
         log({
           at: Date.now(),
           level: 'error',
-          text: `${signal.base} 주문 실패 — ${res.error ?? '알 수 없는 오류'}${res.code ? ` (${res.code})` : ''}`,
+          text: `${signal.base} 주문 실패 — ${formatBitgetErrorKo(res.code, res.raw ?? res.error)}${recoveryText(res.recovery)}`,
           symbol: signal.symbol,
           side: signal.side,
         });
-        return { ok: false, simulated: false, message: res.error ?? '주문에 실패했습니다.' };
+        // 사용자에게는 **한글 사유**로 알린다 — 거래소가 영문만 줘도 이유가 먼저 보이게(v1.5.5).
+        return {
+          ok: false,
+          simulated: false,
+          message: formatBitgetErrorKo(res.code, res.raw ?? res.error) + recoveryText(res.recovery),
+        };
       }
       log({
         at: Date.now(),
         level: 'fill',
-        text: `${tradeMode.mode === 'live' ? '[실거래]' : '[모의]'} ${signal.base} ${signal.side === 'long' ? '롱' : '숏'} ${params.size} 주문 접수 · TP ${params.presetStopSurplusPrice} / SL ${params.presetStopLossPrice} · 주문 ${res.orderId ?? res.clientOid ?? ''}`,
+        text: `${tradeMode.mode === 'live' ? '[실거래]' : '[모의]'} ${signal.base} ${signal.side === 'long' ? '롱' : '숏'} ${params.size} 주문 접수 · TP ${params.presetStopSurplusPrice} / SL ${params.presetStopLossPrice} · 주문 ${res.orderId ?? res.clientOid ?? ''}${recoveryText(res.recovery)}`,
         symbol: signal.symbol,
         side: signal.side,
       });
@@ -675,7 +744,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       void refreshPositions();
       return { ok: true, simulated: false, message: `${tradeMode.mode === 'live' ? '실거래' : '모의투자'} 주문을 넣었습니다.` };
     },
-    [account?.equity, account?.posMode, config, contractBySymbol, daily.locked, keys.hasKeys, leverageFor, log, openPositions, openSymbols, profile, refreshPositions, runtime.tradedKeys, specFor, supported, tradeMode.mode],
+    [account?.posMode, accountBase.available, accountBase.seed, config, contractBySymbol, daily.locked, keys.hasKeys, leverageFor, log, openPositions, openSymbols, refreshPositions, runtime.tradedKeys, specFor, supported, tradeMode.mode],
   );
 
   /** 보유 포지션 청산 — 방향·축소 규칙은 네이티브가 계좌 모드(헤지/단방향)에 맞춰 만든다. */
@@ -701,7 +770,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
         log({
           at: Date.now(),
           level: 'error',
-          text: `${pos.symbol.replace('USDT', '')} 청산 실패 — ${res.error ?? '알 수 없는 오류'}${res.code ? ` (${res.code})` : ''}`,
+          text: `${pos.symbol.replace('USDT', '')} 청산 실패 — ${formatBitgetErrorKo(res.code, res.raw ?? res.error)}${recoveryText(res.recovery)}`,
           symbol: pos.symbol,
           side: pos.holdSide === 'long' ? 'long' : 'short',
         });
@@ -765,13 +834,15 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
   }, [applyNative, refreshPositions, supported]);
 
   /**
-   * 실시간 잔고 자동 갱신(v1.5.4) — 자동매매 화면이 열려 있는 동안 12초마다.
-   *  · 잔고(총 자산·가용·미실현)는 계좌에서 직접, 포지션은 2번에 1번(24초)만 읽어 호출을 반으로 줄인다.
-   *  · 탭이 숨겨지면(포그라운드 아님) 쉬고, 다시 보이면 즉시 한 번 더 맞춘다.
-   *  · 이미 요청이 떠 있으면 건너뛰어 12초 간격과 복귀가 겹쳐도 거래소에 두 번 쏘지 않는다.
+   * 🔗 실시간 잔고 자동 갱신(v1.5.5) — **앱이 열려 있는 동안 항상**.
+   *  · 자동매매 화면이 열려 있으면 12초, 스캐너 탭 등 다른 화면이면 60초마다 계좌를 읽는다.
+   *    (스캐너 시그널 카드의 주문 수량도 항상 최신 잔고 기준으로 떠야 하기 때문)
+   *  · 앱 시작·포그라운드 복귀 시 즉시 한 번 맞추고, 그때 키 저장 상태도 다시 읽는다.
+   *  · 잔고(총 자산·가용·미실현)는 계좌에서 직접, 포지션은 자동매매 화면에서 2번에 1번만 읽는다.
+   *  · 이미 요청이 떠 있으면 건너뛰어 주기 갱신과 복귀가 겹쳐도 거래소에 두 번 쏘지 않는다.
    */
   useEffect(() => {
-    if (!liveRefresh || !supported || !keys.hasKeys) return;
+    if (!supported || !keys.hasKeys) return;
     const run = async () => {
       if (document.visibilityState === 'hidden') return;
       if (refreshGuard.current.busy) return;
@@ -779,15 +850,19 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       try {
         await refreshAccount();
         refreshGuard.current.round += 1;
-        if (refreshGuard.current.round % 2 === 0) await refreshPositions();
+        if (liveRefresh && refreshGuard.current.round % 2 === 0) await refreshPositions();
       } finally {
         refreshGuard.current.busy = false;
       }
     };
     void run();
-    const id = window.setInterval(() => void run(), LIVE_REFRESH_MS);
+    const period = liveRefresh ? LIVE_REFRESH_MS : IDLE_REFRESH_MS;
+    const id = window.setInterval(() => void run(), period);
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void run();
+      if (document.visibilityState !== 'visible') return;
+      // 포그라운드 복귀 — 키 저장 상태를 다시 읽고(다른 화면에서 지웠을 수 있다) 잔고를 즉시 맞춘다.
+      void refreshKeys();
+      void run();
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
@@ -795,7 +870,7 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [keys.hasKeys, liveRefresh, refreshAccount, refreshPositions, supported]);
+  }, [keys.hasKeys, liveRefresh, refreshAccount, refreshKeys, refreshPositions, supported]);
 
   /** 켜져 있는 동안 새 시그널을 감시 목록으로 계속 넘긴다(중복은 키로 병합). */
   const armedRef = useRef<ArmedPlan[]>([]);
@@ -838,6 +913,8 @@ export function useAutoTrade({ signals, profile, contracts, leverageFor }: UseAu
     runtime,
     keys,
     account,
+    /** 🔗 실계좌 잔고(총 자산·가용) — 모든 시그널·주문 계산의 기준(v1.5.5) */
+    accountBase,
     positions,
     native,
     running,

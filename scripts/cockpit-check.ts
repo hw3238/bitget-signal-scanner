@@ -17,6 +17,7 @@ import {
   resolveRiskPct,
 } from '../src/lib/orderCockpit';
 import { layoutPriceLabels } from '../src/lib/chartLabels';
+import { AVAILABLE_MARGIN_RATIO, accountBaseOf, fmtUsdtBalance } from '../src/lib/account';
 
 let pass = 0;
 const fails: string[] = [];
@@ -152,6 +153,34 @@ const edge = layoutPriceLabels(
 check('아래 끝에 몰려도 안쪽으로 당긴다', edge.every((l) => l.top <= 106 + 1e-9) && edge[2].top - edge[1].top >= 13 - 1e-9, edge.map((l) => l.top).join(' / '));
 const keep = layoutPriceLabels([{ key: 'entry', y: 58 }], { height: 116 });
 check('겹침이 없으면 그대로 둔다', Math.abs(keep[0].top - 58) < 1e-9 && keep[0].key === 'entry');
+
+/* 9) v1.5.5 — 연결된 계좌 잔고가 유일한 시드 기준 + 가용 잔고 캡 */
+const base = accountBaseOf({ hasKeys: true, equity: 1234.56, available: 1000.5, unrealizedPL: 12.34, updatedAt: 1000 });
+check('계좌 기준: 총 자산 = 시드', base.connected && base.seed === 1234.56, `${base.seed}`);
+check('계좌 기준: 가용 잔고 유지', Math.abs(base.available - 1000.5) < 1e-9, `${base.available}`);
+check('계좌 기준: 가용이 총 자산보다 크면 총 자산으로 캡', accountBaseOf({ hasKeys: true, equity: 500, available: 900 }).available === 500);
+check('계좌 기준: 잔고를 못 읽으면 pending · seed 0', (() => {
+  const a = accountBaseOf({ hasKeys: true, equity: 0 });
+  return a.pending && !a.connected && a.seed === 0;
+})());
+check('계좌 기준: 키가 없으면 미연결', (() => {
+  const a = accountBaseOf({ hasKeys: false, equity: 1234 });
+  return !a.connected && !a.pending && a.seed === 0;
+})());
+check('잔고 표기: $1,234.56 · 미연결은 $0.00', fmtUsdtBalance(1234.56) === '$1,234.56' && fmtUsdtBalance(0) === '$0.00', fmtUsdtBalance(1234.56));
+check('가용 캡 비율 95%', AVAILABLE_MARGIN_RATIO === 0.95);
+
+const availSmall = planOrder({ seed: 1000, riskPct: 2, leverage: 10, side: 'long', entry: 100, stop: 95, target: 115, available: 20 });
+check(
+  '가용 캡: 증거금 ≤ 가용의 95% 로 수량 축소',
+  availSmall.valid && availSmall.cappedByAvailable && availSmall.margin <= 20 * 0.95 + 1e-9 && availSmall.qty < long.qty,
+  `qty ${long.qty} → ${availSmall.qty} · margin ${availSmall.margin.toFixed(2)}`,
+);
+check('가용 캡: 줄어든 만큼 손실도 작다', availSmall.riskUsd < long.riskUsd && !availSmall.overSeed, `${availSmall.riskUsd.toFixed(2)} < ${long.riskUsd}`);
+const availEnough = planOrder({ seed: 1000, riskPct: 2, leverage: 10, side: 'long', entry: 100, stop: 95, target: 115, available: 5000 });
+check('가용 캡: 잔고가 넉넉하면 그대로', !availEnough.cappedByAvailable && near(availEnough.qty, long.qty), `${availEnough.qty}`);
+const availZero = planOrder({ seed: 1000, riskPct: 2, leverage: 10, side: 'long', entry: 100, stop: 95, target: 115, available: 0.01, spec: { volumePlace: 0 } });
+check('가용 캡: 최소 수량도 못 만들면 한글 사유', !availZero.valid && /가용 USDT 증거금이 부족/.test(availZero.error ?? ''), availZero.error ?? '');
 
 console.log(`\n${fails.length === 0 ? '✅ 실전 주문 콕핏 검증 통과' : `❌ 실패 ${fails.length}건`} (${pass}개 확인)`);
 if (fails.length) {

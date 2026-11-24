@@ -1,8 +1,7 @@
-import { useState } from 'react';
 import type { ScanState } from '../hooks/useScanner';
 import type { AutoTradeApi } from '../hooks/useAutoTrade';
 import type { Signal } from '../engine/types';
-import type { Profile } from '../lib/profile';
+import type { AccountBase } from '../lib/account';
 import type { SwapLogEntry } from '../lib/storage';
 import { AutoTradeTab } from './AutoTradeTab';
 import { statusBadge } from '../lib/autotrade';
@@ -97,7 +96,11 @@ const GROUPS: Array<{ title: string; items: MenuItem[] }> = [
 
 interface Props {
   state: ScanState;
-  profile: Profile | null;
+  /** 연결된 계좌 잔고 — 사이징·생존 성적표의 기본 증거금(v1.5.5) */
+  account: AccountBase;
+  /** 하위 화면 상태(앱이 들고 있다 — 시그널 카드에서 자동매매 화면을 바로 열기 위해) */
+  view: MenuView | null;
+  onViewChange: (view: MenuView | null) => void;
   leverage: number;
   swapLog: SwapLogEntry[];
   onRescan: () => void;
@@ -118,25 +121,35 @@ const TITLES: Record<MenuView, string> = {
   engine: '전략 엔진',
 };
 
-export function MenuTab({ state, profile, leverage, swapLog, onRescan, onClearLog, autoTrade, signals }: Props) {
-  const [view, setView] = useState<MenuView | null>(null);
+export function MenuTab({
+  state,
+  account,
+  view,
+  onViewChange,
+  leverage,
+  swapLog,
+  onRescan,
+  onClearLog,
+  autoTrade,
+  signals,
+}: Props) {
 
   if (view) {
     return (
       <div className="tab menu-tab">
         <div className="subview-nav">
-          <button className="menu-back" onClick={() => setView(null)} aria-label="메뉴로 돌아가기">
+          <button className="menu-back" onClick={() => onViewChange(null)} aria-label="메뉴로 돌아가기">
             ← 메뉴
           </button>
           <b>{TITLES[view]}</b>
         </div>
-        {view === 'auto' && <AutoTradeTab api={autoTrade} signals={signals} profile={profile} />}
+        {view === 'auto' && <AutoTradeTab api={autoTrade} signals={signals} />}
         {view === 'kimchi' && <KimchiRadar state={state} />}
         {view === 'lag' && <KeyMatchRadar state={state} />}
         {view === 'doppel' && <Doppelganger state={state} />}
-        {view === 'survival' && <PositionSurvival state={state} profile={profile} />}
-        {view === 'sizing' && <SizingCalc state={state} profile={profile} />}
-        {view === 'fee' && <FeeCalc profile={profile} />}
+        {view === 'survival' && <PositionSurvival state={state} account={account} />}
+        {view === 'sizing' && <SizingCalc state={state} account={account} />}
+        {view === 'fee' && <FeeCalc account={account} />}
         {view === 'engine' && (
           <EngineTab state={state} swapLog={swapLog} leverage={leverage} onRescan={onRescan} onClearLog={onClearLog} />
         )}
@@ -163,7 +176,7 @@ export function MenuTab({ state, profile, leverage, swapLog, onRescan, onClearLo
       <button
         type="button"
         className={`menu-auto ${autoTrade.config.enabled ? (autoTrade.tradeMode.mode === 'live' ? 'live' : 'demo') : 'off'}`}
-        onClick={() => setView('auto')}
+        onClick={() => onViewChange('auto')}
         data-menu="auto"
       >
         <span className="menu-auto-emoji">🤖</span>
@@ -185,7 +198,7 @@ export function MenuTab({ state, profile, leverage, swapLog, onRescan, onClearLo
           <h3 className="menu-group-title">{g.title}</h3>
           <div className="menu-list">
             {g.items.map((item) => (
-              <button key={item.key} className="menu-row" onClick={() => setView(item.key)} data-menu={item.key}>
+              <button key={item.key} className="menu-row" onClick={() => onViewChange(item.key)} data-menu={item.key}>
                 <span className="menu-emoji">{item.emoji}</span>
                 <span className="menu-copy">
                   <b>

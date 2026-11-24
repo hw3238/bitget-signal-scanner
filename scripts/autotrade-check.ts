@@ -53,6 +53,19 @@ import {
   type AutoTradeConfig,
 } from '../src/lib/autotrade';
 import {
+  RECOVERY_LABEL,
+  explainBitgetError,
+  formatBitgetErrorKo,
+  isAuthError,
+  isInsufficientError,
+  isPositionModeError,
+  isPriceTickError,
+  isRetryableError,
+  isSizeError,
+  isSymbolError,
+  isTpSlError,
+} from '../src/lib/bitgetErrors';
+import {
   EARLY_STOP_COOLDOWN_MS,
   EARLY_STOP_MIN_AGE_MS,
   EARLY_STOP_SIGNAL_MAX_AGE_MS,
@@ -397,9 +410,10 @@ check(
   }).allowed,
 );
 
-check('시드: 프로필 우선', planSeed({ seed: 5000, style: 'conservative', updatedAt: 0 }, 800) === 5000);
-check('시드: 프로필 없으면 계좌', planSeed(null, 800) === 800);
-check('시드: 둘 다 없으면 0', planSeed(null, null) === 0);
+/* v1.5.5 — 시드는 '연결된 계좌 잔고'뿐이다(수동 시드 입력 제거) */
+check('시드: 연결된 계좌 잔고', planSeed(1234.56) === 1234.56);
+check('시드: 계좌 미연결이면 0 (계산 불가)', planSeed(null) === 0 && planSeed(0) === 0 && planSeed(-5) === 0);
+check('시드: 문자열·NaN 은 0', planSeed(Number.NaN) === 0);
 check('금액 표기', fmtUsdt(-45.5) === '−$45.50' && fmtUsdt(1234.5) === '$1,235');
 
 
@@ -959,6 +973,102 @@ check('조기 손절: 보호 구간 2분 · 쿨다운 5분', EARLY_STOP_MIN_AGE_
 check('조기 손절: 반대 시그널 인정 6시간', EARLY_STOP_SIGNAL_MAX_AGE_MS === 6 * 3_600_000);
 const esLog = earlyExitLogText({ demo: true, base: 'BTC', side: 'long', qty: '0.025', reason: '반대 방향 시그널 감지', currentR: -0.42, entry: 61000 });
 check('조기 손절: 로그에 🛡 조기 손절·사유·R', /🛡 조기 손절/.test(esLog) && /반대 방향 시그널 감지/.test(esLog) && /-0\.42R/.test(esLog), esLog);
+
+/* ------------------------------------------------------------------ *
+ * 13) v1.5.5 — 계좌 잔고 기준 주문(가용 잔고 캡) · 한글 오류 안내 · 자동 보정 기록
+ * ------------------------------------------------------------------ */
+
+/* 13-1) 가용 잔고 캡 — 총 자산은 그대로인데 이미 쓴 증거금이 있어 주문이 거절되는 경우 */
+const capBase = planAutoOrder({ signal: sig(), seed: 1000, config: cfg, leverage: 10 });
+const cappedByAvail = planAutoOrder({ signal: sig(), seed: 1000, config: cfg, leverage: 10, available: 20 });
+check(
+  '가용 잔고 캡: 필요 증거금이 가용의 95%를 넘지 않게 수량을 줄인다',
+  cappedByAvail.cappedByAvailable && cappedByAvail.margin <= 20 * 0.95 + 1e-9 && cappedByAvail.qty < capBase.qty,
+  `qty ${capBase.qty} → ${cappedByAvail.qty} · margin ${cappedByAvail.margin.toFixed(2)}`,
+);
+check(
+  '가용 잔고 캡: 손실도 계획보다 작아진다(리스크 초과 금지)',
+  cappedByAvail.riskUsd < capBase.riskUsd && !cappedByAvail.overSeed,
+  `risk ${capBase.riskUsd} → ${cappedByAvail.riskUsd.toFixed(2)}`,
+);
+const enoughAvail = planAutoOrder({ signal: sig(), seed: 1000, config: cfg, leverage: 10, available: 5000 });
+check('가용 잔고가 넉넉하면 수량 그대로(캡 없음)', !enoughAvail.cappedByAvailable && Math.abs(enoughAvail.qty - capBase.qty) < 1e-9);
+const tinyAvail = planAutoOrder({
+  signal: sig(),
+  seed: 1000,
+  config: cfg,
+  leverage: 10,
+  available: 0.05,
+  spec: { volumePlace: 0, minTradeNum: 1 },
+});
+check(
+  '가용이 0.05 USDT 면 최소 수량을 못 만들어 한글 사유를 남긴다',
+  !tinyAvail.valid && /가용 USDT 증거금이 부족/.test(tinyAvail.error ?? ''),
+  tinyAvail.error ?? '',
+);
+
+/* 13-2) 한글 오류 안내 — 거래소 영문 메시지·숫자 코드만 와도 이유가 먼저 보인다 */
+const KO_CASES: Array<[string, RegExp]> = [
+  ['45115', /호가 단위/],
+  ['25244', /호가 단위/],
+  ['40774', /포지션 모드\(단방향\/양방향\)/],
+  ['40762', /최소 거래 수량/],
+  ['43006', /최소 거래 수량/],
+  ['40754', /가용 USDT 증거금이 부족/],
+  ['43012', /가용 USDT 증거금이 부족/],
+  ['40085', /클래식 계정\(v2\)/],
+  ['40084', /통합계정\(v3\)/],
+  ['40014', /권한/],
+  ['40018', /모의투자\(Demo\) 키/],
+  ['40008', /자동 시간|timestamp|시각/],
+  ['43027', /최소 주문 금액/],
+  ['45110', /최소 주문 금액/],
+  ['25585', /목표가/],
+  ['25586', /손절가/],
+  ['40812', /TP\/SL|목표가·손절가/],
+  ['25105', /신규 진입이 막혀/],
+  ['25100', /상장폐지/],
+  ['45119', /신규 진입을 받지 않습니다/],
+  ['25212', /이미 접수/],
+  ['25229', /포지션 수/],
+  ['429', /요청이 너무 잦아/],
+  ['40908', /처리 중/],
+];
+const koMiss = KO_CASES.filter(([code, re]) => !re.test(explainBitgetError(code, '').text));
+check('한글 오류: 주요 코드 24종이 한글 사유로 번역된다', koMiss.length === 0, koMiss.map(([c]) => c).join(', ') || '전 코드 번역');
+const koFormat = formatBitgetErrorKo('45115', 'The price you enter should be a multiple of 0.01');
+check(
+  '한글 오류: 화면 문장은 한글이 먼저, 코드·원문은 뒤 괄호',
+  /^주문 가격/.test(koFormat) && /코드 45115/.test(koFormat) && /원문 The price/.test(koFormat),
+  koFormat,
+);
+check(
+  '한글 오류: 모르는 코드도 영문 원문을 그대로 남긴다',
+  /거래소가 주문을 거절했습니다 — Something odd/.test(formatBitgetErrorKo('99999', 'Something odd')) &&
+    /코드 99999/.test(formatBitgetErrorKo('99999', 'Something odd')),
+  formatBitgetErrorKo('99999', 'Something odd'),
+);
+check(
+  '한글 오류: 코드가 없어도 원문 단서(insufficient)로 사유를 만든다',
+  /증거금이 부족/.test(explainBitgetError('', 'Insufficient balance').text),
+  explainBitgetError('', 'Insufficient balance').text,
+);
+check('한글 오류: guard(앱이 미리 막음)는 문구 그대로', formatBitgetErrorKo('guard:size', '주문 수량이 거래소 최소 단위보다 작아 주문하지 않았습니다.') === '주문 수량이 거래소 최소 단위보다 작아 주문하지 않았습니다.');
+
+/* 13-3) 자동 복구 분류 — 네이티브 재시도 규칙(BitgetApi.recover)과 같은 경계 */
+check('자동 복구: 호가 단위 오류 분류', isPriceTickError('45115', '') && isPriceTickError('25244', '') && !isPriceTickError('43012', ''));
+check('자동 복구: 포지션 모드 오류 분류', isPositionModeError('40774', '') && !isPositionModeError('45115', ''));
+check('자동 복구: 수량 오류 분류', isSizeError('40762', '') && isSizeError('40808', '') && !isSizeError('40774', ''));
+check('자동 복구: 증거금 부족 분류', isInsufficientError('43012', '') && isInsufficientError('40754', ''));
+check('자동 복구: TP/SL 오류 분류', isTpSlError('25585', '') && isTpSlError('40812', '') && !isTpSlError('25212', ''));
+check('자동 복구: 종목 폐지 분류', isSymbolError('25105', '') && isSymbolError('45119', ''));
+check('자동 복구: 일시 오류만 재시도', isRetryableError('40908', '') && isRetryableError('429', '') && !isRetryableError('40014', ''));
+check('자동 복구: 키·권한은 재시도하지 않는다', isAuthError('40014', '') && !isRetryableError('40014', ''));
+check('자동 복구: 기록 문구는 한글', RECOVERY_LABEL.tick === '호가 단위 보정' && RECOVERY_LABEL['mode-flip'].includes('포지션 모드'));
+
+/* 13-4) 감시 항목에 리스크% 를 실어 보낸다 — 네이티브가 잔고로 수량을 다시 계산한다 */
+const armedWithRisk = toArmedPlan({ signal: sig(), plan: capBase, now, ttlMin: 120 });
+check('감시 항목: riskPct 포함(네이티브 잔고 재계산용)', armedWithRisk.riskPct === cfg.riskPct, String(armedWithRisk.riskPct));
 
 console.log('');
 console.log(`자동매매 단위 검증: ${pass}/${pass + fails.length} 통과`);

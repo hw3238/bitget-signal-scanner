@@ -13,7 +13,6 @@
  */
 import type { Signal, Side } from '../engine/types';
 import { copyQtyText, planOrder, type ContractSpec, type OrderPlan } from './orderCockpit';
-import type { Profile } from './profile';
 
 /* ------------------------------------------------------------------ *
  * 설정
@@ -386,10 +385,13 @@ export function evaluateEntry(ctx: EntryContext): EntryDecision {
 
 export interface AutoPlanInput {
   signal: Signal;
+  /** 연결된 계좌의 총 자산(equity) — v1.5.5 부터 시드의 유일한 기준 */
   seed: number;
   config: AutoTradeConfig;
   leverage: number;
   spec?: ContractSpec | null;
+  /** 가용 잔고 — 필요 증거금이 가용의 95%를 넘지 않게 수량을 줄인다 */
+  available?: number | null;
 }
 
 /** 시그널 + 설정 → 실제 주문 계획. 레버리지는 상한으로 자른다. */
@@ -404,6 +406,7 @@ export function planAutoOrder(input: AutoPlanInput): OrderPlan {
     stop: input.signal.stop,
     target: input.signal.target,
     spec: input.spec ?? undefined,
+    available: input.available ?? null,
   });
 }
 
@@ -586,6 +589,8 @@ export interface ArmedPlan {
   qty: number;
   qtyDecimals: number | null;
   leverage: number;
+  /** 1회 허용 손실률(%) — 네이티브가 잔고로 수량을 다시 계산할 때 쓴다(v1.5.5) */
+  riskPct: number;
   decimals: number | null;
   /** 거래소 호가 정보(pricePlace) — 네이티브가 없을 때 보정용으로도 쓴다 */
   pricePlace: number | null;
@@ -626,6 +631,7 @@ export function toArmedPlan(input: {
     qty: plan.qty,
     qtyDecimals: plan.qtyDecimals,
     leverage: plan.leverage,
+    riskPct: plan.riskPct,
     decimals: signal.decimals ?? null,
     pricePlace,
     priceEndStep,
@@ -731,6 +737,12 @@ export function emptyRuntime(now: number, dayStartEquity: number | null = null):
  * 10초 미만으로 줄이면 비트겟 계좌·포지션 조회가 겹쳐 429(레이트리밋) 위험이 커진다.
  */
 export const LIVE_REFRESH_MS = 12_000;
+/**
+ * 자동매매 화면을 닫아 두었을 때의 잔고 갱신 주기(v1.5.5).
+ * 스캐너 시그널 카드도 계좌 잔고 기준으로 계산하므로 앱이 열려 있는 동안은 계속 읽는다.
+ * 60초면 잔고 변동을 충분히 따라가면서 계좌 조회 한도(초당 10회)를 건드리지 않는다.
+ */
+export const IDLE_REFRESH_MS = 60_000;
 /** 네이티브 서비스 스냅숏을 '신선하다'고 보는 시간 — 이보다 오래됐으면 웹이 직접 계좌를 조회한다. */
 export const SNAPSHOT_FRESH_MS = 45_000;
 
@@ -837,11 +849,13 @@ export function statusBadge(config: AutoTradeConfig, running: boolean): { label:
   return { label: config.mode === 'live' ? '실거래 가동 중' : '모의투자 가동 중', tone: config.mode === 'live' ? 'live' : 'demo' };
 }
 
-/** 프로필 시드 — 없으면 계좌 잔고, 둘 다 없으면 0 */
-export function planSeed(profile: Profile | null, accountEquity: number | null): number {
-  if (profile && profile.seed > 0) return profile.seed;
-  if (accountEquity && accountEquity > 0) return accountEquity;
-  return 0;
+/**
+ * 리스크 계산 기준 자본 — **연결된 계좌의 총 자산(equity)뿐**이다(v1.5.5).
+ * 사용자가 직접 넣던 '내 시드'는 없어졌다. 계좌가 없으면 0 = 계산 불가.
+ */
+export function planSeed(accountEquity: number | null | undefined): number {
+  const equity = Number(accountEquity ?? 0);
+  return Number.isFinite(equity) && equity > 0 ? equity : 0;
 }
 
 export function fmtUsdt(v: number | null | undefined, digits = 2): string {

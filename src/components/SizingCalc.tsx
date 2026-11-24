@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ScanState } from '../hooks/useScanner';
-import type { Profile } from '../lib/profile';
+import { fmtUsdtBalance, type AccountBase } from '../lib/account';
 import type { Side } from '../engine/types';
 import { positionSizing } from '../lib/calc';
 import { fmtPct, fmtPrice, fmtRR } from '../lib/format';
 import { fmtUsdAmount } from '../lib/profile';
 import { CoinSelect, NumField } from './ui';
 
-export function SizingCalc({ state, profile }: { state: ScanState; profile: Profile | null }) {
+/**
+ * 포지션 사이징 — v1.5.5 부터 기본 시드가 **연결된 계좌 잔고**다.
+ * 계좌가 없으면 1,000 USDT 로 임시 계산할 수 있고, 어떤 기준으로 계산했는지 화면에 적는다.
+ */
+export function SizingCalc({ state, account }: { state: ScanState; account: AccountBase }) {
   const coins = useMemo(
     () =>
       state.contracts
@@ -24,13 +28,21 @@ export function SizingCalc({ state, profile }: { state: ScanState; profile: Prof
 
   const [symbol, setSymbol] = useState('BTCUSDT');
   const [side, setSide] = useState<Side>('long');
-  const [seed, setSeed] = useState(profile?.seed ?? 1000);
+  const [seed, setSeed] = useState(account.seed > 0 ? Math.round(account.seed * 100) / 100 : 1000);
+  /** 사용자가 임시로 다른 시드를 넣었는가 — 계좌 잔고와 다르면 '임시 계산'으로 표기 */
+  const [edited, setEdited] = useState(false);
   const [riskPct, setRiskPct] = useState(2);
   const [entry, setEntry] = useState(0);
   const [stop, setStop] = useState(0);
   const [target, setTarget] = useState(0);
 
   const mark = state.tickers.find((t) => t.symbol === symbol)?.last ?? 0;
+  // 잔고가 나중에 도착하면(앱 시작 직후) 사용자가 손대지 않은 동안은 계좌 잔고로 맞춘다.
+  useEffect(() => {
+    if (edited || !(account.seed > 0)) return;
+    const next = Math.round(account.seed * 100) / 100;
+    setSeed((prev) => (Math.abs(prev - next) < 0.01 ? prev : next));
+  }, [account.seed, edited]);
   const entryValue = entry > 0 ? entry : mark;
 
   // 시세가 준비되면 BTC 기본값(±2% / ±5%)으로 바로 계산되게 채워 준다.
@@ -69,6 +81,11 @@ export function SizingCalc({ state, profile }: { state: ScanState; profile: Prof
           <h3>포지션 사이징</h3>
           <span className="panel-note">손실은 정해 두고, 수량은 계산으로</span>
         </header>
+        <div className={`account-basis ${account.connected ? 'on' : ''}`} data-sizing-basis>
+          {account.connected
+            ? `연결된 계좌 잔고 ${fmtUsdtBalance(account.equity)} · 가용 ${fmtUsdtBalance(account.available)} 기준`
+            : '실계좌가 연결되지 않아 임시 시드로 계산합니다 — 연결하면 잔고가 자동으로 채워집니다.'}
+        </div>
         <div className="form-grid">
           <CoinSelect value={symbol} onChange={pickCoin} coins={coins} />
           <div className="num-field">
@@ -82,7 +99,16 @@ export function SizingCalc({ state, profile }: { state: ScanState; profile: Prof
               </button>
             </div>
           </div>
-          <NumField label="시드" value={seed} onChange={setSeed} suffix="USDT" />
+          <NumField
+            label="시드"
+            value={seed}
+            onChange={(v) => {
+              setEdited(true);
+              setSeed(v);
+            }}
+            suffix="USDT"
+            hint={account.connected ? '기본값 = 계좌 잔고(임시 변경 가능)' : '임시 계산용'}
+          />
           <NumField label="1회 허용 손실률" value={riskPct} onChange={setRiskPct} suffix="%" />
           <NumField
             label="진입가"

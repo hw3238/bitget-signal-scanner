@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { ScanState } from '../hooks/useScanner';
 import type { Side } from '../engine/types';
-import type { Profile } from '../lib/profile';
 import { fmtUsdAmount } from '../lib/profile';
+import { fmtUsdtBalance, type AccountBase } from '../lib/account';
 import {
   applyDca,
   maintenanceMarginRate,
@@ -18,7 +18,7 @@ import { DownloadIcon } from './Icons';
 const gradeTone = (g: string) =>
   g === 'S' ? 'green' : g === 'A' || g === 'B' ? 'blue' : g === 'C' || g === 'D' ? 'amber' : 'red';
 
-export function PositionSurvival({ state, profile }: { state: ScanState; profile: Profile | null }) {
+export function PositionSurvival({ state, account }: { state: ScanState; account: AccountBase }) {
   const coins = useMemo(() => {
     const rows = state.contracts
       .filter((c) => c.asset === 'crypto')
@@ -35,7 +35,7 @@ export function PositionSurvival({ state, profile }: { state: ScanState; profile
   const [side, setSide] = useState<Side>('long');
   const [entry, setEntry] = useState(0);
   const [leverage, setLeverage] = useState(10);
-  const [margin, setMargin] = useState(profile?.seed ?? 100);
+  const [margin, setMargin] = useState(account.seed > 0 ? Math.round(account.seed) : 100);
   const [addMargin, setAddMargin] = useState(0);
   const [addPrice, setAddPrice] = useState(0);
   const [cardOpen, setCardOpen] = useState(false);
@@ -151,9 +151,9 @@ export function PositionSurvival({ state, profile }: { state: ScanState; profile
               <button className="ghost-btn small" onClick={() => setEntry(mark)}>
                 현재가로 진입
               </button>
-              {profile && (
-                <button className="ghost-btn small" onClick={() => setMargin(profile.seed)}>
-                  내 시드 ${profile.seed.toLocaleString('en-US')}
+              {account.connected && (
+                <button className="ghost-btn small" onClick={() => setMargin(Math.round(account.available || account.seed))}>
+                  가용 {fmtUsdtBalance(account.available || account.seed)}
                 </button>
               )}
               <button className="ghost-btn small" onClick={() => setLeverage(10)}>

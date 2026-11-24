@@ -5,6 +5,7 @@ import { MarketTab } from './components/MarketTab';
 import { MenuTab } from './components/MenuTab';
 import { ScannerTab } from './components/ScannerTab';
 import { SettingsTab } from './components/SettingsTab';
+import type { MenuView } from './components/MenuTab';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ShareModal } from './components/ShareModal';
 import logoUrl from './assets/cota-logo.png';
@@ -34,9 +35,11 @@ export default function App() {
   const [updateDismissed, setUpdateDismissed] = useState(false);
   // 상단 배너에서도 앱을 나가지 않고 APK 다운로드 → 설치 화면으로 이어진다.
   const apkUpdate = useApkUpdate();
-  // 첫 실행 온보딩 — cota.profile.v1 이 없으면 시드·매매 성향을 먼저 받는다.
+  // 첫 실행 온보딩 — cota.profile.v1 이 없으면 매매 성향을 먼저 받는다(시드는 계좌 잔고가 기준, v1.5.5).
   const [profile, setProfile] = useState<Profile | null>(() => loadProfile());
   const [onboarding, setOnboarding] = useState<boolean>(() => loadProfile() === null);
+  /** 메뉴 탭의 하위 화면 — 시그널 카드의 '계좌 연결' 버튼이 자동매매 화면을 바로 연다. */
+  const [menuView, setMenuView] = useState<MenuView | null>(null);
   const favorites = useFavorites();
   // 내가 실제로 진입한 시그널 — 기록 탭의 내 매매 복기·수익곡선 기준
   const myTrades = useMyTrades();
@@ -61,7 +64,6 @@ export default function App() {
   /** 🤖 비트겟 자동매매 — 시그널·프로필·계약 단위로 수량을 계산해 앱 네이티브에 주문을 맡긴다 */
   const autoTrade = useAutoTrade({
     signals: state.signals,
-    profile,
     contracts: state.contracts,
     leverageFor: (signal) =>
       settings.leverageMode === 'auto' && profile
@@ -159,6 +161,18 @@ export default function App() {
     setOnboarding(false);
   };
 
+  /** 시그널 카드·설정의 '계좌 연결' 안내 → 메뉴의 비트겟 자동매매 화면 */
+  const openAutoTrade = useCallback(() => {
+    setMenuView('auto');
+    setTab('menu');
+  }, []);
+
+  /** 하단·상단 탭 이동 — 메뉴 탭을 누르면 항상 허브부터(하위 화면에 갇히지 않게) */
+  const goTab = useCallback((next: TabKey) => {
+    if (next === 'menu') setMenuView(null);
+    setTab(next);
+  }, []);
+
   return (
     <div className="app">
       <header className="app-bar">
@@ -178,7 +192,7 @@ export default function App() {
                 type="button"
                 data-tab={t.key}
                 className={tab === t.key ? 'on' : ''}
-                onClick={() => setTab(t.key)}
+                onClick={() => goTab(t.key)}
               >
                 {t.label}
               </button>
@@ -252,6 +266,8 @@ export default function App() {
             onOpen={setShareSignal}
             onRescan={() => void scan(true)}
             profile={profile}
+            account={autoTrade.accountBase}
+            onConnectAccount={openAutoTrade}
             myTrades={myTrades.entries}
             onToggleMyTrade={myTrades.toggle}
             onQuickOrder={(s) => {
@@ -267,7 +283,9 @@ export default function App() {
         {tab === 'menu' && (
           <MenuTab
             state={state}
-            profile={profile}
+            account={autoTrade.accountBase}
+            view={menuView}
+            onViewChange={setMenuView}
             leverage={repLeverage}
             swapLog={swapLog}
             onRescan={() => void scan(true)}
@@ -281,6 +299,7 @@ export default function App() {
             history={history}
             leverage={repLeverage}
             profile={profile}
+            account={autoTrade.accountBase}
             riskPct={settings.riskPct}
             myTrades={myTrades.entries}
             onToggleMyTrade={myTrades.toggle}
@@ -300,18 +319,21 @@ export default function App() {
             swapCount={swapLog.length}
             onTestNotification={sendTest}
             profile={profile}
+            account={autoTrade.accountBase}
             onEditProfile={() => setOnboarding(true)}
+            onConnectAccount={openAutoTrade}
           />
         )}
       </main>
 
-      <BottomNav tab={tab} onChange={setTab} badges={{ scanner: openCount }} />
+      <BottomNav tab={tab} onChange={goTab} badges={{ scanner: openCount }} />
 
       {shareSignal && (
         <ShareModal
           signal={shareSignal}
           leverage={shareLeverage}
           profile={profile}
+          seed={autoTrade.accountBase.seed}
           auto={settings.leverageMode === 'auto'}
           isFavorite={favorites.isFavorite(shareSignal)}
           onToggleFavorite={favorites.toggle}

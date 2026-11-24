@@ -3235,6 +3235,30 @@ textarea {
   white-space: nowrap;
 }
 
+.cockpit.unlinked {
+  background: var(--blue-soft);
+  border: 0;
+}
+
+.cockpit-unlinked-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  word-break: keep-all;
+}
+
+.cockpit-connect {
+  border: 0;
+  background: var(--blue);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  border-radius: 12px;
+  padding: 9px 12px;
+  align-self: flex-start;
+}
+
 .cockpit-risk {
   font-size: 9.5px;
   font-weight: 600;
@@ -3452,6 +3476,54 @@ textarea {
   color: var(--sub);
 }
 
+.account-basis {
+  background: var(--card-2);
+  border-radius: 12px;
+  padding: 9px 11px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--sub);
+  word-break: keep-all;
+}
+
+.account-basis.on {
+  background: var(--blue-soft);
+  color: var(--blue-2);
+  font-weight: 700;
+}
+
+/* 계좌 미연결 안내 — 시드 입력 대신 연결 버튼 (v1.5.5) */
+.account-link-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  background: var(--blue-soft);
+  border-radius: 14px;
+  padding: 11px 12px;
+  margin: 8px 0 2px;
+}
+
+.account-link-note b {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--blue-2);
+}
+
+.account-link-note p {
+  margin: 2px 0 0;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  word-break: keep-all;
+}
+
+.account-link-note .ghost-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 /* ---------- 첫 실행 온보딩 ---------- */
 .onboarding-backdrop {
   align-items: center;
@@ -3640,6 +3712,29 @@ textarea {
   font-size: 11px;
   line-height: 1.5;
   color: var(--sub);
+  word-break: keep-all;
+}
+
+.onb-account-note {
+  background: var(--blue-soft);
+  border-radius: 14px;
+  padding: 11px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.onb-account-note b {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--blue-2);
+}
+
+.onb-account-note p {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--ink-2);
   word-break: keep-all;
 }
 

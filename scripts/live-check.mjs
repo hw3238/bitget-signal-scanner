@@ -43,11 +43,11 @@ check(res?.status() === 200, '라이브 페이지 응답', `HTTP ${res?.status()
 
 await page.waitForSelector('.onboarding', { timeout: 30000 });
 const onb = await page.evaluate(() => ({
-  presets: [...document.querySelectorAll('.seed-chip')].map((b) => clean(b.textContent)),
+  seedInputs: document.querySelectorAll('.seed-input, .seed-chip').length,
   styles: [...document.querySelectorAll('.style-card b')].map((b) => clean(b.textContent)),
   title: clean(document.querySelector('.onboarding h2')?.textContent),
 }));
-check(onb.presets.join('|') === '$100|$500|$1,000|$5,000', '라이브 온보딩 시드 프리셋', onb.presets.join(' '));
+check(onb.seedInputs === 0, '라이브 온보딩에 수동 시드 입력 없음(v1.5.5)', String(onb.seedInputs));
 check(onb.styles.join('|') === '보수적 매매|공격적 매매', '라이브 온보딩 매매 성향 2택', onb.styles.join(' / '));
 
 // $1,000 · 보수적으로 시작
@@ -145,7 +145,7 @@ const settings = await page.evaluate(() => ({
 }));
 check(settings.seed === '$1,000' && settings.headings[0] === '💼 내 투자 프로필', '라이브 내 투자 프로필 카드', `${settings.seed} · ${settings.headings[0]}`);
 check(settings.target === '주요 코인' && settings.ntfy === 'bgss-hw3238-9f4k2m', '라이브 알림 기본값', `${settings.target} · ${settings.ntfy}`);
-check(/앱 v1\.5\.4/.test(settings.version || ''), '라이브 앱 버전 v1.5.4', settings.version);
+check(/앱 v1\.5\.5/.test(settings.version || ''), '라이브 앱 버전 v1.5.5', settings.version);
 
 // 내 진입 원탭 → 기록 대시보드
 await page.locator('.bottom-nav button[data-tab="scanner"]').click();

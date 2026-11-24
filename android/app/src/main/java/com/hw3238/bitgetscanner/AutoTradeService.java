@@ -280,6 +280,8 @@ public class AutoTradeService extends Service {
                     continue;
                 }
                 if (AutoTradeStore.alreadyTraded(this, key)) continue;
+                // 오늘 거래소가 거부한 종목(상장폐지·Demo 미지원·거래 제한) — 같은 실패를 반복하지 않는다.
+                if (AutoTradeStore.isSkippedSymbol(this, symbol)) continue;
                 if (!autoEntry) {
                     keep.put(plan);
                     continue;
@@ -339,7 +341,7 @@ public class AutoTradeService extends Service {
                     keep.put(plan);
                     continue;
                 }
-                JSONObject order = buildOrder(plan, posMode, config);
+                JSONObject order = buildOrder(plan, posMode, config, equity, available);
                 String leverage = String.valueOf((int) Math.round(plan.optDouble("leverage", 1)));
                 BitgetApi.setLeverage(keys, symbol, leverage, hedge ? side : null);
                 JSONObject res;
@@ -351,7 +353,24 @@ public class AutoTradeService extends Service {
                         AutoTradeStore.addLog(this, "info", base + " 진입 취소 — " + oe.friendly());
                         continue;
                     }
-                    throw oe;
+                    if (oe.symbolGone()) {
+                        // 종목 자체를 쓸 수 없다 — 오늘 제외 목록에 넣어 매 주기 반복 실패를 막는다.
+                        AutoTradeStore.skipSymbol(this, symbol);
+                        AutoTradeStore.addLog(this, "block", base + " 오늘 감시 제외 — " + oe.friendly());
+                        continue;
+                    }
+                    // 자동 보정까지 했는데도 실패 — 한글 사유와 보정 내역을 함께 남긴다.
+                    //  · 주문이 실제로 접수됐을 수 있으니 감시 목록에는 남겨 두고(중복은 clientOid 로 차단)
+                    //    다음 주기에 다시 판단한다.
+                    AutoTradeStore.addLog(this, "error", base + " 주문 실패 — " + oe.friendly()
+                            + recoveryNote(oe.recovery));
+                    keep.put(plan);
+                    continue;
+                }
+                // 자동 보정으로 성공했으면 어떤 보정을 했는지 남긴다(사용자는 결과만 보면 된다).
+                if (res.optJSONArray("recovery") != null && res.optJSONArray("recovery").length() > 0) {
+                    AutoTradeStore.addLog(this, "info", base + " 주문 성공 — 자동 보정: "
+                            + joinRecovery(res.optJSONArray("recovery")));
                 }
                 AutoTradeStore.markTraded(this, key);
                 openPositions += 1;
@@ -482,8 +501,13 @@ public class AutoTradeService extends Service {
         return closed;
     }
 
-    /** 감시 항목 → 비트겟 place-order body */
-    private JSONObject buildOrder(JSONObject plan, String posMode, JSONObject config) throws Exception {
+    /**
+     * 감시 항목 → 비트겟 place-order body.
+     * v1.5.5 — 수량을 **이번 주기에 읽은 실계좌 잔고(equity·available)** 로 다시 계산한다.
+     *  · 웹이 계산한 수량은 앱을 닫아 둔 사이 낡는다(잔고가 늘거나 줄면 리스크가 달라진다).
+     *  · 가용 잔고의 95%를 넘지 않게 캡한다 — 이미 잡힌 증거금 때문에 주문이 거절되는 일을 막는다.
+     */
+    private JSONObject buildOrder(JSONObject plan, String posMode, JSONObject config, double equity, double available) throws Exception {
         String symbol = plan.optString("symbol");
         String side = plan.optString("side", "long");
         boolean longSide = "long".equals(side);
@@ -493,7 +517,9 @@ public class AutoTradeService extends Service {
         body.put("productType", BitgetApi.PRODUCT);
         body.put("marginMode", "isolated");
         body.put("marginCoin", BitgetApi.MARGIN_COIN);
-        body.put("size", sizeText(plan));
+        body.put("size", sizeText(sizeForBalance(plan, equity, available, config)));
+        body.put("posMode", hedge ? "hedge_mode" : "one_way_mode");
+        body.put("leverageHint", Math.max(1, (int) Math.round(plan.optDouble("leverage", 1))));
         body.put("side", longSide ? "buy" : "sell");
         if (hedge) {
             // v2 는 tradeSide(open/close), v3(통합계정)는 posSide(long/short) — BitgetApi 가 골라 쓴다.
@@ -522,14 +548,68 @@ public class AutoTradeService extends Service {
         return body;
     }
 
+    /** 자동 보정 목록 → `호가 단위 보정 · 포지션 모드 …` */
+    private static String recoveryNote(java.util.List<String> recovery) {
+        if (recovery == null || recovery.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder(" (자동 보정: ");
+        for (int i = 0; i < recovery.size(); i++) {
+            if (i > 0) sb.append(" · ");
+            sb.append(recovery.get(i));
+        }
+        return sb.append(")").toString();
+    }
+
+    private static String joinRecovery(JSONArray arr) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < arr.length(); i++) {
+            if (i > 0) sb.append(" · ");
+            sb.append(arr.optString(i, ""));
+        }
+        return sb.toString();
+    }
+
     /** 감시 항목의 수량 문자열 — volumePlace·sizeMultiplier 배수로 내림(지수 표기 없이) */
     private static String sizeText(JSONObject plan) {
+        String exact = plan.optString("sizeStr", "");
+        if (exact != null && !exact.isEmpty()) return exact;
         double qty = plan.optDouble("qty", 0);
         if (!(qty > 0)) return "";
         int vp = plan.has("qtyDecimals") ? plan.optInt("qtyDecimals", 8) : 8;
         // 감시 항목은 이미 거래소 단위로 내림된 값 — 자리수만 지켜 문자열로 만든다(배수 0 = 10^-vp).
-        String exact = BitgetApi.floorToStep(qty, vp, 0);
-        return exact.isEmpty() ? trim(qty) : exact;
+        String floored = BitgetApi.floorToStep(qty, vp, plan.optDouble("sizeMultiplier", 0));
+        return floored.isEmpty() ? trim(qty) : floored;
+    }
+
+    /**
+     * 계좌 잔고 기준 수량 — `qty = equity × risk% ÷ |진입가 − 손절가|`,
+     * 가용 잔고의 95% 를 넘으면 그만큼 줄인다. 계산할 수 없으면(잔고·가격 없음) 웹이 계산한 값을 쓴다.
+     * 결과는 plan 사본에 `sizeStr`(거래소 단위로 내림한 문자열)로 넣는다.
+     */
+    private JSONObject sizeForBalance(JSONObject plan, double equity, double available, JSONObject config) {
+        try {
+            double entry = plan.optDouble("entry", 0);
+            double stop = plan.optDouble("stop", 0);
+            double leverage = Math.max(1, plan.optDouble("leverage", 1));
+            double riskPct = plan.optDouble("riskPct", config == null ? 0 : config.optDouble("riskPct", 0));
+            double dist = Math.abs(entry - stop);
+            if (!(equity > 0) || !(entry > 0) || !(dist > 0) || !(riskPct > 0)) return plan;
+            double qty = equity * riskPct / 100.0 / dist;
+            double avail = available > 0 ? Math.min(available, equity) : equity;
+            double maxQty = avail * BitgetApi.AVAILABLE_MARGIN_RATIO * leverage / entry;
+            if (qty > maxQty) qty = maxQty;
+            BitgetApi.ContractLimits lim = BitgetApi.contractLimits(plan.optString("symbol", ""));
+            int vp = lim != null ? lim.volumePlace : plan.optInt("qtyDecimals", 8);
+            double mult = lim != null ? lim.sizeMultiplier : plan.optDouble("sizeMultiplier", 0);
+            String size = BitgetApi.floorToStep(qty, vp, mult);
+            if (size.isEmpty() || !(BitgetApi.num(size) > 0)) return plan;
+            JSONObject out = new JSONObject(plan.toString());
+            out.put("sizeStr", size);
+            out.put("qty", BitgetApi.num(size));
+            out.put("qtyDecimals", vp);
+            return out;
+        } catch (Exception e) {
+            return plan;
+        }
     }
 
     /** 이미 호가 배수로 맞춘 문자열 → 없으면 계약 호가로 반올림 → 호가 정보도 없으면 종전 표기 */

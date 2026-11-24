@@ -1,13 +1,6 @@
 import { useState } from 'react';
 import logoUrl from '../assets/cota-logo.png';
-import {
-  DEFAULT_SEED,
-  SEED_PRESETS,
-  STYLE_META,
-  fmtSeed,
-  type Profile,
-  type TradeStyle,
-} from '../lib/profile';
+import { STYLE_META, type Profile, type TradeStyle } from '../lib/profile';
 
 interface Props {
   initial?: Profile | null;
@@ -17,21 +10,21 @@ interface Props {
   onClose?: () => void;
 }
 
-/** 첫 실행 / 재설정 — 시드와 매매 성향을 받는 토스 스타일 온보딩 */
+/**
+ * 첫 실행 / 재설정 — 매매 성향만 받는 토스 스타일 온보딩.
+ * v1.5.5 부터 '내 시드($)' 입력은 없어졌다. 모든 계산은 비트겟 자동매매에 연결한
+ * 실계좌 잔고를 기준으로 하고, 계좌 연결은 메뉴 → 비트겟 자동매매에서 한다.
+ */
 export function OnboardingModal({ initial, canClose = false, onSave, onClose }: Props) {
-  const [seed, setSeed] = useState<number>(initial?.seed ?? DEFAULT_SEED);
   const [style, setStyle] = useState<TradeStyle>(initial?.style ?? 'conservative');
 
-  const valid = Number.isFinite(seed) && seed > 0;
-
   const submit = () => {
-    if (!valid) return;
-    onSave({ seed: Math.round(seed), style, updatedAt: Date.now() });
+    onSave({ style, updatedAt: Date.now() });
   };
 
   return (
     <div className="modal-backdrop onboarding-backdrop">
-      <div className="onboarding" role="dialog" aria-modal="true" aria-label="내 투자 프로필 설정">
+      <div className="onboarding" role="dialog" aria-modal="true" aria-label="내 매매 성향 설정">
         {canClose && (
           <button type="button" className="onboarding-x" onClick={onClose} aria-label="닫기">
             ✕
@@ -42,42 +35,13 @@ export function OnboardingModal({ initial, canClose = false, onSave, onClose }: 
           <img src={logoUrl} alt="COTA" width={52} height={52} className="onboarding-logo" />
           <div>
             <span className="eyebrow">COTA 시작하기</span>
-            <h2>내 시드와 매매 성향을 알려주세요</h2>
+            <h2>내 매매 성향을 알려주세요</h2>
           </div>
         </div>
         <p className="onboarding-sub">
-          시드와 성향에 맞춰 시그널마다 COTA 추천 레버리지와 예상 수익·손실을 계산해 보여드립니다.
+          성향에 맞춰 시그널마다 COTA 추천 레버리지와 1회 리스크를 정합니다. 주문 수량·예상 손익은
+          <b> 비트겟 자동매매에 연결한 실계좌 잔고</b>를 기준으로 계산합니다.
         </p>
-
-        <div className="onb-block">
-          <span className="onb-label">내 투자 시드 (USDT)</span>
-          <label className="seed-input">
-            <span>$</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={fmtSeed(seed)}
-              aria-label="내 투자 시드"
-              onChange={(e) => {
-                const digits = e.target.value.replace(/[^0-9]/g, '').slice(0, 9);
-                setSeed(digits ? Number(digits) : 0);
-              }}
-            />
-          </label>
-          <div className="seed-presets" role="group" aria-label="시드 프리셋">
-            {SEED_PRESETS.map((p) => (
-              <button
-                key={p}
-                type="button"
-                className={`seed-chip ${seed === p ? 'on' : ''}`}
-                aria-pressed={seed === p}
-                onClick={() => setSeed(p)}
-              >
-                ${fmtSeed(p)}
-              </button>
-            ))}
-          </div>
-        </div>
 
         <div className="onb-block">
           <span className="onb-label">매매 성향</span>
@@ -104,19 +68,24 @@ export function OnboardingModal({ initial, canClose = false, onSave, onClose }: 
           </div>
         </div>
 
+        <div className="onb-account-note" data-onb-account>
+          <b>계좌를 연결하면 바로 계산됩니다</b>
+          <p>
+            메뉴 → 🤖 비트겟 자동매매에서 API 키를 연결하세요. 연결 전에는 시그널 카드의 주문 수량이
+            비어 있고, 연결한 뒤부터 실시간 잔고 기준으로 자동 계산됩니다.
+          </p>
+        </div>
+
         <div className="onb-summary">
-          <span>
-            시드 <b>${fmtSeed(seed || 0)}</b>
-          </span>
           <span>
             {STYLE_META[style].emoji} <b>{STYLE_META[style].label}</b> · {STYLE_META[style].range}
           </span>
         </div>
 
-        <button type="button" className="onb-start" onClick={submit} disabled={!valid}>
+        <button type="button" className="onb-start" onClick={submit}>
           시작하기
         </button>
-        <p className="onb-note">언제든 설정 탭 → 내 투자 프로필에서 바꿀 수 있어요.</p>
+        <p className="onb-note">언제든 설정 탭 → 매매 성향에서 바꿀 수 있어요.</p>
       </div>
     </div>
   );

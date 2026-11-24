@@ -13,7 +13,8 @@ import {
 } from '../lib/notify';
 import { isNativeApp, nativeAppInfo, openExternalUrl } from '../lib/native';
 import { useApkUpdate } from '../lib/useApkUpdate';
-import { STYLE_META, fmtSeed, type Profile } from '../lib/profile';
+import { STYLE_META, type Profile } from '../lib/profile';
+import { ACCOUNT_UNLINKED_HINT, fmtUsdtBalance, type AccountBase } from '../lib/account';
 import {
   RISK_PRESETS,
   clampRiskInput,
@@ -40,10 +41,14 @@ interface Props {
   onClearSwapLog: () => void;
   historyCount: number;
   swapCount: number;
-  /** 첫 실행 온보딩에서 저장한 투자 프로필 */
+  /** 첫 실행 온보딩에서 저장한 매매 성향 */
   profile: Profile | null;
+  /** 연결된 비트겟 계좌의 실시간 잔고 — 모든 계산의 기준(v1.5.5) */
+  account: AccountBase;
   /** 온보딩 모달 다시 열기 */
   onEditProfile: () => void;
+  /** 자동매매 계좌 연결 화면 열기 */
+  onConnectAccount: () => void;
   /** 설정 화면의 알림 테스트 버튼 */
   onTestNotification: (signal?: Signal | null) => Promise<{
     permission: NotifyPermission;
@@ -61,7 +66,9 @@ export function SettingsTab({
   historyCount,
   swapCount,
   profile,
+  account,
   onEditProfile,
+  onConnectAccount,
   onTestNotification,
 }: Props) {
   const [checking, setChecking] = useState(false);
@@ -156,14 +163,20 @@ export function SettingsTab({
     <div className="tab settings-tab">
       <section className="panel profile-card" id="settings-profile">
         <header className="panel-head">
-          <h3>💼 내 투자 프로필</h3>
-          <span className="panel-note">COTA 추천 레버리지 기준</span>
+          <h3>💼 내 매매 기준</h3>
+          <span className="panel-note">실계좌 잔고 · COTA 추천</span>
         </header>
         <div className="profile-grid">
-          <div className="profile-cell">
-            <span>내 시드</span>
-            <b>${fmtSeed(profile?.seed ?? 0)}</b>
-            <i>USDT</i>
+          <div className="profile-cell" data-settings-balance>
+            <span>계좌 잔고</span>
+            <b>{account.connected ? fmtUsdtBalance(account.equity) : account.pending ? '불러오는 중' : '실계좌 미연결'}</b>
+            <i>
+              {account.connected
+                ? `가용 ${fmtUsdtBalance(account.available)} · USDT`
+                : account.pending
+                  ? '잠시만 기다려 주세요'
+                  : 'USDT'}
+            </i>
           </div>
           <div className="profile-cell">
             <span>매매 성향</span>
@@ -173,6 +186,17 @@ export function SettingsTab({
             <i>{style?.range}</i>
           </div>
         </div>
+        {!account.connected && (
+          <div className="account-link-note" data-settings-connect>
+            <div>
+              <b>{account.pending ? '계좌 잔고를 불러오는 중입니다' : '아직 실계좌가 연결되지 않았습니다'}</b>
+              <p>{ACCOUNT_UNLINKED_HINT}</p>
+            </div>
+            <button className="ghost-btn" onClick={onConnectAccount}>
+              자동매매 연결
+            </button>
+          </div>
+        )}
         <div className="setting-row">
           <div>
             <div className="setting-name">레버리지 모드</div>
@@ -193,9 +217,9 @@ export function SettingsTab({
           <div>
             <div className="setting-name">실전 주문 리스크</div>
             <div className="setting-desc">
-              카드의 주문 수량은 손절가에 닿았을 때 시드의 이 비율만큼만 잃도록 자동 계산됩니다. 0.5~50%까지
-              직접 입력할 수 있습니다.
-              {profile ? ` 지금 설정은 시드의 ${defaultRiskPct(profile.style)}% 기준입니다.` : ''}
+              카드의 주문 수량은 손절가에 닿았을 때 <b>계좌 잔고</b>의 이 비율만큼만 잃도록 자동 계산됩니다.
+              0.5~50%까지 직접 입력할 수 있습니다.
+              {profile ? ` 지금 설정은 잔고의 ${defaultRiskPct(profile.style)}% 기준입니다.` : ''}
             </div>
           </div>
           <div className="risk-control">
@@ -230,7 +254,7 @@ export function SettingsTab({
                 </option>
                 {RISK_PRESETS.map((v) => (
                   <option key={v} value={v}>
-                    시드의 {v}%
+                    잔고의 {v}%
                   </option>
                 ))}
                 <option value="custom">직접 입력</option>
@@ -256,13 +280,13 @@ export function SettingsTab({
         </div>
         {isHighRisk(resolveRiskPct(profile?.style ?? 'conservative', settings.riskPct)) && (
           <div className="risk-high-warn" data-risk-warning>
-            ⚠️ 고위험 설정: 연속 손실 시 시드 감소가 커집니다
+            ⚠️ 고위험 설정: 연속 손실 시 계좌 잔고 감소가 커집니다
           </div>
         )}
         <div className="setting-row compact">
           <div>
-            <div className="setting-name">내 투자 성향 다시 설정</div>
-            <div className="setting-desc">시드와 보수적/공격적 성향을 바꾸면 추천 배율과 예상 손익이 다시 계산됩니다.</div>
+            <div className="setting-name">매매 성향 다시 설정</div>
+            <div className="setting-desc">보수적/공격적 성향을 바꾸면 추천 배율과 1회 리스크가 다시 계산됩니다.</div>
           </div>
           <button className="ghost-btn" onClick={onEditProfile}>
             다시 설정

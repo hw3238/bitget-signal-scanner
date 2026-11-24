@@ -150,91 +150,31 @@ public final class BitgetApi {
     /** 비트겟이 돌려준 오류(code/message). */
     public static class ApiException extends Exception {
         public final String code;
+        /** 주문 실패 전에 COTA가 스스로 했던 보정 — 화면·로그에 `자동 보정:` 으로 남긴다(v1.5.5) */
+        public final java.util.List<String> recovery = new java.util.ArrayList<>();
 
         public ApiException(String code, String message) {
             super(message == null || message.isEmpty() ? "비트겟 오류 " + code : message);
             this.code = code;
         }
 
-        /** 사용자가 바로 알아들을 수 있는 문장 */
+        /**
+         * 사용자가 바로 알아들을 수 있는 문장 — **한글이 먼저**, 원문 코드는 뒤에(괄호).
+         * 코드 표는 `BitgetErrors` 가 갖고 있고 웹(`src/lib/bitgetErrors.ts`)과 같다.
+         */
         public String friendly() {
-            if (code != null && code.startsWith(GUARD_PREFIX)) return getMessage();
-            switch (code) {
-                case "40037":
-                case "40006":
-                case "40009":
-                case "40012":
-                    return "API 키가 올바르지 않습니다. Key·Secret·Passphrase를 다시 확인해 주세요.";
-                case "40014":
-                    return "API 키 권한이 부족합니다. 비트겟 API 관리에서 '통합계정 거래(UTA trade)'와 '통합계정 관리(UTA mgt, 읽기)' 권한을 켜 주세요.";
-                case "40018":
-                    return "모의투자(Demo) 키와 모드가 맞지 않습니다. 모의투자 계좌에서 발급한 키인지 확인해 주세요.";
-                case "40109":
-                    return "출금 권한은 필요 없습니다. 거래 권한만 있는 키를 사용해 주세요.";
-                case "400172":
-                case "43025":
-                case "43012":
-                    return "주문 가능 수량/증거금이 부족합니다.";
-                case ERR_UTA_MODE:
-                    return "비트겟 계정이 통합 계정(UTA) 모드입니다. COTA가 자동으로 통합계정 API(v3)로 바꿔 다시 시도합니다. 계속되면 앱을 v1.5.1 이상으로 업데이트해 주세요.";
-                case ERR_CLASSIC_MODE:
-                    return "비트겟 계정이 클래식 모드입니다. COTA가 자동으로 클래식 API(v2)로 바꿔 다시 시도합니다.";
-                case "40004":
-                case "40005":
-                case "40008":
-                    return "휴대폰 시각이 거래소와 맞지 않습니다. 설정에서 자동 시간(네트워크 시간)을 켠 뒤 다시 시도해 주세요.";
-                case ERR_PRICE_STEP:
-                    return "목표가·손절가가 거래소 호가 단위와 맞지 않습니다(45115). 호가 단위로 다시 맞춰 한 번 더 시도했지만 거절됐습니다 — 앱을 v1.5.3 이상으로 업데이트해 주세요.";
-                case ERR_PRICE_STEP_V3:
-                    return "목표가·손절가가 거래소 호가 단위와 맞지 않습니다(25244). 앱을 v1.5.3 이상으로 업데이트해 주세요.";
-                case ERR_DUPLICATE_OID:
-                    return "같은 주문이 이미 접수되어 있습니다(25212) — 중복 주문을 막았습니다.";
-                case "45110":
-                case "45114":
-                    return "주문 금액이 비트겟 최소 주문 금액(보통 5 USDT)보다 작습니다. 리스크 %나 시드를 키워 주세요.";
-                case "45111":
-                case "43006":
-                    return "주문 수량이 거래소 최소 주문 수량보다 작습니다.";
-                case "45112":
-                case "40762":
-                case "25230":
-                case "25233":
-                    return "주문 수량이 거래소 최대 주문 수량을 넘었습니다. 리스크 %를 줄여 주세요.";
-                case "25229":
-                    return "보유 포지션 수가 거래소 한도를 넘었습니다. 일부 포지션을 청산해 주세요.";
-                case "25227":
-                    return "청산할 포지션이 없습니다(이미 청산됐을 수 있습니다).";
-                case "25237":
-                    return "청산 주문은 헤지(양방향) 모드에서만 가능합니다. 비트겟에서 포지션 모드를 확인해 주세요.";
-                case "25232":
-                    return "같은 방향의 미체결 축소 주문이 있어 거절됐습니다. 비트겟 주문 목록을 확인해 주세요.";
-                case "25579":
-                case "25580":
-                case "25581":
-                case "25582":
-                case "25585":
-                case "25586":
-                case "25587":
-                case "25588":
-                case "25589":
-                case "25590":
-                case "25591":
-                case "25592":
-                    return "현재가(또는 평균단가) 기준으로 목표가·손절가 방향이 맞지 않습니다. 이미 목표가를 지나쳤거나 손절가에 붙은 자리입니다.";
-                case "25593":
-                    return "이 종목은 TP/SL 설정을 지원하지 않습니다. 허용 종목에서 빼 주세요.";
-                case "25594":
-                    return "이 종목에는 이미 TP/SL 주문이 걸려 있습니다(종목당 1개).";
-                case "25100":
-                case "25104":
-                    return "거래소에 없는(또는 상장폐지된) 종목입니다. 감시 목록에서 제외했습니다.";
-                case "25105":
-                    return "이 종목은 지금 신규 진입이 막혀 있습니다.";
-                case "40040":
-                    return "API 키 권한 설정을 확인해 주세요. 비트겟 API 관리에서 통합계정(UTA) 거래·계정 관리 권한을 켜야 합니다.";
-                default:
-                    return getMessage() + (code == null || code.isEmpty() ? "" : " (" + code + ")");
-            }
+            return BitgetErrors.format(code, getMessage());
+        }
+
+        /** 종목 자체를 쓸 수 없음(상장폐지·거래 제한) — 감시 목록에서 빼야 한다 */
+        public boolean symbolGone() {
+            return BitgetErrors.isSymbolGone(code, getMessage());
+        }
+
+        /** 자동 복구 기록을 덧붙인다(중복 없이) */
+        public ApiException recovered(String action) {
+            if (action != null && !action.isEmpty() && !recovery.contains(action)) recovery.add(action);
+            return this;
         }
     }
 
@@ -736,32 +676,225 @@ public final class BitgetApi {
         return body;
     }
 
+    /** 가용 증거금의 몇 %까지 쓸 수 있는가 — 수수료·슬리피지 여유(웹 `AVAILABLE_MARGIN_RATIO` 와 같다) */
+    public static final double AVAILABLE_MARGIN_RATIO = 0.95;
+    /** 자동 보정 재시도 횟수 — 같은 실패를 반복하지 않도록 2회까지만 */
+    private static final int ORDER_ATTEMPTS = 3;
+
     /**
      * 주문 — 정규형(v2 모양) 파라미터를 계정 모드에 맞춰 조립해 보낸다.
      *
      *  1) `prepareOrder` 가 **보내기 전에** 호가 배수(TP/SL·지정가)와 수량 단위(volumePlace 내림),
      *     최소 주문 금액·TP/SL 방향을 계약 스펙으로 맞춘다 — 45115/43006/25585 류를 미리 막는다.
-     *  2) 그래도 45115(또는 v3 25244)가 오면 계약 호가로 다시 맞춰 **한 번** 재시도한다.
+     *  2) 실패하면 **사용자에게 묻지 않고** 원인별로 스스로 고쳐 최대 2번 더 보낸다(v1.5.5):
+     *     호가·계약 단위(45115/40808/40762) → 계약 재조회 후 보정,
+     *     포지션 모드(40774) → posSide 유무를 뒤집어 재주문,
+     *     증거금 부족(43012/40754) → 가용 잔고의 95%로 수량 축소,
+     *     TP/SL 방향(25585~25592/40812) → 안전 여유를 두고 다시 맞춤,
+     *     계정 종류(40084/40085)·일시 오류(25003/40908) → 모드 전환·잠깐 대기 후 재시도.
      *  3) 같은 clientOid(25212)는 이미 접수된 주문이다 — 중복으로 보내지 않고 성공으로 돌려준다.
-     * 성공 시 orderId/clientOid.
+     *  4) 실패하면 `ApiException.friendly()` 가 **한글 사유**를 돌려주고, `recovery` 에 자동 보정 기록이 남는다.
+     * 성공 시 orderId/clientOid (+ `recovery`: 자동 보정 목록).
      */
     public static JSONObject placeOrder(Keys keys, JSONObject params) throws Exception {
         if (params == null) throw new ApiException("params", "주문 파라미터가 없습니다.");
-        JSONObject prepared = prepareOrder(keys, params);
-        try {
-            return sendOrder(keys, prepared);
-        } catch (ApiException e) {
-            if (ERR_DUPLICATE_OID.equals(e.code)) return duplicateResult(keys, prepared);
-            if (!ERR_PRICE_STEP.equals(e.code) && !ERR_PRICE_STEP_V3.equals(e.code)) throw e;
-            JSONObject fixed = withTickPrices(prepared);
-            if (fixed == null) throw e;
+        JSONObject current = prepareOrder(keys, params);
+        java.util.List<String> recovery = new java.util.ArrayList<>();
+        ApiException last = null;
+        for (int attempt = 0; attempt < ORDER_ATTEMPTS; attempt++) {
             try {
-                return sendOrder(keys, fixed);
-            } catch (ApiException again) {
-                if (ERR_DUPLICATE_OID.equals(again.code)) return duplicateResult(keys, fixed);
-                throw again;
+                JSONObject res = sendOrder(keys, current);
+                if (!recovery.isEmpty()) res.put("recovery", new JSONArray(recovery));
+                return res;
+            } catch (ApiException e) {
+                if (ERR_DUPLICATE_OID.equals(e.code)) {
+                    JSONObject dup = duplicateResult(keys, current);
+                    // 중복 접수도 성공으로 본다 — 앞선 시도에서 COTA가 고친 내용을 함께 남긴다.
+                    if (!recovery.isEmpty()) dup.put("recovery", new JSONArray(recovery));
+                    return dup;
+                }
+                last = e;
+                if (attempt >= ORDER_ATTEMPTS - 1) break;
+                JSONObject fixed = recover(keys, current, e, recovery);
+                if (fixed == null) break;
+                current = fixed;
+                // 보정한 파라미터도 다시 검사한다(최소 금액·TP/SL 방향).
+                try {
+                    current = prepareOrder(keys, current);
+                } catch (ApiException guard) {
+                    // 보정 후 수량이 최소 단위 미만이 됐다 — 거래소에 보내지 않고 그 사유로 끝낸다.
+                    for (String r : recovery) guard.recovered(r);
+                    throw guard;
+                }
             }
         }
+        if (last != null) {
+            for (String r : recovery) last.recovered(r);
+            throw last;
+        }
+        throw new ApiException("order", "주문에 실패했습니다.");
+    }
+
+    /**
+     * 실패 원인별 자동 보정 — 보정한 파라미터를 돌려주고, `recovery` 에 사람이 읽을 기록을 남긴다.
+     * 고칠 수 없는 실패(최소 금액 미달·키 권한·종목 폐지)면 null 을 돌려주고 원래 오류를 올린다.
+     */
+    private static JSONObject recover(
+            Keys keys, JSONObject params, ApiException e, java.util.List<String> recovery) {
+        String code = e.code == null ? "" : e.code;
+        String msg = e.getMessage();
+        String symbol = params.optString("symbol", "");
+        try {
+            /* 1) 호가 단위·계약 수량 단위 — 계약 정보를 새로 읽어 다시 맞춘다 */
+            if (BitgetErrors.isPriceTick(code, msg) || BitgetErrors.isSize(code, msg)) {
+                forgetContract(symbol);
+                ContractLimits lim = contractLimits(symbol);
+                if (lim == null) return null;
+                JSONObject fixed = new JSONObject(params.toString());
+                boolean changed = false;
+                for (String key : new String[]{"presetStopSurplusPrice", "presetStopLossPrice", "price"}) {
+                    String raw = fixed.optString(key, "");
+                    if (raw.isEmpty()) continue;
+                    double value = num(raw);
+                    if (!(value > 0)) continue;
+                    String exact = roundToTick(value, lim.pricePlace, lim.priceEndStep);
+                    if (!exact.isEmpty() && !exact.equals(raw)) {
+                        fixed.put(key, exact);
+                        changed = true;
+                    }
+                }
+                double qty = num(fixed.optString("size", ""));
+                if (qty > 0) {
+                    String floored = floorToStep(qty, lim.volumePlace, lim.sizeMultiplier);
+                    if (!floored.isEmpty() && !floored.equals(fixed.optString("size", ""))) {
+                        fixed.put("size", floored);
+                        changed = true;
+                    }
+                }
+                if (!changed) return null;
+                recovery.add(BitgetErrors.isPriceTick(code, msg) ? "호가 단위 보정" : "계약 수량 단위 재계산");
+                return fixed;
+            }
+
+            /* 2) 포지션 모드(단방향 ↔ 양방향) — posSide 유무를 뒤집어 다시 주문한다 */
+            if (BitgetErrors.isPositionMode(code, msg)) {
+                forgetSettings(keys);
+                JSONObject fixed = new JSONObject(params.toString());
+                String declared = fixed.optString("posMode", "");
+                boolean toHedge = !"hedge_mode".equals(declared);
+                if (toHedge) {
+                    // 양방향: side + posSide(long/short) + (v2) tradeSide=open
+                    boolean buy = "buy".equalsIgnoreCase(fixed.optString("side", "buy"));
+                    boolean closing = "close".equalsIgnoreCase(fixed.optString("tradeSide", ""));
+                    fixed.put("posMode", "hedge_mode");
+                    fixed.put("posSide", closing ? (buy ? "short" : "long") : (buy ? "long" : "short"));
+                    fixed.put("tradeSide", closing ? "close" : "open");
+                } else {
+                    // 단방향: posSide·tradeSide 를 보내지 않는다(v2 규칙)
+                    fixed.put("posMode", "one_way_mode");
+                    fixed.remove("posSide");
+                    fixed.remove("tradeSide");
+                }
+                recovery.add("포지션 모드에 맞춰 주문 형식 변경(" + (toHedge ? "양방향" : "단방향") + ")");
+                return fixed;
+            }
+
+            /* 3) 증거금 부족 — 가용 잔고의 95% 안으로 수량을 줄인다 */
+            if (BitgetErrors.isInsufficient(code, msg)) {
+                JSONObject acct = accounts(keys);
+                double available = acct.optDouble("available", 0);
+                double price = num(params.optString("price", ""));
+                if (!(price > 0)) price = lastPriceCached(symbol);
+                double leverage = Math.max(1, params.optDouble("leverageHint", 1));
+                if (!(available > 0) || !(price > 0)) return null;
+                double maxQty = available * AVAILABLE_MARGIN_RATIO * leverage / price;
+                ContractLimits lim = contractLimits(symbol);
+                String size = floorToStep(
+                        maxQty,
+                        lim != null ? lim.volumePlace : 8,
+                        lim != null ? lim.sizeMultiplier : 0);
+                if (size.isEmpty() || !(num(size) > 0)) return null;
+                JSONObject fixed = new JSONObject(params.toString());
+                fixed.put("size", size);
+                recovery.add("가용 증거금 $"
+                        + String.format(Locale.US, "%,.2f", available)
+                        + " 의 95% 로 수량 축소");
+                return fixed;
+            }
+
+            /* 4) TP/SL 방향·가격 — 현재가 기준으로 안전 여유를 두고 다시 맞춘다 */
+            if (BitgetErrors.isTpSl(code, msg)) {
+                double price = lastPriceCached(symbol);
+                if (!(price > 0)) return null;
+                JSONObject fixed = new JSONObject(params.toString());
+                boolean buy = "buy".equalsIgnoreCase(fixed.optString("side", "buy"));
+                boolean closing = "close".equalsIgnoreCase(fixed.optString("tradeSide", ""))
+                        || "true".equalsIgnoreCase(fixed.optString("reduceOnly", ""));
+                if (closing) return null;
+                ContractLimits lim = contractLimits(symbol);
+                double tick = lim == null ? price * 0.0001 : lim.priceEndStep * Math.pow(10, -lim.pricePlace);
+                double gap = Math.max(price * 0.002, tick * 2);
+                String tp = fixed.optString("presetStopSurplusPrice", "");
+                String sl = fixed.optString("presetStopLossPrice", "");
+                boolean changed = false;
+                if (!tp.isEmpty()) {
+                    double tpValue = num(tp);
+                    boolean bad = buy ? tpValue <= price + gap : tpValue >= price - gap;
+                    if (bad) {
+                        // 목표가가 이미 지나쳤다 — 목표가를 억지로 옮기지 않고 TP만 빼고 손절은 유지한다.
+                        fixed.remove("presetStopSurplusPrice");
+                        recovery.add("목표가가 현재가를 이미 지나 목표가 설정을 뺌(손절은 유지)");
+                        changed = true;
+                    }
+                }
+                if (!sl.isEmpty()) {
+                    double slValue = num(sl);
+                    boolean bad = buy ? slValue >= price - gap : slValue <= price + gap;
+                    if (bad) {
+                        // 손절가가 현재가 반대편이면 그대로 두면 즉시 손절 — 이 진입은 포기한다.
+                        return null;
+                    }
+                }
+                if (changed) return fixed;
+                return null;
+            }
+
+            /* 5) 계정 종류(통합/클래식) — sendOrder 가 이미 전환을 시도한다. 캐시를 비우고 한 번 더 */
+            if (BitgetErrors.isRetryable(code, msg) && BitgetErrors.kindOf(code, msg) == BitgetErrors.Kind.ACCOUNT_MODE) {
+                forgetSettings(keys);
+                recovery.add("계정 종류(통합/클래식) 전환 후 재시도");
+                return new JSONObject(params.toString());
+            }
+
+            /* 6) 일시 오류·레이트리밋 — 짧게 쉬고 같은 주문을 다시 보낸다 */
+            if (BitgetErrors.isRetryable(code, msg)) {
+                Thread.sleep(700L);
+                recovery.add("일시 오류 재시도");
+                return new JSONObject(params.toString());
+            }
+
+            /* 7) 종목 폐지·거래 제한 — 재시도해도 같다. 서비스가 오늘 제외 목록에 넣는다 */
+            return null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /** 계약 단위 캐시 무효화 — 45115/40808 뒤에 최신 계약 정보를 다시 읽는다 */
+    public static void forgetContract(String symbol) {
+        if (symbol == null) return;
+        LIMITS.remove(symbol);
+        LIMITS_FAILED_AT.remove(symbol);
+    }
+
+    /** 계정 설정 캐시 무효화 — 포지션 모드·마진 모드를 다시 읽는다 */
+    public static void forgetSettings(Keys keys) {
+        if (keys == null) return;
+        AccountCache c = CACHE.get(keys.cacheKey());
+        if (c == null) return;
+        c.settingsAt = 0L;
+        c.holdMode = "";
+        c.marginModes.clear();
     }
 
     /** 25212(중복 clientOid) — 이미 접수된 주문이므로 성공으로 본다(서비스가 재시도 루프에 빠지지 않게). */
@@ -1210,6 +1343,11 @@ public final class BitgetApi {
 
     /** v3 주문 body — category·qty·posSide·takeProfit/stopLoss */
     private static JSONObject orderBodyV3(Keys keys, JSONObject params) throws Exception {
+        // 자동 보정이 넘긴 모드(posMode)가 있으면 그 모드를 쓴다 — 거래소 계좌 설정과 다를 때 재시도용.
+        String hint = params.optString("posMode", "");
+        if ("hedge_mode".equals(hint) || "one_way_mode".equals(hint)) {
+            return orderBodyV3(keys, params, "hedge_mode".equals(hint));
+        }
         boolean hedge = "hedge_mode".equals(holdMode(keys, params.optString("symbol", "")));
         return orderBodyV3(keys, params, hedge);
     }

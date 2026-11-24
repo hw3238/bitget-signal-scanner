@@ -178,6 +178,8 @@ export async function drawShareCard(
   leverage: number,
   profile: Profile | null = null,
   auto = false,
+  /** 연결된 계좌 잔고 — 없으면 손익 숫자를 그리지 않는다(v1.5.5) */
+  seed = 0,
 ) {
   const dpr = 2;
   canvas.width = W * dpr;
@@ -189,10 +191,10 @@ export async function drawShareCard(
   const dir = signal.side === 'long' ? 1 : -1;
   const rec = autorec(auto, profile, signal);
   const lev = rec ? rec.leverage : leverage;
-  const pnl = auto && profile ? seedPnl(signal, lev, profile.seed) : null;
+  const pnl = auto && profile && seed > 0 ? seedPnl(signal, lev, seed) : null;
   const roi = signal.changePct * lev;
-  /** 내 시드 기준 실시간 평가손익 (진입가 → 현재가) */
-  const livePnl = profile ? (profile.seed * roi) / 100 : null;
+  /** 계좌 잔고 기준 실시간 평가손익 (진입가 → 현재가) */
+  const livePnl = seed > 0 ? (seed * roi) / 100 : null;
   const longSide = signal.side === 'long';
   const sideColor = longSide ? C.up : C.down;
   const sideSoft = longSide ? C.upSoft : C.downSoft;
@@ -483,7 +485,9 @@ export async function drawShareCard(
 
   const seedNote =
     auto && profile
-      ? ` · 내 시드 $${fmtSeed(profile.seed)} · ${STYLE_META[profile.style].label}`
+      ? seed > 0
+        ? ` · 계좌 $${fmtSeed(seed)} 기준 · ${STYLE_META[profile.style].label}`
+        : ` · ${STYLE_META[profile.style].label}`
       : '';
   const detail = `${signal.symbol} · 비트겟 USDT-M · ${tfLabel(signal.tf)}봉 200개 실데이터 · 레버리지 ${lev}x${seedNote}`;
   fitText(ctx, detail, px, 952, pw, { size: 12, weight: 500, color: C.sub });

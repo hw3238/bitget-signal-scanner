@@ -118,7 +118,34 @@ const run = async () => {
       timezoneId: 'Asia/Seoul',
     });
     await context.addInitScript((data) => {
-      localStorage.setItem('cota.profile.v1', JSON.stringify({ seed: 5000, style: 'conservative', updatedAt: Date.now() }));
+      localStorage.setItem('cota.profile.v1', JSON.stringify({ style: 'conservative', updatedAt: Date.now() }));
+      // v1.5.5 — 손익 기준은 연결된 계좌 잔고다. 네이티브 브리지를 흉내내 잔고 $5,000 을 준다.
+      window.androidBridge = { postMessage: () => {} };
+      const methods = ['bitgetHasKeys', 'bitgetTestConnection', 'autoTradeStatus', 'autoTradeStop', 'appInfo']
+        .map((name) => ({ name, rtype: 'promise' }));
+      methods.push({ name: 'addListener', rtype: 'callback' }, { name: 'removeListener', rtype: 'callback' });
+      const handlers = {
+        bitgetHasKeys: async () => ({ hasKeys: true, demo: true, apiKeyMasked: 'bg_test••••••1234', passphraseSet: true }),
+        bitgetTestConnection: async () => ({
+          ok: true,
+          demo: true,
+          equity: 5000,
+          available: 5000,
+          unrealizedPL: 0,
+          posMode: 'one_way_mode',
+          accountMode: 'uta',
+        }),
+        autoTradeStatus: async () => ({ running: false, equity: 5000, available: 5000 }),
+        autoTradeStop: async () => ({ running: false }),
+        appInfo: async () => ({ versionName: '1.5.5', versionCode: 11, packageName: 'com.hw3238.bitgetscanner' }),
+      };
+      window.Capacitor = {
+        getPlatform: () => 'android',
+        isNativePlatform: () => true,
+        PluginHeaders: [{ name: 'AppShell', methods }],
+        nativePromise: (_plugin, method) => Promise.resolve(handlers[method] ? handlers[method]() : {}),
+        nativeCallback: () => Promise.resolve('cb'),
+      };
       localStorage.setItem('bgss.settings.v1', JSON.stringify({ refreshSec: 0 }));
       if (data.history) localStorage.setItem('bgss.history.v1', JSON.stringify(data.history));
       if (data.trades) localStorage.setItem('bgss.mytrades.v1', JSON.stringify(data.trades));
@@ -220,8 +247,8 @@ const run = async () => {
     A0.kpi.join(' / '),
   );
   check(
-    '누적 손익 기준 = 시드 $5,000 · 1회 1.5% → +$150.00',
-    /시드 \$5,000 · 1회 리스크 1\.5% 기준 누적 손익 \+\$150\.00/.test(A0.base),
+    '누적 손익 기준 = 계좌 $5,000 · 1회 1.5% → +$150.00',
+    /계좌 \$5,000\.00 · 1회 리스크 1\.5% 기준 누적 손익 \+\$150\.00/.test(A0.base),
     A0.base,
   );
   check(
@@ -261,8 +288,8 @@ const run = async () => {
     `${A1.stats[2]?.value} · ${A1.stats[2]?.sub}`,
   );
   check(
-    '내 진입: 누적 손익 +$75.00 (시드 $5,000 · 1회 1.5%)',
-    A1.stats[3]?.value === '+$75.00' && /시드 \$5,000 · 1회 1\.5%/.test(A1.stats[3]?.sub ?? ''),
+    '내 진입: 누적 손익 +$75.00 (계좌 $5,000 · 1회 1.5%)',
+    A1.stats[3]?.value === '+$75.00' && /계좌 \$5,000\.00 · 1회 1\.5%/.test(A1.stats[3]?.sub ?? ''),
     `${A1.stats[3]?.value} · ${A1.stats[3]?.sub}`,
   );
   check(

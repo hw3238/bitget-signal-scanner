@@ -5,13 +5,8 @@ import { copyToClipboard } from '../lib/clipboard';
 import { bitgetFuturesUrl } from '../lib/coinLogo';
 import { openBitgetFutures } from '../lib/native';
 import { fmtPct, fmtPrice, fmtRR, fmtSendTime, sideFullLabel, stateLabel, tfLabel } from '../lib/format';
-import {
-  STYLE_META,
-  fmtSeed,
-  fmtUsdAmount,
-  recommendLeverage,
-  type Profile,
-} from '../lib/profile';
+import { STYLE_META, fmtUsdAmount, recommendLeverage, type Profile } from '../lib/profile';
+import { ACCOUNT_UNLINKED_HINT, fmtUsdtBalance, type AccountBase } from '../lib/account';
 import {
   copyPriceText,
   copyQtyText,
@@ -31,6 +26,10 @@ interface Props {
   /** 'auto' 면 시그널마다 COTA 추천 배율을 쓴다 */
   leverageMode?: 'auto' | 'manual';
   profile?: Profile | null;
+  /** 연결된 비트겟 계좌의 실시간 잔고 — 주문 수량·손익의 기준(v1.5.5) */
+  account?: AccountBase;
+  /** 계좌가 없을 때 자동매매 연결 화면 열기 */
+  onConnectAccount?: () => void;
   /** 설정에서 지정한 1회 허용 손실률(%). null/미지정이면 성향 기본값 */
   riskPct?: number | null;
   /** 거래소 계약 정보 — 주문 수량을 비트겟 주문 단위에 맞춘다 */
@@ -55,6 +54,8 @@ export function SignalCard({
   leverage,
   leverageMode = 'manual',
   profile = null,
+  account,
+  onConnectAccount,
   riskPct = null,
   contract = null,
   onOpen,
@@ -74,8 +75,10 @@ export function SignalCard({
   const rec = profile ? recommendLeverage(signal, profile.style) : null;
   const lev = auto && rec ? rec.leverage : leverage;
   const roi = changePct * lev;
-  /** 내 시드 기준 실시간 평가손익 — 현재가가 진입가에서 얼마나 움직였는지 × 레버리지 */
-  const livePnl = profile ? (profile.seed * roi) / 100 : null;
+  /** 계좌 잔고 기준 실시간 평가손익 — 현재가가 진입가에서 얼마나 움직였는지 × 레버리지 */
+  const seed = account?.seed ?? 0;
+  const connected = !!account?.connected;
+  const livePnl = seed > 0 ? (seed * roi) / 100 : null;
   /** 목표가·손절가까지 남은 변동률(현재가 기준, 방향 반영) */
   const toTargetPct = ((target - price) / (price || 1)) * 100 * dir;
   const toStopPct = ((stop - price) / (price || 1)) * 100 * dir;
@@ -84,15 +87,16 @@ export function SignalCard({
   const progress = Math.max(0, Math.min(1, signal.progress));
   const dec = signal.decimals;
 
-  /** 실전 주문 콕핏 — 내 시드·리스크 기준 수량·증거금·손익 */
+  /** 실전 주문 콕핏 — 연결된 계좌 잔고 · 리스크% 기준 수량·증거금·손익 */
   const appliedRisk = profile ? resolveRiskPct(profile.style, riskPct) : null;
   const plan =
-    profile && appliedRisk != null
+    seed > 0 && appliedRisk != null
       ? planOrderForSignal(signal, {
-          seed: profile.seed,
+          seed,
           riskPct: appliedRisk,
           leverage: lev,
           spec: contract ?? undefined,
+          available: account?.available ?? null,
         })
       : null;
 
@@ -252,12 +256,34 @@ export function SignalCard({
         <span className="progress-pct">{Math.round(progress * 100)}%</span>
       </div>
 
-      {profile && plan?.valid && signal.state === 'open' && (
-        <section className="cockpit" aria-label="내 시드를 지키는 실전 주문">
+      {signal.state === 'open' && !connected && (
+        <section className="cockpit unlinked" data-cockpit-unlinked aria-label="계좌 연결 안내">
           <header className="cockpit-head">
             <span className="cockpit-title">🎯 실전 주문</span>
-            <span className="cockpit-risk">
-              시드 ${fmtSeed(profile.seed)}의 {plan.riskPct}% · {lev}x
+            <span className="cockpit-risk">실계좌 미연결</span>
+          </header>
+          <p className="cockpit-unlinked-note">{ACCOUNT_UNLINKED_HINT}</p>
+          {onConnectAccount && (
+            <button
+              type="button"
+              className="cockpit-connect"
+              onClick={(e) => {
+                e.stopPropagation();
+                onConnectAccount();
+              }}
+            >
+              비트겟 계좌 연결하기
+            </button>
+          )}
+        </section>
+      )}
+
+      {connected && plan?.valid && signal.state === 'open' && (
+        <section className="cockpit" aria-label="계좌 잔고를 지키는 실전 주문">
+          <header className="cockpit-head">
+            <span className="cockpit-title">🎯 실전 주문</span>
+            <span className="cockpit-risk" data-cockpit-risk>
+              계좌 {fmtUsdtBalance(account?.equity)}의 {plan.riskPct}% · {lev}x
             </span>
           </header>
           <div className="cockpit-grid">
@@ -285,8 +311,15 @@ export function SignalCard({
           <div className="cockpit-foot">
             <span>포지션 {fmtUsd(plan.notional)}</span>
             <span>손익비 {fmtRR(plan.rr, 1)}</span>
-            <span>{STYLE_META[profile.style].emoji} {STYLE_META[profile.style].label}</span>
-            {plan.overSeed && <span className="cockpit-warn">⚠️ 증거금이 시드보다 큽니다</span>}
+            {profile && (
+              <span>
+                {STYLE_META[profile.style].emoji} {STYLE_META[profile.style].label}
+              </span>
+            )}
+            {plan.cappedByAvailable && (
+              <span className="cockpit-warn">가용 잔고에 맞춰 수량을 줄였습니다</span>
+            )}
+            {plan.overSeed && <span className="cockpit-warn">⚠️ 증거금이 계좌 잔고보다 큽니다</span>}
             {plan.belowMinQty && (
               <span className="cockpit-warn">
                 ⚠️ 최소 주문 수량 {formatQty(plan.minQty ?? 0, plan.qtyDecimals)} {signal.base}보다 작습니다

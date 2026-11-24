@@ -3,7 +3,6 @@ import type { AutoTradeApi } from '../hooks/useAutoTrade';
 import type { Signal } from '../engine/types';
 import { fmtUsd, formatQty } from '../lib/orderCockpit';
 import { fmtPct } from '../lib/format';
-import type { Profile } from '../lib/profile';
 import {
   DEFAULTS,
   LIMITS,
@@ -14,7 +13,6 @@ import {
   fmtClock,
   fmtSince,
   fmtUsdt,
-  planSeed,
   statusBadge,
   todayFillCount,
 } from '../lib/autotrade';
@@ -26,7 +24,6 @@ import { openExternalUrl } from '../lib/native';
 interface Props {
   api: AutoTradeApi;
   signals: Signal[];
-  profile: Profile | null;
 }
 
 const SYMBOL_LABEL: Record<string, string> = {
@@ -49,7 +46,7 @@ const LEVEL_LABEL: Record<string, string> = {
  * 🤖 비트겟 자동매매 — 키 연결 · 안전장치 · 자동/수동 주문 · 로그.
  * 실제 주문은 앱(안드로이드) 네이티브가 넣고, 이 화면은 명령과 결과만 다룬다.
  */
-export function AutoTradeTab({ api, signals, profile }: Props) {
+export function AutoTradeTab({ api, signals }: Props) {
   const {
     config,
     keys,
@@ -86,7 +83,8 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
   }, [config.mode]);
 
   const openSignals = useMemo(() => signals.filter((s) => s.state === 'open' && s.asset !== 'fx'), [signals]);
-  const seed = planSeed(profile, account?.equity ?? null);
+  /** 🔗 v1.5.5 — 시드는 언제나 연결된 계좌 잔고. 계좌가 없으면 0(계산 불가). */
+  const seed = api.accountBase.seed;
   /**
    * 배지·버튼 라벨은 `config.mode` 가 아니라 **키가 실제로 가리키는 계좌**(tradeMode)를 따른다.
    * 껴져 있는데 서비스가 안 돌고 있으면 '대기 중' 으로 구분한다.
@@ -240,8 +238,12 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
         )}
         <div className="auto-hero-foot">
           <span>마지막 확인 {fmtClock(native?.lastTickAt ?? runtime.logs[0]?.at ?? 0)}</span>
-          <span>
-            감시 {native?.armed ?? 0}건 · 시드 {seed > 0 ? fmtUsdt(seed) : '미설정'}
+          <span data-auto-seed>
+            {seed > 0
+              ? `감시 ${native?.armed ?? 0}건 · 계좌 기준 ${fmtUsdt(seed)}`
+              : keys.hasKeys
+                ? '계좌 잔고 확인 중 · 잠시만 기다려 주세요'
+                : '실계좌 미연결 — 키를 연결하면 잔고 기준으로 계산'}
           </span>
         </div>
       </section>
@@ -254,7 +256,7 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
             키 연결과 24시간 감시가 동작합니다. (설치 후 기존 설정·기록은 그대로 유지됩니다)
           </p>
           <button type="button" className="auto-primary" onClick={() => void openExternalUrl(APK_DOWNLOAD_URL)}>
-            ⬇︎ COTA v1.5.3 APK 받기
+            ⬇︎ COTA v1.5.5 APK 받기
           </button>
         </div>
       )}
@@ -435,9 +437,13 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
             value={config.riskPct}
             suffix="%"
             onChange={(v) => api.patchConfig({ riskPct: v })}
-            hint={`0.5~50% 직접 입력 · 시드 ${seed > 0 ? fmtUsd(seed) : '—'}의 ${config.riskPct}% = ${
-              seed > 0 ? fmtUsd((seed * config.riskPct) / 100) : '—'
-            }`}
+            hint={
+              seed > 0
+                ? `0.5~50% 직접 입력 · 계좌 ${fmtUsd(seed)}의 ${config.riskPct}% = ${fmtUsd(
+                    (seed * config.riskPct) / 100,
+                  )}`
+                : '0.5~50% 직접 입력 · 계좌를 연결하면 금액으로 표시됩니다'
+            }
           />
           <div className="risk-presets" role="group" aria-label="1회 리스크 빠른 선택">
             {RISK_PRESET_CHOICES.map((v) => (
@@ -454,7 +460,7 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
           </div>
           {config.riskPct >= RISK_HIGH_WARN && (
             <div className="risk-high-warn" data-risk-warning>
-              ⚠️ 고위험 설정: 연속 손실 시 시드 감소가 커집니다
+              ⚠️ 고위험 설정: 연속 손실 시 계좌 잔고 감소가 커집니다
             </div>
           )}
         </div>

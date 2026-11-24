@@ -7,6 +7,7 @@ import { fmtPct, tfLabel } from '../lib/format';
 import type { Settings } from '../lib/storage';
 import { signalKey, type MyTrade } from '../lib/storage';
 import { recommendLeverage, type Profile } from '../lib/profile';
+import type { AccountBase } from '../lib/account';
 import { SignalCard } from './SignalCard';
 import { CloseIcon, RefreshIcon, SearchIcon, StarIcon } from './Icons';
 
@@ -19,8 +20,12 @@ interface Props {
   onSettings: (patch: Partial<Settings>) => void;
   onOpen: (s: Signal) => void;
   onRescan: () => void;
-  /** 시드·매매 성향 — COTA 추천 레버리지 계산에 쓴다 */
+  /** 매매 성향 — COTA 추천 레버리지 계산에 쓴다 */
   profile: Profile | null;
+  /** 연결된 계좌의 실시간 잔고 — 주문 수량·손익 기준(v1.5.5) */
+  account: AccountBase;
+  /** 계좌 미연결 시 자동매매 연결 화면 열기 */
+  onConnectAccount: () => void;
   /** 내 진입으로 표시한 시그널 */
   myTrades: MyTrade[];
   onToggleMyTrade: (key: string) => void;
@@ -60,6 +65,8 @@ export function ScannerTab({
   onOpen,
   onRescan,
   profile,
+  account,
+  onConnectAccount,
   myTrades,
   onToggleMyTrade,
   onQuickOrder,
@@ -383,6 +390,8 @@ export function ScannerTab({
             leverage={settings.leverage}
             leverageMode={settings.leverageMode}
             profile={profile}
+            account={account}
+            onConnectAccount={onConnectAccount}
             riskPct={settings.riskPct}
             contract={contractBySymbol.get(signal.symbol) ?? null}
             onOpen={onOpen}

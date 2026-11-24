@@ -46,6 +46,8 @@ public final class AutoTradeStore {
     private static final String K_POSITIONS = "last_positions";
     /** 마지막으로 판별된 비트겟 계정 종류 — "uta" / "classic" / "" (아직 모름) */
     private static final String K_ACCOUNT_MODE = "account_mode";
+    /** 오늘 거래소가 거부한 종목(상장폐지·Demo 미지원·거래 제한) — 같은 실패를 반복하지 않는다(v1.5.5) */
+    private static final String K_SKIP = "skip_symbols";
 
     private static final int LOG_LIMIT = 40;
     private static final int TRADED_LIMIT = 200;
@@ -366,6 +368,51 @@ public final class AutoTradeStore {
 
     public static double lastUnrealized(Context context) {
         return readDouble(context, K_UNREALIZED);
+    }
+
+    /**
+     * 오늘 제외할 종목 — 거래소가 `25100/25105/45119` 처럼 종목 자체를 거부했을 때 넣는다.
+     * 날짜(KST)가 바뀌면 자동으로 비워, 다음 날 새로 판단한다.
+     */
+    public static boolean isSkippedSymbol(Context context, String symbol) {
+        if (symbol == null || symbol.isEmpty()) return false;
+        try {
+            JSONObject box = new JSONObject(prefs(context).getString(K_SKIP, "{}"));
+            if (!todayKst().equals(box.optString("day", ""))) return false;
+            JSONArray arr = box.optJSONArray("symbols");
+            if (arr == null) return false;
+            String upper = symbol.toUpperCase(Locale.ROOT);
+            for (int i = 0; i < arr.length(); i++) {
+                if (upper.equals(arr.optString(i, "").toUpperCase(Locale.ROOT))) return true;
+            }
+        } catch (Exception ignored) {
+            /* 읽을 수 없으면 제외하지 않는다 */
+        }
+        return false;
+    }
+
+    public static void skipSymbol(Context context, String symbol) {
+        if (symbol == null || symbol.isEmpty()) return;
+        try {
+            String day = todayKst();
+            JSONObject box = new JSONObject(prefs(context).getString(K_SKIP, "{}"));
+            JSONArray arr = day.equals(box.optString("day", "")) ? box.optJSONArray("symbols") : null;
+            if (arr == null) arr = new JSONArray();
+            String upper = symbol.toUpperCase(Locale.ROOT);
+            for (int i = 0; i < arr.length(); i++) {
+                if (upper.equals(arr.optString(i, "").toUpperCase(Locale.ROOT))) {
+                    prefs(context).edit().putString(K_SKIP, box.toString()).apply();
+                    return;
+                }
+            }
+            arr.put(upper);
+            JSONObject next = new JSONObject();
+            next.put("day", day);
+            next.put("symbols", arr);
+            prefs(context).edit().putString(K_SKIP, next.toString()).apply();
+        } catch (Exception ignored) {
+            /* 저장 실패 — 다음 주기에 다시 시도한다 */
+        }
     }
 
     public static int lastPositions(Context context) {

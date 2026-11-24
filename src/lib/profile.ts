@@ -1,18 +1,17 @@
 import type { Signal } from '../engine/types';
 
-/** 첫 실행 온보딩에서 받는 투자 프로필 */
+/**
+ * 투자 성향 — v1.5.5 부터 수동 시드 입력은 없어졌고 성향(레버리지·기본 리스크)만 남는다.
+ * 시드(자본)는 언제나 연결된 비트겟 계좌의 실시간 잔고(`lib/account.ts`)를 쓴다.
+ */
 export type TradeStyle = 'conservative' | 'aggressive';
 
 export interface Profile {
-  /** USDT 기준 투자 시드 */
-  seed: number;
   style: TradeStyle;
   updatedAt: number;
 }
 
 export const PROFILE_KEY = 'cota.profile.v1';
-export const SEED_PRESETS = [100, 500, 1000, 5000] as const;
-export const DEFAULT_SEED = 1000;
 
 export const STYLE_META: Record<TradeStyle, { label: string; emoji: string; range: string; desc: string }> = {
   conservative: {
@@ -33,11 +32,10 @@ export function loadProfile(): Profile | null {
   try {
     const raw = localStorage.getItem(PROFILE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<Profile>;
-    const seed = Number(parsed.seed);
-    if (!Number.isFinite(seed) || seed <= 0) return null;
+    const parsed = JSON.parse(raw) as Partial<Profile> & { seed?: unknown };
+    // v1.5.4 이하 저장본에는 seed 가 들어 있다 — 시드는 이제 계좌 잔고가 기준이라 버린다.
     const style: TradeStyle = parsed.style === 'aggressive' ? 'aggressive' : 'conservative';
-    return { seed, style, updatedAt: Number(parsed.updatedAt) || Date.now() };
+    return { style, updatedAt: Number(parsed.updatedAt) || Date.now() };
   } catch {
     return null;
   }

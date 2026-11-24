@@ -138,8 +138,9 @@ function snapshotScript() {
       tickers: [],
     }),
   );
-  localStorage.setItem('cota.profile.v1', JSON.stringify({ seed: 5000, style: 'conservative', updatedAt: now }));
-  // 10x 고정 — 50% 리스크(시드 $5,000)가 증거금 안에서 가능한 조건
+  // v1.5.5 — 프로필에는 성향만 남는다(시드는 연결된 계좌 잔고)
+  localStorage.setItem('cota.profile.v1', JSON.stringify({ style: 'conservative', updatedAt: now }));
+  // 10x 고정 — 50% 리스크가 가용 잔고 안에서 가능한 조건
   localStorage.setItem(
     'bgss.settings.v1',
     JSON.stringify({ leverageMode: 'manual', leverage: 10, minRR: 1.5, refreshSec: 60, notifyEnabled: false }),
@@ -179,9 +180,9 @@ const NATIVE_MOCK = () => {
     mode: window.__auto.demo ? 'demo' : 'live',
     armed: window.__auto.plans.length,
     openPositions: window.__auto.positions.length,
-    equity: 1234.56,
+    equity: window.__auto.equity ?? 1234.56,
     // v1.5.4 — 가용·미실현·오늘 기준선도 서비스 스냅숏에서 내려온다
-    available: 1000.5,
+    available: window.__auto.available ?? 1000.5,
     unrealizedPL: 12.34,
     dayStartEquity: window.__auto.dayStartEquity ?? 1234.56,
     dayKey: new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10),
@@ -242,8 +243,8 @@ const NATIVE_MOCK = () => {
       return {
         ok: true,
         demo: window.__auto.demo,
-        equity: 1234.56,
-        available: 1000.5,
+        equity: window.__auto.equity ?? 1234.56,
+        available: window.__auto.available ?? 1000.5,
         unrealizedPL: 12.34,
         posMode: 'one_way_mode',
         // v1.5.1 — 비트겟 통합계정(UTA) 자동 판별 결과
@@ -252,6 +253,13 @@ const NATIVE_MOCK = () => {
     },
     bitgetGetPositions: async () => ({ ok: true, positions: window.__auto.positions }),
     bitgetPlaceOrder: async (o) => {
+      // 주문 실패 주입 — 거래소가 영문 코드만 돌려주는 상황을 재현한다(v1.5.5 한글 사유 검증).
+      if (window.__auto.failOnce) {
+        const f = window.__auto.failOnce;
+        window.__auto.failOnce = null;
+        window.__auto.calls.push({ method: 'bitgetPlaceOrder', failed: f.code });
+        return { ok: false, code: f.code, error: f.error ?? f.raw ?? '', raw: f.raw ?? '', recovery: f.recovery ?? [] };
+      }
       window.__auto.orders.push(o);
       window.__auto.positions.push({
         symbol: o.symbol,
@@ -288,6 +296,9 @@ const NATIVE_MOCK = () => {
         mode: config.mode,
         plans: plans.length,
         planQty: plans[0]?.qty ?? null,
+        planRiskPct: plans[0]?.riskPct ?? null,
+        planMargin:
+          plans[0] == null ? null : (Number(plans[0].qty) * Number(plans[0].entry)) / Math.max(1, Number(plans[0].leverage)),
         riskPct: config.riskPct,
         maxPositions: config.maxPositions,
         earlyStop: config.earlyStop,
@@ -466,7 +477,11 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
     hint: document.querySelector('.auto-risk-block .num-hint')?.textContent ?? '',
   }));
   check(risk50.stored === 50 && risk50.warning, '1회 리스크 50% 프리셋 + 고위험 경고', `${risk50.stored}% · ${risk50.text}`);
-  check(/50%/.test(risk50.hint) && /\$2,500/.test(risk50.hint), '50% = 시드 $5,000의 $2,500 로 계산', risk50.hint);
+  check(
+    /50%/.test(risk50.hint) && /\$617/.test(risk50.hint) && /계좌/.test(risk50.hint),
+    '50% = 연결된 계좌 $1,234.56의 $617.28 로 계산',
+    risk50.hint,
+  );
 
   // 자동매매 켜기
   await page.locator('[data-auto-toggle]').click();
@@ -475,10 +490,16 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   check(started.length === 1, '자동매매 켜기 → 네이티브 서비스 start');
   check(started[0]?.enabled === true && started[0]?.mode === 'demo', 'start 설정: enabled=true · mode=demo', JSON.stringify(started[0] ?? {}));
   check(started[0]?.riskPct === 50 && started[0]?.maxPositions === 2, 'start 설정: 리스크 50% · 최대 2포지션');
+  // 수량 = 1,234.56 × 50% ÷ 3,050 = 0.2024 → 가용 $1,000.50 의 95% 캡(0.1557)으로 0.155
   check(
-    typeof started[0]?.planQty === 'number' && Math.abs(started[0].planQty - 0.819) < 0.002,
-    '50% 리스크 수량 = 시드×50%÷손절거리(3,050) → 0.819 BTC (감시 목록에 전달)',
+    typeof started[0]?.planQty === 'number' && Math.abs(started[0].planQty - 0.155) < 0.002,
+    '50% 리스크 수량 = 계좌×50%÷손절거리, 가용 95% 캡 적용 → 0.155 BTC (감시 목록에 전달)',
     `planQty=${started[0]?.planQty}`,
+  );
+  check(
+    started[0]?.planMargin == null || started[0].planMargin <= 1000.5 * 0.95 + 1,
+    '감시 수량의 필요 증거금 ≤ 가용의 95%',
+    String(started[0]?.planMargin),
   );
   check((await text(page, '[data-auto-badge]')) === '모의투자 가동 중', '배지 = 모의투자 가동 중');
   await page.locator('[data-auto-guards]').screenshot({ path: `${OUT}/55-autotrade-guards.png` }).catch(() => {});
@@ -616,8 +637,8 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   check(o.symbol === 'BTCUSDT' && o.side === 'buy', '주문 방향: BTC 롱 → side=buy (one-way)');
   check(o.orderType === 'market', '시장가 주문');
   check(String(o.presetStopSurplusPrice) === '67000' && String(o.presetStopLossPrice) === '57950', 'TP/SL 동시 설정', `${o.presetStopSurplusPrice}/${o.presetStopLossPrice}`);
-  // 수량 = 시드 5,000 × 리스크 1.5% ÷ |61000-57950| = 0.0245 → 거래소 3자리 내림 0.024
-  check(Math.abs(Number(o.size) - 0.024) < 1e-9, '수량 = 시드×리스크÷손절거리 (0.024 BTC)', o.size);
+  // 수량 = 계좌 1,234.56 × 리스크 1.5% ÷ |61000-57950| = 0.00607 → 거래소 3자리 내림 0.006
+  check(Math.abs(Number(o.size) - 0.006) < 1e-9, '수량 = 계좌×리스크÷손절거리 (0.006 BTC)', o.size);
   check(o.leverage >= 1 && o.leverage <= 10, '레버리지 상한 이내', `${o.leverage}x`);
   await page.locator('.signal-card [data-quick-order]').first().screenshot({ path: `${OUT}/56-auto-quick-order.png` }).catch(() => {});
 
@@ -676,7 +697,8 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   await page.locator('[data-auto-simulate]').click();
   await page.waitForTimeout(500);
   const logs = await text(page, '[data-auto-logs]');
-  check(/\[모의 체결\]|\[모의\].*거부/.test(logs), '시뮬레이션 → 모의 체결/거부 로그', logs.slice(0, 70));
+  // v1.5.5 — 브라우저는 실계좌가 없어 계산 기준이 없다. 숫자를 지어내지 않고 연결 안내를 남긴다.
+  check(/실계좌 잔고가 없어 계산할 수 없습니다|\[모의 체결\]|\[모의\].*거부/.test(logs), '시뮬레이션 → 계좌 미연결 안내(또는 모의 체결/거부)', logs.slice(0, 90));
   await page.locator('[data-auto-root]').screenshot({ path: `${OUT}/57-autotrade-browser.png` }).catch(() => {});
   check(errors.length === 0, '브라우저 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
   await ctx.close();
@@ -828,6 +850,138 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   const leftAfter = await page.evaluate(() => window.__auto.calls.filter((c) => c.method === 'bitgetTestConnection').length);
   check(leftAfter === left, '자동매매 화면을 나가면 실시간 갱신 중지', `${left} → ${leftAfter}회`);
   check(errors.length === 0, '실시간 갱신 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+/* ================================================================== *
+ * 8) v1.5.5 — 시드 입력 제거 · 실계좌 잔고 기준 표시 · 계좌 미연결 안내
+ * ================================================================== */
+{
+  const { ctx, page, errors } = await open();
+  // 계좌 미연결 상태의 스캐너 카드 — 시드 숫자 대신 연결 안내(계산 불가)
+  await page.evaluate(() => document.querySelector('.bottom-nav [data-tab="scanner"]')?.click());
+  await page.waitForTimeout(900);
+  const unlinked = await page.evaluate(() => ({
+    notice: !!document.querySelector('[data-cockpit-unlinked]'),
+    text: document.querySelector('[data-cockpit-unlinked]')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+    connectBtn: !!document.querySelector('.cockpit-connect'),
+    cockpit: !!document.querySelector('.cockpit:not(.unlinked)'),
+    seedInput: document.querySelectorAll('.seed-input, .seed-chip').length,
+    quick: document.querySelectorAll('[data-quick-order]').length,
+  }));
+  check(unlinked.notice && /계좌를 연결하면 실시간 잔고 기준/.test(unlinked.text), '계좌 미연결 카드: 시드 대신 연결 안내', unlinked.text.slice(0, 70));
+  check(!unlinked.cockpit && unlinked.quick === 0, '계좌 미연결이면 주문 수량·원클릭 주문을 만들지 않는다');
+  check(unlinked.seedInput === 0, '수동 시드 입력 UI 없음(온보딩·카드)');
+  await page.locator('[data-cockpit-unlinked]').first().screenshot({ path: `${OUT}/71-cockpit-unlinked.png` }).catch(() => {});
+  // 안내 버튼 → 자동매매(계좌 연결) 화면
+  await page.locator('.cockpit-connect').first().click();
+  await page.waitForTimeout(600);
+  check(await page.locator('[data-auto-root]').count() === 1, '카드의 계좌 연결 버튼 → 비트겟 자동매매 화면');
+
+  // 키 연결 → 카드·히어로가 계좌 잔고 기준으로 바뀐다
+  await page.fill('[data-auto-input="key"]', 'bg_demokey_1234567890abcdef');
+  await page.fill('[data-auto-input="secret"]', 'secretsecretsecretsecretsecret12');
+  await page.fill('[data-auto-input="passphrase"]', 'cota-passphrase');
+  await page.locator('[data-auto-save]').click();
+  await page.waitForTimeout(1000);
+  const heroSeed = await text(page, '[data-auto-seed]');
+  check(/계좌 기준 \$1,235/.test(heroSeed), '자동매매 히어로: 시드 → 계좌 기준 잔고', heroSeed);
+  const riskHint = await text(page, '.auto-risk-block .num-hint');
+  check(/계좌 \$1,235/.test(riskHint) && /\$18\.52|\$19/.test(riskHint), '1회 리스크 = 계좌 잔고의 %로 금액 표시', riskHint);
+  await page.evaluate(() => document.querySelector('.bottom-nav [data-tab="scanner"]')?.click());
+  await page.waitForTimeout(900);
+  const live = await page.evaluate(() => ({
+    cockpit: !!document.querySelector('.cockpit:not(.unlinked)'),
+    risk: document.querySelector('[data-cockpit-risk]')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+    cells: [...document.querySelectorAll('.cockpit-cell b')].map((b) => b.textContent?.trim()),
+    quick: document.querySelectorAll('[data-quick-order]').length,
+  }));
+  check(live.cockpit && /^계좌 \$1,234\.56의 1\.5%/.test(live.risk), '카드 콕핏 = 계좌 잔고 기준', live.risk);
+  check(live.cells.length === 4 && live.quick >= 1, '연결되면 주문 수량·원클릭 주문이 바로 뜬다', JSON.stringify(live.cells));
+  await page.locator('.scanner-tab .signal-card:not(.skeleton)').first().screenshot({ path: `${OUT}/72-cockpit-account.png` }).catch(() => {});
+
+  // 설정 탭 — '내 시드' 대신 '계좌 잔고'
+  await page.evaluate(() => document.querySelector('.bottom-nav [data-tab="settings"]')?.click());
+  await page.waitForTimeout(800);
+  const settings = await page.evaluate(() => ({
+    balance: document.querySelector('[data-settings-balance] b')?.textContent?.trim() ?? '',
+    sub: document.querySelector('[data-settings-balance] i')?.textContent?.trim() ?? '',
+    heading: document.querySelector('#settings-profile h3')?.textContent?.trim() ?? '',
+    seedWords: /내 시드/.test(document.querySelector('#settings-profile')?.innerText ?? ''),
+    connectNote: !!document.querySelector('[data-settings-connect]'),
+  }));
+  check(settings.balance === '$1,234.56' && /가용/.test(settings.sub), '설정: 계좌 잔고·가용 표시', `${settings.balance} · ${settings.sub}`);
+  check(!settings.seedWords && /내 매매 기준/.test(settings.heading) && !settings.connectNote, '설정: 내 시드 문구·연결 안내 없음(연결됨)', settings.heading);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(300);
+  await page.locator('#settings-profile').screenshot({ path: `${OUT}/73-settings-account.png` }).catch(() => {});
+
+  // 잔고가 바뀌면 카드 수량도 따라온다(포그라운드 복귀·주기 갱신)
+  await page.evaluate(() => {
+    window.__auto.equity = 300;
+    window.__auto.available = 300;
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.waitForTimeout(900);
+  check(/\$300\.00/.test(await text(page, '[data-settings-balance]')), '잔고 변경 → 화면이 새 잔고로 갱신', await text(page, '[data-settings-balance]'));
+  check(errors.length === 0, '계좌 기준 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+/* ================================================================== *
+ * 9) v1.5.5 — 주문 오류 한글 사유 · 자동 보정 기록(사용자에게 묻지 않는다)
+ * ================================================================== */
+{
+  const { ctx, page, errors } = await open();
+  await page.evaluate(() => document.querySelector('[data-tab="menu"]')?.click());
+  await page.waitForTimeout(300);
+  await page.locator('[data-menu="auto"]').click();
+  await page.waitForTimeout(400);
+  await page.fill('[data-auto-input="key"]', 'bg_demokey_1234567890abcdef');
+  await page.fill('[data-auto-input="secret"]', 'secretsecretsecretsecretsecret12');
+  await page.fill('[data-auto-input="passphrase"]', 'cota-passphrase');
+  await page.locator('[data-auto-save]').click();
+  await page.waitForTimeout(900);
+  await page.evaluate(() => document.querySelector('.bottom-nav [data-tab="scanner"]')?.click());
+  await page.waitForTimeout(700);
+
+  // 거래소가 영문 코드만 돌려준 경우 — 한글 사유 + 원문 코드 + 자동 보정 기록
+  await page.evaluate(() => {
+    window.__auto.failOnce = {
+      code: '40774',
+      error: 'The order type for unilateral position must also be the unilateral position type.',
+      raw: 'The order type for unilateral position must also be the unilateral position type.',
+      recovery: ['포지션 모드에 맞춰 주문 형식 변경(단방향)'],
+    };
+  });
+  await page.locator('[data-quick-order]').first().click();
+  await page.waitForTimeout(900);
+  const failDialog = page.__dialogs.slice(-1).join(' ');
+  check(/포지션 모드/.test(failDialog) && /코드 40774/.test(failDialog), '실패 사유가 한글(코드 포함)로 안내된다', failDialog.slice(0, 100));
+  // 메뉴 탭 → 허브 → 자동매매 화면에서 로그를 확인한다.
+  await page.evaluate(() => document.querySelector('.bottom-nav [data-tab="menu"]')?.click());
+  await page.waitForTimeout(400);
+  await page.locator('[data-menu="auto"]').click();
+  await page.waitForTimeout(600);
+  const logText = await text(page, '[data-auto-logs]');
+  check(/주문 실패 — .*포지션 모드/.test(logText), '로그: 한글 실패 사유', logText.slice(0, 100));
+  check(/자동 보정: .*포지션 모드/.test(logText), '로그: 자동 보정 내역까지 남는다', logText.slice(0, 140));
+  await page.locator('[data-auto-logs]').screenshot({ path: `${OUT}/74-order-error-ko.png` }).catch(() => {});
+
+  // 다음 주문은 성공 — 화면이 오류로 굳지 않는다
+  await page.evaluate(() => document.querySelector('.bottom-nav [data-tab="scanner"]')?.click());
+  await page.waitForTimeout(700);
+  await page.locator('[data-quick-order]').first().click();
+  await page.waitForTimeout(800);
+  const okOrders = await page.evaluate(() => window.__auto.orders.length);
+  check(okOrders >= 1, '실패 뒤 다음 주문은 정상 접수', `${okOrders}건`);
+
+  // 같은 시그널 재클릭은 중복 진입으로 막힌다 — 실패해도 화면이 굳지 않고 한글 사유로 알린다
+  await page.locator('[data-quick-order]').first().click().catch(() => {});
+  await page.waitForTimeout(600);
+  const dupDialog = page.__dialogs.slice(-1).join(' ');
+  check(/이미 진입/.test(dupDialog), '같은 시그널 재주문은 중복 진입으로 막힘', dupDialog.slice(0, 80));
+  check(errors.length === 0, '오류 안내 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
   await ctx.close();
 }
 
