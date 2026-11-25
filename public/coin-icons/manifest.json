@@ -1,9 +1,9 @@
 {
- "generatedAt": "2026-11-25T11:14:11.225Z",
+ "generatedAt": "2026-11-25T11:20:55.777Z",
  "count": 197,
  "sources": {
-  "okx": 1,
-  "binance": 1,
+  "okx": 0,
+  "binance": 0,
   "coincap": 0
  },
  "icons": {
