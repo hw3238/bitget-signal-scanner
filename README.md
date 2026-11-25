@@ -54,7 +54,7 @@
     `check:native` 22건(반익절·수량 단위·본절 보호) · `toss-ui-check` 61건 · `features-check` 59건 · `journal-e2e` 44건 전수 통과.
   - 스크린샷: `docs/screens/77-auto-style-preset.png` · `78-auto-partial-tp.png` ·
     `79-auto-unlimited-leverage.png` · `80-auto-partial-position.png` · `93-auto-style-compare.png` ·
-    `94-auto-guards-dirty.png` · `96-auto-guards-saved.png` · `97-live-autotrade-save.png`.
+    `94-auto-guards-dirty.png` · `96-auto-guards-saved.png` · `97-live-autotrade-save.png` · `98-live-autotrade-release.png`.
 
 - **🔗 실계좌 잔고 기준 통합 + 주문 오류 자동 복구(v1.5.5)** — 첫 실행에서 받던 **수동 시드 입력을 없앴습니다**.
   모든 시그널·주문 계산(주문 수량·필요 증거금·예상 손익·누적 손익·포지션 사이징)이 **비트겟 자동매매에 연결한
