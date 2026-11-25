@@ -12,14 +12,13 @@
  */
 import type { Side, Signal } from '../engine/types';
 import { AVAILABLE_MARGIN_RATIO } from './account';
-import type { TradeStyle } from './profile';
 import { stopDistancePct, targetDistancePct } from './profile';
 
-/** 매매 성향별 기본 리스크 비율(%) — 1회 주문에서 잃어도 되는 시드 비율 */
-export const STYLE_RISK_PCT: Record<TradeStyle, number> = {
-  conservative: 1.5,
-  aggressive: 3,
-};
+/**
+ * 기본 리스크 비율(%) — 1회 주문에서 잃어도 되는 계좌 비율.
+ * 매매 스타일이 없어졌으므로(v1.5.7) 기본값 하나만 쓴다. 사용자가 설정에서 직접 바꾼다.
+ */
+export const DEFAULT_RISK_PCT = 1.5;
 
 /** 설정 화면에서 고를 수 있는 리스크 비율(%) — 50%까지(직접 입력도 0.5~50%) */
 export const RISK_PRESETS = [1, 2, 3, 5, 10, 20, 30, 50] as const;
@@ -34,16 +33,12 @@ export const RISK_HIGH_WARN = 10;
 export const RISK_INPUT_MIN = 0.5;
 export const RISK_INPUT_MAX = 50;
 
-export function defaultRiskPct(style: TradeStyle): number {
-  return STYLE_RISK_PCT[style] ?? STYLE_RISK_PCT.conservative;
-}
-
-/** 설정값이 없으면(null) 성향 기본값을 쓴다. */
-export function resolveRiskPct(style: TradeStyle, override?: number | null): number {
+/** 설정값이 없으면(null·0·음수) 기본값 1.5%를 쓰고, 있으면 0.5~50% 안으로 정리한다. */
+export function resolveRiskPct(override?: number | null): number {
   if (override != null && Number.isFinite(override) && override > 0) {
     return Math.min(RISK_MAX, Math.max(RISK_MIN, override));
   }
-  return defaultRiskPct(style);
+  return DEFAULT_RISK_PCT;
 }
 
 /** 화면 입력값을 0.5~50% 안으로 정리한다(0.1 단위). */

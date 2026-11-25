@@ -173,12 +173,12 @@ public final class AutoTradeStore {
             fallback.put("riskPct", 1.5);
             fallback.put("maxPositions", 2);
             fallback.put("dailyLossPct", 4.5);
-            fallback.put("symbols", "majors");
-            fallback.put("minWinRate", 55);
-            fallback.put("minRR", 1.5);
-            fallback.put("maxLeverage", 10);
+            fallback.put("symbols", "crypto");
+            fallback.put("minWinRate", 45);
+            fallback.put("minRR", 1.2);
+            fallback.put("maxLeverage", 0);
             fallback.put("intervalSec", 60);
-            fallback.put("entryTtlMin", 120);
+            fallback.put("entryTtlMin", 240);
             fallback.put("earlyStop", true);
             fallback.put("partialTp", true);
         } catch (Exception ignored) {}

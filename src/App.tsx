@@ -6,7 +6,6 @@ import { MenuTab } from './components/MenuTab';
 import { ScannerTab } from './components/ScannerTab';
 import { SettingsTab } from './components/SettingsTab';
 import type { MenuView } from './components/MenuTab';
-import { OnboardingModal } from './components/OnboardingModal';
 import { ShareModal } from './components/ShareModal';
 import logoUrl from './assets/cota-logo.png';
 import { RefreshIcon } from './components/Icons';
@@ -21,8 +20,8 @@ import { useApkUpdate } from './lib/useApkUpdate';
 import { useSignalNotifications } from './lib/notify';
 import { APK_DOWNLOAD_URL, checkForUpdate, RELEASES_PAGE } from './lib/update';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from './lib/storage';
-import { loadProfile, recommendLeverage, saveProfile, type Profile, type TradeStyle } from './lib/profile';
-import { planRiskSave, planStyleSave } from './lib/settingsSync';
+import { recommendLeverage } from './lib/profile';
+import { planRiskSave } from './lib/settingsSync';
 
 type Tab = TabKey;
 
@@ -36,9 +35,6 @@ export default function App() {
   const [updateDismissed, setUpdateDismissed] = useState(false);
   // 상단 배너에서도 앱을 나가지 않고 APK 다운로드 → 설치 화면으로 이어진다.
   const apkUpdate = useApkUpdate();
-  // 첫 실행 온보딩 — cota.profile.v1 이 없으면 매매 성향을 먼저 받는다(시드는 계좌 잔고가 기준, v1.5.5).
-  const [profile, setProfile] = useState<Profile | null>(() => loadProfile());
-  const [onboarding, setOnboarding] = useState<boolean>(() => loadProfile() === null);
   /** 메뉴 탭의 하위 화면 — 시그널 카드의 '계좌 연결' 버튼이 자동매매 화면을 바로 연다. */
   const [menuView, setMenuView] = useState<MenuView | null>(null);
   const favorites = useFavorites();
@@ -54,13 +50,11 @@ export default function App() {
     favoriteSymbols,
   });
 
-  /** 전략엔진·기록처럼 시그널별 계산이 아닌 화면에 쓰는 대표 배율 */
-  const repLeverage =
-    settings.leverageMode === 'auto' && profile
-      ? profile.style === 'aggressive'
-        ? 15
-        : 3
-      : settings.leverage;
+  /**
+   * 전략엔진·기록처럼 시그널별 계산이 아닌 화면에 쓰는 **대표 배율**.
+   * 추천 배율은 시그널마다 다르므로(v1.5.7) 집계·수익률 표시에는 중립 기준 10x를 쓴다.
+   */
+  const repLeverage = settings.leverageMode === 'auto' ? 10 : settings.leverage;
 
   /** 🤖 비트겟 자동매매 — 시그널·프로필·계약 단위로 수량을 계산해 앱 네이티브에 주문을 맡긴다 */
   /** 종목 계약 정보 — 추천 레버리지를 거래소 종목 최대 배율(maxLever) 안으로 제한한다(v1.5.6) */
@@ -75,8 +69,8 @@ export default function App() {
     contracts: state.contracts,
     // 잔고(equity)와 종목 최대 배율을 함께 넘겨 잔고 구간별 유동 레버리지를 쓴다(v1.5.6)
     leverageFor: (signal, equity) =>
-      settings.leverageMode === 'auto' && profile
-        ? recommendLeverage(signal, profile.style, equity, contractBySymbol.get(signal.symbol)?.maxLever).leverage
+      settings.leverageMode === 'auto'
+        ? recommendLeverage(signal, equity, contractBySymbol.get(signal.symbol)?.maxLever).leverage
         : settings.leverage,
   });
 
@@ -160,52 +154,27 @@ export default function App() {
 
   const openCount = state.signals.filter((s) => s.state === 'open' && s.asset !== 'fx').length;
   const shareLeverage =
-    shareSignal && settings.leverageMode === 'auto' && profile
+    shareSignal && settings.leverageMode === 'auto'
       ? recommendLeverage(
           shareSignal,
-          profile.style,
           autoTrade.accountBase.equity,
           contractBySymbol.get(shareSignal.symbol)?.maxLever,
         ).leverage
       : settings.leverage;
 
   /**
-   * 온보딩 저장 — 성향을 처음 고르거나 바꿀 때 자동매매 설정도 같은 프리셋으로 맞춘다(v1.5.6).
-   * 같은 성향으로 다시 저장했을 때는 사용자가 직접 조정한 값을 덮어쓰지 않는다.
-   */
-  const saveOnboarding = (next: Profile) => {
-    const styleChanged = !profile || profile.style !== next.style;
-    saveProfile(next);
-    setProfile(next);
-    setOnboarding(false);
-    if (styleChanged) autoTrade.applyTradeStyle(next.style);
-  };
-
-  /**
    * ⚙️ 설정 탭 저장 → 자동매매 연동(v1.5.6).
    *  · 1회 리스크: 설정과 자동매매가 같은 값이 되도록 함께 저장한다.
-   *  · 매매 스타일: 프리셋(리스크·레버리지 상한·포지션·진입 기준·반익절)을 자동매매에 적용하고,
-   *    설정 탭 리스크도 프리셋 값으로 맞춘다 — 두 화면이 다른 리스크로 계산되지 않게.
+   *  · 매매 스타일(보수적/공격적)과 프리셋은 없어졌다(v1.5.7) — 리스크·레버리지 상한·포지션 수는
+   *    자동매매 화면의 `② 리스크 · 안전장치`에서 숫자로 직접 정하고 `저장`한다.
    */
   const saveSettingsRisk = useCallback(
     (riskPct: number | null) => {
-      const plan = planRiskSave(profile?.style ?? 'conservative', riskPct);
+      const plan = planRiskSave(riskPct);
       patchSettings({ riskPct: plan.settingsRiskPct });
       autoTrade.setRiskPct(plan.autoRiskPct);
     },
-    [autoTrade.setRiskPct, patchSettings, profile?.style],
-  );
-
-  const saveTradeStyle = useCallback(
-    (style: TradeStyle) => {
-      const plan = planStyleSave({ config: autoTrade.config, style });
-      const next: Profile = { style: plan.style, updatedAt: Date.now() };
-      saveProfile(next);
-      setProfile(next);
-      autoTrade.applyTradeStyle(plan.style);
-      patchSettings({ riskPct: plan.settingsRiskPct });
-    },
-    [autoTrade.applyTradeStyle, autoTrade.config, patchSettings],
+    [autoTrade.setRiskPct, patchSettings],
   );
 
   /** 시그널 카드·설정의 '계좌 연결' 안내 → 메뉴의 비트겟 자동매매 화면 */
@@ -312,7 +281,6 @@ export default function App() {
             onSettings={patchSettings}
             onOpen={setShareSignal}
             onRescan={() => void scan(true)}
-            profile={profile}
             account={autoTrade.accountBase}
             onConnectAccount={openAutoTrade}
             myTrades={myTrades.entries}
@@ -339,14 +307,12 @@ export default function App() {
             onClearLog={clearSwapLog}
             autoTrade={autoTrade}
             signals={state.signals}
-            profile={profile}
           />
         )}
         {tab === 'history' && (
           <HistoryTab
             history={history}
             leverage={repLeverage}
-            profile={profile}
             account={autoTrade.accountBase}
             riskPct={settings.riskPct}
             myTrades={myTrades.entries}
@@ -366,13 +332,10 @@ export default function App() {
             historyCount={history.length}
             swapCount={swapLog.length}
             onTestNotification={sendTest}
-            profile={profile}
             account={autoTrade.accountBase}
-            onEditProfile={() => setOnboarding(true)}
             onConnectAccount={openAutoTrade}
             autoTrade={autoTrade}
             onSaveRisk={saveSettingsRisk}
-            onSaveStyle={saveTradeStyle}
           />
         )}
       </main>
@@ -383,21 +346,11 @@ export default function App() {
         <ShareModal
           signal={shareSignal}
           leverage={shareLeverage}
-          profile={profile}
           seed={autoTrade.accountBase.seed}
           auto={settings.leverageMode === 'auto'}
           isFavorite={favorites.isFavorite(shareSignal)}
           onToggleFavorite={favorites.toggle}
           onClose={() => setShareSignal(null)}
-        />
-      )}
-
-      {onboarding && (
-        <OnboardingModal
-          initial={profile}
-          canClose={!!profile}
-          onSave={saveOnboarding}
-          onClose={() => setOnboarding(false)}
         />
       )}
     </div>

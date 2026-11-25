@@ -12,7 +12,7 @@
  */
 import type { Candle, Contract, Signal, TF, Ticker } from './types';
 import { atr, bollinger, clamp, ema, rsi } from './indicators';
-import { recommendLeverage, type TradeStyle } from '../lib/profile';
+import { recommendLeverage } from '../lib/profile';
 
 /* ------------------------------------------------------------------ *
  * 6요건 정의
@@ -80,7 +80,6 @@ export interface SurgeInput {
   btc1h?: Candle[] | null;
   decimals?: number;
   maxLever?: number;
-  style?: TradeStyle;
   equity?: number | null;
 }
 
@@ -427,7 +426,6 @@ export function scoreSurge(input: SurgeInput): SurgePick | null {
   const qualityWinRate = clamp(55 + (score - 60) * 0.35, 46, 64);
   const rec = recommendLeverage(
     { entry: price, stop, target, winRate: qualityWinRate, rr },
-    input.style ?? 'conservative',
     input.equity ?? null,
     input.maxLever ?? null,
   );

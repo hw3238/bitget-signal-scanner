@@ -6,7 +6,7 @@ import { favoriteKey, type FavoriteEntry } from '../lib/favorites';
 import { fmtPct, tfLabel } from '../lib/format';
 import type { Settings } from '../lib/storage';
 import { signalKey, type MyTrade } from '../lib/storage';
-import { recommendLeverage, type Profile } from '../lib/profile';
+import { recommendLeverage } from '../lib/profile';
 import type { AccountBase } from '../lib/account';
 import { SignalCard } from './SignalCard';
 import { CloseIcon, RefreshIcon, SearchIcon, StarIcon } from './Icons';
@@ -21,7 +21,6 @@ interface Props {
   onOpen: (s: Signal) => void;
   onRescan: () => void;
   /** 매매 성향 — COTA 추천 레버리지 계산에 쓴다 */
-  profile: Profile | null;
   /** 연결된 계좌의 실시간 잔고 — 주문 수량·손익 기준(v1.5.5) */
   account: AccountBase;
   /** 계좌 미연결 시 자동매매 연결 화면 열기 */
@@ -64,7 +63,6 @@ export function ScannerTab({
   onSettings,
   onOpen,
   onRescan,
-  profile,
   account,
   onConnectAccount,
   myTrades,
@@ -175,13 +173,8 @@ export function ScannerTab({
   })();
 
   const leverageFor = (signal: Signal): number =>
-    settings.leverageMode === 'auto' && profile
-      ? recommendLeverage(
-          signal,
-          profile.style,
-          account.equity,
-          contractBySymbol.get(signal.symbol)?.maxLever,
-        ).leverage
+    settings.leverageMode === 'auto'
+      ? recommendLeverage(signal, account.equity, contractBySymbol.get(signal.symbol)?.maxLever).leverage
       : settings.leverage;
   const avgRoi = filtered.length
     ? filtered.reduce((acc, f) => acc + f.signal.changePct * leverageFor(f.signal), 0) / filtered.length
@@ -380,8 +373,8 @@ export function ScannerTab({
           {favOnly
             ? '찜한 시그널은 진행중/종료·필터와 무관하게 모두 표시됩니다'
             : `최근 승률 ${MIN_WINRATE}% 또는 전수 검증(승률 ${BENCH_GATE.minWinRate}%·기대 ${BENCH_GATE.minExp}R) 채택 · 손익비 ${settings.minRR.toFixed(1)}R 이상 · ${
-                settings.leverageMode === 'auto' && profile
-                  ? `COTA 추천 배율(${profile.style === 'aggressive' ? '공격적' : '보수적'})`
+                settings.leverageMode === 'auto'
+                  ? 'COTA 추천 배율(잔고·손절폭 기준)'
                   : `레버리지 ${settings.leverage}x 고정`
               } · 코인 ${counts.crypto}건 · 주식선물 ${counts.stock}건`}
         </span>
@@ -394,7 +387,6 @@ export function ScannerTab({
             signal={signal}
             leverage={settings.leverage}
             leverageMode={settings.leverageMode}
-            profile={profile}
             account={account}
             onConnectAccount={onConnectAccount}
             riskPct={settings.riskPct}

@@ -13,13 +13,12 @@ import {
   DEFAULTS,
   IDLE_REFRESH_MS,
   LIVE_REFRESH_MS,
+  ENTRY_GATE_MIGRATION_KEY,
   LOG_LIMIT,
   SNAPSHOT_FRESH_MS,
-  STYLE_MIGRATION_KEY,
   SYMBOL_MIGRATION_KEY,
   applyDailyReset,
   applyGuardSave,
-  applyStylePreset as applyStylePresetToConfig,
   buildOrderParams,
   checkDailyLoss,
   clientOidFor,
@@ -29,7 +28,7 @@ import {
   fmtUsdt,
   markTraded,
   mergeArmedPlans,
-  migrateStylePresetOnce,
+  migrateEntryGateOnce,
   migrateSymbolScopeOnce,
   normalizeConfig,
   normalizePosMode,
@@ -37,13 +36,11 @@ import {
   planDailyReset,
   priceText,
   pushLog,
-  releaseStylePreset as releaseStylePresetInConfig,
   resolveTradeMode,
   rollDay,
   signalKeyOf,
   symbolAllowed,
   leverageCapLabel,
-  presetForStyle,
   toArmedPlan,
   type ArmedPlan,
   type AutoLogEntry,
@@ -54,7 +51,6 @@ import {
   type PlaceOrderParams,
 } from '../lib/autotrade';
 import { accountKindLabel } from '../lib/bitgetUta';
-import type { TradeStyle } from '../lib/profile';
 import {
   autoTradeResetDailyLimit,
   autoTradeStart,
@@ -89,7 +85,7 @@ function recoveryText(recovery?: string[] | null): string {
 function readConfig(): AutoTradeConfig {
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
-    const stored = raw ? (JSON.parse(raw) as Partial<AutoTradeConfig>) : null;
+    let stored = raw ? (JSON.parse(raw) as Partial<AutoTradeConfig>) : null;
     // 허용 종목 기본값이 '메이저 4종' → '전체 코인'으로 바뀌었다. 이미 저장된 'majors'는 한 번만 옮긴다.
     // (한 번 옮긴 뒤 사용자가 직접 고른 '메이저 4종'은 유지 — 마이그레이션 키가 남아 있다)
     const migrated = migrateSymbolScopeOnce(stored, localStorage.getItem(SYMBOL_MIGRATION_KEY) === '1');
@@ -97,23 +93,13 @@ function readConfig(): AutoTradeConfig {
       localStorage.setItem(CONFIG_KEY, JSON.stringify(migrated.config));
     }
     localStorage.setItem(SYMBOL_MIGRATION_KEY, '1');
-    // v1.5.6 — 아직 손대지 않은 기본 설정은 저장된 매매 스타일 프리셋으로 한 번 맞춘다.
-    const profileRaw = localStorage.getItem('cota.profile.v1');
-    let profileStyle: TradeStyle | null = null;
-    try {
-      const parsed = profileRaw ? (JSON.parse(profileRaw) as { style?: string }) : null;
-      if (parsed?.style === 'aggressive' || parsed?.style === 'conservative') profileStyle = parsed.style;
-    } catch {
-      profileStyle = null;
-    }
-    const presetMigrated = migrateStylePresetOnce(
-      migrated.config ?? DEFAULTS,
-      profileStyle,
-      localStorage.getItem(STYLE_MIGRATION_KEY) === '1',
-    );
-    localStorage.setItem(STYLE_MIGRATION_KEY, '1');
-    if (presetMigrated.changed) localStorage.setItem(CONFIG_KEY, JSON.stringify(presetMigrated.config));
-    return presetMigrated.config;
+    // v1.5.7 — 진입 게이트 완화: 예전 기본값(승률 55% · 1.5R · 120분 · 10x 상한)만 한 번 새 기본값으로.
+    //            매매 스타일 프리셋이 없어졌으므로 stylePresetActive 필드는 버린다(normalizeConfig).
+    const gate = migrateEntryGateOnce(migrated.config ?? stored, localStorage.getItem(ENTRY_GATE_MIGRATION_KEY) === '1');
+    if (gate.config) stored = gate.config;
+    if (gate.changed) localStorage.setItem(CONFIG_KEY, JSON.stringify(gate.config));
+    localStorage.setItem(ENTRY_GATE_MIGRATION_KEY, '1');
+    return normalizeConfig(stored ?? DEFAULTS);
   } catch {
     return normalizeConfig(DEFAULTS);
   }
@@ -932,62 +918,22 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
   );
 
   /**
-   * 🎯 매매 스타일 → 자동매매 프리셋 연동(v1.5.6).
-   * 온보딩에서 성향을 처음 고르거나 바꿀 때, 설정 탭에서 스타일을 저장할 때,
-   * 그리고 자동매매 화면의 `적용` 버튼이 부른다.
-   * 켜짐·모의/실거래·감시 주기·허용 종목은 사용자가 고른 값을 그대로 둔다.
-   * 적용 결과 설정을 돌려준다 — 화면이 초안(draft)을 곧바로 맞출 수 있게.
-   */
-  const applyTradeStyle = useCallback(
-    (style: TradeStyle): AutoTradeConfig => {
-      const preset = presetForStyle(style);
-      const next = applyStylePresetToConfig(config, style);
-      setConfig(next);
-      log({
-        at: Date.now(),
-        level: 'info',
-        text: `매매 스타일 프리셋 적용 — ${style === 'aggressive' ? '⚡ 공격적' : '🛡️ 보수적'} · 리스크 ${preset.riskPct}% · 레버리지 ${leverageCapLabel(preset.maxLeverage)} · 최대 ${preset.maxPositions}포지션 · 1일 손실 ${preset.dailyLossPct}% · 50% 반익절 ${preset.partialTp ? 'ON' : 'OFF'}`,
-      });
-      return next;
-    },
-    [config, log],
-  );
-
-  /**
-   * 🔗 프리셋 연동 해제 — 지금 값을 그대로 두고 `직접 설정` 상태로 바꾼다.
-   *  이후 리스크·안전장치 저장값은 스타일 저장에 덮어쓰이지 않는다(`적용`을 눌러야 돌아간다).
-   */
-  const releaseStylePreset = useCallback((): AutoTradeConfig => {
-    const next = releaseStylePresetInConfig(config);
-    if (next !== config) {
-      setConfig(next);
-      log({
-        at: Date.now(),
-        level: 'info',
-        text: '매매 스타일 프리셋 연동 해제 — 지금 리스크·안전장치 값을 직접 설정으로 유지합니다.',
-      });
-    }
-    return next;
-  }, [config, log]);
-
-  /**
    * 💾 `② 리스크 · 안전장치` 저장 — 초안을 설정에 반영한다(v1.5.6).
    *  · 저장 즉시 `cota.autotrade.config.v1`(effect)과 네이티브 감시(autoTradeSync effect)에 반영된다.
-   *  · 프리셋이 관리하는 항목을 프리셋과 다르게 저장하면 연동을 해제해 값을 지킨다(`applyGuardSave`).
+   *  · 매매 스타일 프리셋이 없어졌으므로(v1.5.7) 저장값이 그대로 최종 값이다 — 덮어쓰는 주체가 없다.
    *  · 반환값은 정규화된 저장 결과 — 화면이 초안을 이 값으로 다시 맞춘다(클램프 반영).
    */
   const saveGuards = useCallback(
-    (patch: Partial<Pick<AutoTradeConfig, GuardField>>, style: TradeStyle | null): AutoTradeConfig => {
-      const next = applyGuardSave(config, patch, style);
+    (patch: Partial<Pick<AutoTradeConfig, GuardField>>): AutoTradeConfig => {
+      const next = applyGuardSave(config, patch);
       setConfig(next);
-      const wasActive = config.stylePresetActive;
       log({
         at: Date.now(),
         level: 'info',
         text:
           `리스크·안전장치 저장 — 리스크 ${next.riskPct}% · 1일 손실 ${next.dailyLossPct === 0 ? '끔' : `−${next.dailyLossPct}%`}` +
           ` · 최대 ${next.maxPositions}포지션 · 레버리지 ${leverageCapLabel(next.maxLeverage)}` +
-          (wasActive && !next.stylePresetActive ? ' · 프리셋 연동 해제(직접 설정)' : ''),
+          ` · 최소 승률 ${next.minWinRate}% / ${next.minRR}R · 유효 ${next.entryTtlMin}분`,
       });
       return next;
     },
@@ -999,6 +945,8 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
   const lastSyncRef = useRef(0);
   /** 마지막으로 감시 목록에 반영한 설정 — 설정 저장은 15초 제한을 건너뛰고 곧바로 반영한다. */
   const lastConfigSigRef = useRef('');
+  /** 감시 목록이 비었을 때의 사유 요약 — 같은 문구를 반복해 로그를 채우지 않는다(v1.5.7) */
+  const lastEmptyReasonRef = useRef('');
   useEffect(() => {
     if (!config.enabled || !supported) {
       armedRef.current = [];
@@ -1013,7 +961,33 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
     if (!configChanged && now - lastSyncRef.current < 15_000) return;
     lastSyncRef.current = now;
     lastConfigSigRef.current = sig;
-    const { plans } = buildPlans(signals, now);
+    const { plans, decisions } = buildPlans(signals, now);
+    /*
+     * 감시 목록이 0건이면 **왜 0건인지**를 로그에 남긴다(v1.5.7).
+     *  · 사용자가 보는 것은 '감시 0건'뿐이라 진입이 안 되는 이유를 알 수 없었다.
+     *  · 거부 사유 상위 3개만 요약하고, 같은 요약이면 다시 쓰지 않는다.
+     */
+    if (!plans.length && decisions.length) {
+      const counts = new Map<string, number>();
+      for (const { decision } of decisions) {
+        if (decision.allowed) continue;
+        counts.set(decision.reason, (counts.get(decision.reason) ?? 0) + 1);
+      }
+      const top = [...counts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([reason, n]) => `${reason} (${n}건)`)
+        .join(' · ');
+      const summary = top
+        ? `감시 목록 0건 — 진행 중 시그널 ${decisions.length}건을 모두 걸러냈습니다: ${top}`
+        : `감시 목록 0건 — 자동 진입 후보가 없습니다(진행 중 시그널 ${decisions.length}건).`;
+      if (lastEmptyReasonRef.current !== summary) {
+        lastEmptyReasonRef.current = summary;
+        log({ at: now, level: 'block', text: summary });
+      }
+    } else if (plans.length) {
+      lastEmptyReasonRef.current = '';
+    }
     // 설정(허용 종목·유효시간)이 바뀌면 이미 감시 중인 목록에서도 빠져야 한다 — 만료·제외 종목은 버린다.
     const alive = armedRef.current.filter((p) => p.expiresAt > now && symbolAllowed(config, p.symbol));
     armedRef.current = mergeArmedPlans(alive, plans);
@@ -1072,10 +1046,6 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
     quickOrder,
     closePosition,
     simulate,
-    /** 매매 스타일 프리셋을 자동매매 설정에 적용 (적용 버튼) */
-    applyTradeStyle,
-    /** 매매 스타일 프리셋 연동 해제 (해제 버튼) — 값은 그대로 둔다 */
-    releaseStylePreset,
     /** ② 리스크·안전장치 저장 — 저장 버튼이 부른다 */
     saveGuards,
     setError,

@@ -14,16 +14,9 @@ import {
 } from '../lib/notify';
 import { isNativeApp, nativeAppInfo, openExternalUrl } from '../lib/native';
 import { useApkUpdate } from '../lib/useApkUpdate';
-import { STYLE_META, type Profile, type TradeStyle } from '../lib/profile';
-import { isDirty, stylePresetSummary } from '../lib/settingsSync';
+import { isDirty } from '../lib/settingsSync';
 import { ACCOUNT_UNLINKED_HINT, fmtUsdtBalance, type AccountBase } from '../lib/account';
-import {
-  RISK_PRESETS,
-  clampRiskInput,
-  defaultRiskPct,
-  isHighRisk,
-  resolveRiskPct,
-} from '../lib/orderCockpit';
+import { RISK_PRESETS, RISK_HIGH_WARN, clampRiskInput, isHighRisk, resolveRiskPct } from '../lib/orderCockpit';
 import {
   APP_VERSION,
   APK_DOWNLOAD_URL,
@@ -102,12 +95,8 @@ interface Props {
   onClearSwapLog: () => void;
   historyCount: number;
   swapCount: number;
-  /** 첫 실행 온보딩에서 저장한 매매 성향 */
-  profile: Profile | null;
   /** 연결된 비트겟 계좌의 실시간 잔고 — 모든 계산의 기준(v1.5.5) */
   account: AccountBase;
-  /** 온보딩 모달 다시 열기 */
-  onEditProfile: () => void;
   /** 자동매매 계좌 연결 화면 열기 */
   onConnectAccount: () => void;
   /** 설정 화면의 알림 테스트 버튼 */
@@ -120,8 +109,6 @@ interface Props {
   autoTrade: AutoTradeApi;
   /** 1회 리스크 저장 → 설정 + 자동매매 리스크 동기화 */
   onSaveRisk: (riskPct: number | null) => void;
-  /** 매매 스타일 저장 → 자동매매 프리셋 적용 */
-  onSaveStyle: (style: TradeStyle) => void;
 }
 
 export function SettingsTab({
@@ -132,14 +119,11 @@ export function SettingsTab({
   onClearSwapLog,
   historyCount,
   swapCount,
-  profile,
   account,
-  onEditProfile,
   onConnectAccount,
   onTestNotification,
   autoTrade,
   onSaveRisk,
-  onSaveStyle,
 }: Props) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<UpdateCheckResult | null>(null);
@@ -147,15 +131,12 @@ export function SettingsTab({
   const [permission, setPermission] = useState<NotifyPermission | null>(null);
   const [testing, setTesting] = useState(false);
   const [testNote, setTestNote] = useState('');
-  /** 리스크 '직접 입력' 모드 — 프리셋 값에서도 숫자 입력을 열어 준다. */
-  const [riskCustom, setRiskCustom] = useState(false);
   const native = isNativeApp();
   const apkUpdate = useApkUpdate();
 
   /* ---------------- 항목별 초안(draft) — 저장 버튼으로만 확정 ---------------- */
   const [leverageModeDraft, setLeverageModeDraft] = useDraft(settings.leverageMode);
-  const [riskDraft, setRiskDraft] = useDraft<number | null>(settings.riskPct);
-  const [styleDraft, setStyleDraft] = useDraft<TradeStyle>(profile?.style ?? 'conservative');
+  const [riskDraft, setRiskDraft] = useDraft<number>(settings.riskPct);
   const [notifyDraft, setNotifyDraft] = useDraft(settings.notifyEnabled);
   const [targetDraft, setTargetDraft] = useDraft(settings.notifyTarget);
   const [ntfyDraft, setNtfyDraft] = useDraft(settings.notifyNtfy);
@@ -237,20 +218,9 @@ export function SettingsTab({
 
   const apk = apkUpdate.state;
 
-  const style = profile ? STYLE_META[profile.style] : null;
-  const activeStyle = profile?.style ?? 'conservative';
-  const riskSelectValue =
-    riskDraft == null
-      ? 'auto'
-      : riskCustom || !(RISK_PRESETS as readonly number[]).includes(riskDraft)
-        ? 'custom'
-        : String(riskDraft);
-  const showRiskInput =
-    riskDraft != null && (riskCustom || !(RISK_PRESETS as readonly number[]).includes(riskDraft));
-  /** 지금 저장할 리스크(성향 추천 포함) — 자동매매와 비교해 안내한다 */
-  const draftRiskValue = resolveRiskPct(activeStyle, riskDraft);
+  /** 지금 저장할 리스크 — 자동매매와 비교해 안내한다 */
+  const draftRiskValue = resolveRiskPct(riskDraft);
   const autoRisk = autoTrade.config.riskPct;
-  const styleChanged = styleDraft !== activeStyle;
 
   return (
     <div className="tab settings-tab">
@@ -271,12 +241,10 @@ export function SettingsTab({
                   : 'USDT'}
             </i>
           </div>
-          <div className="profile-cell">
-            <span>매매 성향</span>
-            <b>
-              {style?.emoji} {style?.label ?? '미설정'}
-            </b>
-            <i>{style?.range}</i>
+          <div className="profile-cell" data-settings-levrec>
+            <span>추천 레버리지</span>
+            <b>COTA 유동 추천</b>
+            <i>잔고 구간 · 손절 폭 · 거래소 최대 배율로 시그널마다 자동 계산</i>
           </div>
         </div>
         {!account.connected && (
@@ -324,8 +292,7 @@ export function SettingsTab({
             <div className="setting-name">실전 주문 리스크</div>
             <div className="setting-desc">
               카드의 주문 수량은 손절가에 닿았을 때 <b>계좌 잔고</b>의 이 비율만큼만 잃도록 자동 계산됩니다.
-              0.5~50%까지 직접 입력할 수 있습니다.
-              {profile ? ` 지금 설정은 잔고의 ${defaultRiskPct(profile.style)}% 기준입니다.` : ''}
+              칩을 누르거나 0.5~50% 사이 숫자를 직접 입력한 뒤 <b>저장</b>하세요.
             </div>
             {draftRiskValue !== autoRisk && (
               <div className="risk-sync-hint" data-risk-sync-hint>
@@ -334,54 +301,34 @@ export function SettingsTab({
             )}
           </div>
           <div className="setting-actions">
-            <div className="risk-control">
-              <label className="select-pill risk-pill">
-                <span>리스크</span>
-                <select
-                  value={riskSelectValue}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === 'auto') {
-                      setRiskCustom(false);
-                      setRiskDraft(null);
-                    } else if (v === 'custom') {
-                      setRiskCustom(true);
-                      if (riskDraft == null) setRiskDraft(clampRiskInput(2.5));
-                    } else {
-                      setRiskCustom(false);
-                      setRiskDraft(Number(v));
-                    }
-                  }}
-                  aria-label="1회 허용 손실률"
-                  data-risk-select
-                >
-                  <option value="auto">
-                    성향 추천 ({profile ? defaultRiskPct(profile.style) : 1.5}%)
-                  </option>
-                  {RISK_PRESETS.map((v) => (
-                    <option key={v} value={v}>
-                      잔고의 {v}%
-                    </option>
-                  ))}
-                  <option value="custom">직접 입력</option>
-                </select>
+            <div className="risk-control" data-risk-controls>
+              <div className="risk-presets" role="group" aria-label="1회 리스크 빠른 선택">
+                {RISK_PRESETS.map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className={`risk-chip ${riskDraft === v ? 'on' : ''} ${v >= RISK_HIGH_WARN ? 'high' : ''}`}
+                    onClick={() => setRiskDraft(v)}
+                    data-risk-preset={v}
+                  >
+                    {v}%
+                  </button>
+                ))}
+              </div>
+              <label className="risk-custom">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0.5}
+                  max={50}
+                  step={0.1}
+                  value={riskDraft}
+                  onChange={(e) => setRiskDraft(clampRiskInput(Number(e.target.value)))}
+                  aria-label="1회 허용 손실률 직접 입력"
+                  data-risk-input
+                />
+                <i>%</i>
               </label>
-              {showRiskInput && (
-                <label className="risk-custom">
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min={0.5}
-                    max={50}
-                    step={0.1}
-                    value={riskDraft ?? ''}
-                    onChange={(e) => setRiskDraft(clampRiskInput(Number(e.target.value)))}
-                    aria-label="1회 허용 손실률 직접 입력"
-                    data-risk-input
-                  />
-                  <i>%</i>
-                </label>
-              )}
             </div>
             <SaveButton
               name="risk"
@@ -395,52 +342,6 @@ export function SettingsTab({
             ⚠️ 고위험 설정: 연속 손실 시 계좌 잔고 감소가 커집니다
           </div>
         )}
-        <div className="setting-row">
-          <div>
-            <div className="setting-name">매매 스타일</div>
-            <div className="setting-desc">
-              고른 스타일을 저장하면 자동매매의 리스크·레버리지 상한·최대 포지션·진입 기준·50% 반익절이
-              그 프리셋으로 <b>즉시</b> 바뀝니다. 켜짐·모의/실거래·감시 주기·허용 종목은 그대로 유지됩니다.
-              {styleChanged
-                ? ` 저장하면 ${STYLE_META[styleDraft].label}로 바뀝니다.`
-                : ` 지금은 ${STYLE_META[activeStyle].label}입니다.`}
-            </div>
-            <div className="style-preset-note" data-style-preset-note>
-              {STYLE_META[styleDraft].emoji} {stylePresetSummary(styleDraft)}
-            </div>
-          </div>
-          <div className="setting-actions">
-            <div className="segmented style-pick">
-              {(['conservative', 'aggressive'] as TradeStyle[]).map((s) => (
-                <button
-                  key={s}
-                  data-style-pick={s}
-                  className={styleDraft === s ? 'on' : ''}
-                  onClick={() => setStyleDraft(s)}
-                >
-                  {STYLE_META[s].emoji} {STYLE_META[s].label.replace(' 매매', '')}
-                </button>
-              ))}
-            </div>
-            <SaveButton
-              name="style"
-              dirty={isDirty(activeStyle, styleDraft)}
-              onSave={() => onSaveStyle(styleDraft)}
-            />
-          </div>
-        </div>
-        <div className="setting-row compact">
-          <div>
-            <div className="setting-name">매매 성향 다시 설정</div>
-            <div className="setting-desc">
-              온보딩 화면에서 보수적/공격적을 다시 고를 수 있습니다. 위의 매매 스타일 저장과 같은 프리셋이
-              자동매매에 적용됩니다(공격적은 레버리지 상한을 두지 않습니다).
-            </div>
-          </div>
-          <button className="ghost-btn" onClick={onEditProfile}>
-            다시 설정
-          </button>
-        </div>
       </section>
 
       <section className="panel">

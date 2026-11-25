@@ -12,7 +12,7 @@ import {
 } from '../lib/journal';
 import { fmtDateTime, fmtPct, fmtPrice, stateLabel, tfLabel } from '../lib/format';
 import { resolveRiskPct } from '../lib/orderCockpit';
-import { fmtUsdAmount, type Profile } from '../lib/profile';
+import { fmtUsdAmount } from '../lib/profile';
 import { fmtUsdtBalance, type AccountBase } from '../lib/account';
 import { EquityCurve } from './EquityCurve';
 import { StrategyBoard } from './StrategyBoard';
@@ -32,11 +32,9 @@ function matchesQuery(h: HistoryRecord, terms: string[]): boolean {
 interface Props {
   history: HistoryRecord[];
   leverage: number;
-  /** 매매 성향 — 1회 리스크 기본값 */
-  profile?: Profile | null;
   /** 연결된 계좌 잔고 — 누적 손익($) 기준(v1.5.5) */
   account?: AccountBase;
-  /** 설정의 1회 허용 손실률(%). null이면 성향 기본값 */
+  /** 설정의 1회 허용 손실률(%) — 없으면 기본 1.5% */
   riskPct?: number | null;
   /** 내 진입으로 표시한 시그널 */
   myTrades: MyTrade[];
@@ -52,7 +50,6 @@ type Mode = 'all' | 'mine';
 export function HistoryTab({
   history,
   leverage,
-  profile = null,
   account,
   riskPct = null,
   myTrades,
@@ -82,9 +79,9 @@ export function HistoryTab({
   const basis = useMemo(
     () => ({
       seed,
-      riskPct: profile ? resolveRiskPct(profile.style, riskPct) : 0,
+      riskPct: resolveRiskPct(riskPct),
     }),
-    [profile, riskPct, seed],
+    [riskPct, seed],
   );
 
   const view = mode === 'mine' ? mine : all;

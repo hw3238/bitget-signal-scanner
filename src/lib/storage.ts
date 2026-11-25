@@ -11,8 +11,8 @@ export interface Settings {
   notifyTarget: 'top3' | 'majors' | 'all';
   /** 선택: ntfy.sh 토픽 이름 또는 URL (비어 있으면 외부 푸시 안 함) */
   notifyNtfy: string;
-  /** 1회 허용 손실률(%). null = 매매 성향 기본값(보수적 1.5% · 공격적 3%) */
-  riskPct: number | null;
+  /** 1회 허용 손실률(%) — 기본 1.5%(매매 스타일 폐지, v1.5.7) */
+  riskPct: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -25,7 +25,7 @@ export const DEFAULT_SETTINGS: Settings = {
   notifyTarget: 'majors',
   /** 기본 전용 토픽 — 사용자가 바꾸거나 비울 수 있다 */
   notifyNtfy: 'bgss-hw3238-9f4k2m',
-  riskPct: null,
+  riskPct: 1.5,
 };
 
 const SETTINGS_KEY = 'bgss.settings.v1';
@@ -68,6 +68,9 @@ export const loadSettings = (): Settings => {
   if (!['top3', 'majors', 'all'].includes(merged.notifyTarget)) {
     merged.notifyTarget = DEFAULT_SETTINGS.notifyTarget;
   }
+  // v1.5.7 — 매매 스타일이 없어져 '성향 추천(null)' 자리는 없다. null·0·범위 밖은 기본 1.5%로 읽는다.
+  const risk = Number(merged.riskPct);
+  merged.riskPct = Number.isFinite(risk) && risk >= 0.5 ? Math.min(50, risk) : DEFAULT_SETTINGS.riskPct;
   return merged;
 };
 export const saveSettings = (s: Settings) => localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));

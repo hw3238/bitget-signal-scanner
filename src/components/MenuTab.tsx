@@ -2,7 +2,6 @@ import type { ScanState } from '../hooks/useScanner';
 import type { AutoTradeApi } from '../hooks/useAutoTrade';
 import type { Signal } from '../engine/types';
 import type { AccountBase } from '../lib/account';
-import type { Profile } from '../lib/profile';
 import type { SwapLogEntry } from '../lib/storage';
 import { AutoTradeTab } from './AutoTradeTab';
 import { SurgeExplorer } from './SurgeExplorer';
@@ -118,8 +117,6 @@ interface Props {
   /** 🤖 자동매매 상태·화면 */
   autoTrade: AutoTradeApi;
   signals: Signal[];
-  /** 매매 스타일 — 자동매매 프리셋 연동 표시(v1.5.6) */
-  profile: Profile | null;
 }
 
 const TITLES: Record<MenuView, string> = {
@@ -145,7 +142,6 @@ export function MenuTab({
   onClearLog,
   autoTrade,
   signals,
-  profile,
 }: Props) {
 
   if (view) {
@@ -157,8 +153,8 @@ export function MenuTab({
           </button>
           <b>{TITLES[view]}</b>
         </div>
-        {view === 'auto' && <AutoTradeTab api={autoTrade} signals={signals} profile={profile} />}
-        {view === 'surge' && <SurgeExplorer state={state} account={account} profile={profile} autoTrade={autoTrade} />}
+        {view === 'auto' && <AutoTradeTab api={autoTrade} signals={signals} />}
+        {view === 'surge' && <SurgeExplorer state={state} account={account} autoTrade={autoTrade} />}
         {view === 'kimchi' && <KimchiRadar state={state} />}
         {view === 'lag' && <KeyMatchRadar state={state} />}
         {view === 'doppel' && <Doppelganger state={state} />}

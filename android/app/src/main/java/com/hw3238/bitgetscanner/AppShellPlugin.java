@@ -783,7 +783,8 @@ public class AppShellPlugin extends Plugin {
             call.reject("symbol required");
             return;
         }
-        final int leverage = Math.max(1, Math.min(25, call.getInt("leverage", 1)));
+        // 매매 스타일·고정 상한 없음(v1.5.7) — 요청 배율은 계약 최대 배율(모르면 100x)까지만 쓴다.
+        final int wantedLeverage = Math.max(1, call.getInt("leverage", 1));
         final String declaredMode = call.getString("holdMode", "");
         final String requestedSide = call.getString("side", "buy");
         final String orderType = call.getString("orderType", "market");
@@ -799,6 +800,10 @@ public class AppShellPlugin extends Plugin {
         new Thread(() -> {
             try {
                 if (size == null || size.isEmpty()) throw new Exception("주문 수량이 비어 있습니다.");
+                int leverage = wantedLeverage;
+                BitgetApi.ContractLimits capLimits = BitgetApi.contractLimits(symbol);
+                int cap = capLimits != null && capLimits.maxLever > 0 ? Math.min(capLimits.maxLever, 1000) : 100;
+                leverage = Math.max(1, Math.min(cap, wantedLeverage));
                 String posMode = declaredMode == null ? "" : declaredMode;
                 if (posMode.isEmpty()) {
                     try {

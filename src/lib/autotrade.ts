@@ -14,7 +14,7 @@
 import type { Signal, Side } from '../engine/types';
 import { isFxSymbol, isStockSymbol } from '../engine/universe';
 import { copyQtyText, planOrder, type ContractSpec, type OrderPlan } from './orderCockpit';
-import { exchangeLeverageCap, type TradeStyle } from './profile';
+import { exchangeLeverageCap } from './profile';
 
 /* ------------------------------------------------------------------ *
  * 설정
@@ -44,32 +44,24 @@ export interface AutoTradeConfig {
   dailyLossPct: number;
   /** 허용 종목 — 전체 코인(기본) / 메이저 4종 / 주식선물 포함 */
   symbols: SymbolScope;
-  /** 진입에 필요한 최근 승률(%) */
+  /** 진입에 필요한 최근 승률(%) — 기본 45%. 전수 기대값 플러스 기법은 이 기준을 우회한다 */
   minWinRate: number;
-  /** 진입에 필요한 손익비 */
+  /** 진입에 필요한 손익비 — 기본 1.2R */
   minRR: number;
   /**
-   * 레버리지 상한 — **0 = 상한 없음(유동)**.
+   * 레버리지 상한 — **0 = 상한 없음(유동)** (기본값).
    *  · 0 이면 손절 폭·품질·실시간 잔고로 계산한 추천 배율을 청산 안전마진·거래소 최대 배율까지만 보고 쓴다.
-   *  · 공격적 스타일 프리셋은 0(무제한·유동), 보수적은 5다.
+   *  · 양수면 그 값이 상한이 된다(거래소 최대 배율보다 크면 거래소 쪽이 이긴다).
    */
   maxLeverage: number;
   /** 백그라운드 감시 주기(초) */
   intervalSec: number;
-  /** 시그널(진입 대기) 유효 시간(분) */
+  /** 시그널(진입 대기) 유효 시간(분) — 봉 마감 시점부터 센다(기본 240분) */
   entryTtlMin: number;
   /** SL 도달 전 반대 신호·구조 붕괴 시 선제 청산 (v1.5.4 · 기본 ON) */
   earlyStop: boolean;
   /** 목표가 50% 또는 +1.0R 도달 시 보유의 50% 분할 익제 (v1.5.6 · 기본 ON) */
   partialTp: boolean;
-  /**
-   * 매매 스타일 프리셋 연동 여부 (기본 ON).
-   *  · true  — 스타일(보수적/공격적) 프리셋이 리스크 항목을 정한다. `적용`을 누르면 프리셋 값으로 맞춘다.
-   *  · false — 사용자가 `리스크 · 안전장치`에서 직접 정한 값을 그대로 쓴다(해제 상태).
-   *    해제 상태에서는 `리스크 · 안전장치` 저장값이 스타일 프리셋으로 덮어쓰이지 않는다.
-   *    (다시 맞추려면 `적용` 또는 설정 탭의 매매 스타일 저장 = 사용자가 직접 지시한 경우뿐)
-   */
-  stylePresetActive: boolean;
 }
 
 /** 메이저 4종 — 'majors' 범위에서 허용하는 종목 */
@@ -83,14 +75,16 @@ export const DEFAULTS: AutoTradeConfig = {
   maxPositions: 2,
   dailyLossPct: 4.5,
   symbols: 'crypto',
-  minWinRate: 55,
-  minRR: 1.5,
-  maxLeverage: 10,
+  // 실전 진입이 실제로 이루어지도록 완화한 기본값(v1.5.7) — 전수 기대값 플러스 기법은 승률 기준을 우회한다.
+  minWinRate: 45,
+  minRR: 1.2,
+  // 상한 없음 · 유동 — 추천 배율을 청산 안전마진·거래소 최대 배율까지만 본다.
+  maxLeverage: 0,
   intervalSec: 60,
-  entryTtlMin: 120,
+  // 1H·4H 시그널 모두 봉 마감 뒤 충분히 감시하도록 4시간
+  entryTtlMin: 240,
   earlyStop: true,
   partialTp: true,
-  stylePresetActive: true,
 };
 
 /** 레버리지 상한 '0' = 상한 없음(유동) — 청산 안전마진·거래소 최대 배율만 지킨다 */
@@ -140,8 +134,6 @@ export function normalizeConfig(raw: Partial<AutoTradeConfig> | null | undefined
     entryTtlMin: num(src.entryTtlMin, DEFAULTS.entryTtlMin),
     earlyStop: src.earlyStop !== false,
     partialTp: src.partialTp !== false,
-    // 미지정·구버전 저장본은 연동 상태(true)로 읽는다 — 사용자가 `해제`를 눌러야 false 가 된다.
-    stylePresetActive: src.stylePresetActive !== false,
   };
   return {
     ...merged,
@@ -170,141 +162,62 @@ function round(v: number, digits: number) {
 }
 
 /* ------------------------------------------------------------------ *
- * 매매 스타일 프리셋 — 온보딩·설정의 '보수적 / 공격적'이 자동매매 설정을 직접 정한다(v1.5.6)
+ * 구버전 저장본 정리 — 매매 스타일 프리셋이 없어지면서(v1.5.7)
+ *  · `stylePresetActive` 필드는 읽지 않고 버린다.
+ *  · 예전 기본값(승률 55% · 1.5R · 120분 · 10x 상한)만 새 기본값으로 **한 번** 완화한다.
+ *    사용자가 직접 조정한 값(그 밖의 숫자)은 건드리지 않는다.
  * ------------------------------------------------------------------ */
 
-export interface StylePreset {
-  style: TradeStyle;
-  /** 1회 허용 손실률(%) */
-  riskPct: number;
-  /** 레버리지 상한 — 0 = 상한 없음(유동) */
-  maxLeverage: number;
-  maxPositions: number;
-  dailyLossPct: number;
-  minWinRate: number;
-  minRR: number;
-  earlyStop: boolean;
-  partialTp: boolean;
-}
+/** 진입 게이트 완화 1회 마이그레이션 키 — 앱(localStorage)에 남긴다. */
+export const ENTRY_GATE_MIGRATION_KEY = 'cota.autotrade.migrated.entryGate.v157';
+
+/** v1.5.6 까지의 기본값 — 이 값 그대로면 사용자가 손대지 않은 기본값으로 본다. */
+export const LEGACY_DEFAULTS = {
+  minWinRate: 55,
+  minRR: 1.5,
+  entryTtlMin: 120,
+  maxLeverage: 10,
+} as const;
 
 /**
- * 스타일별 자동매매 프리셋.
- *  · 보수적: 작게·드물게(1.5% 리스크 · 5x 상한 · 2포지션 · 4.5% 손실한도)
- *  · 공격적: **레버리지 상한 없음(0 = 유동)** · 4% 리스크 · 4포지션 · 10% 손실한도
+ * 예전 기본값 → 완화된 새 기본값 1회 마이그레이션.
+ *  · 승률 55 → 45 · 손익비 1.5 → 1.2 · 유효시간 120 → 240분 · 레버리지 상한 10 → 0(유동).
+ *  · 이미 한 번 옮긴 뒤 사용자가 직접 '55%' 로 되돌리면 그 선택은 유지한다(`alreadyMigrated`).
  */
-export const STYLE_PRESETS: Record<TradeStyle, StylePreset> = {
-  conservative: {
-    style: 'conservative',
-    riskPct: 1.5,
-    maxLeverage: 5,
-    maxPositions: 2,
-    dailyLossPct: 4.5,
-    minWinRate: 52,
-    minRR: 1.5,
-    earlyStop: true,
-    partialTp: true,
-  },
-  aggressive: {
-    style: 'aggressive',
-    riskPct: 4,
-    maxLeverage: UNLIMITED_LEVERAGE,
-    maxPositions: 4,
-    dailyLossPct: 10,
-    minWinRate: 45,
-    minRR: 1.2,
-    earlyStop: true,
-    partialTp: true,
-  },
-};
-
-/** 프리셋이 바꾸는 필드 — 켜짐/모드/주기/허용 종목 같은 사용자 선택은 건드리지 않는다. */
-export const STYLE_PRESET_FIELDS = [
-  'riskPct',
-  'maxLeverage',
-  'maxPositions',
-  'dailyLossPct',
-  'minWinRate',
-  'minRR',
-  'earlyStop',
-  'partialTp',
-] as const;
-
-export function presetForStyle(style: TradeStyle): StylePreset {
-  return STYLE_PRESETS[style] ?? STYLE_PRESETS.conservative;
-}
-
-/**
- * 현재 설정을 해당 스타일 프리셋에 맞춘다 — enabled·mode·intervalSec·symbols 등은 유지.
- * `적용` 버튼·온보딩·설정 탭의 스타일 저장이 부르며, 프리셋을 맞추는 것이 곧 **연동**이다.
- */
-export function applyStylePreset(config: AutoTradeConfig, style: TradeStyle): AutoTradeConfig {
-  const preset = presetForStyle(style);
+export function migrateEntryGateOnce(
+  raw: Partial<AutoTradeConfig> | null | undefined,
+  alreadyMigrated: boolean,
+): { config: Partial<AutoTradeConfig> | null; changed: boolean; fields: string[] } {
+  const src = raw ?? null;
+  if (alreadyMigrated || !src) return { config: src, changed: false, fields: [] };
   const patch: Partial<AutoTradeConfig> = {};
-  for (const field of STYLE_PRESET_FIELDS) {
-    (patch as Record<string, unknown>)[field] = preset[field];
+  const fields: string[] = [];
+  if (Number(src.minWinRate) === LEGACY_DEFAULTS.minWinRate) {
+    patch.minWinRate = DEFAULTS.minWinRate;
+    fields.push('최소 승률');
   }
-  return normalizeConfig({ ...config, ...patch, stylePresetActive: true });
-}
-
-/** 프리셋 연동 해제 — 지금 값을 그대로 두고 '직접 설정' 상태로만 바꾼다. */
-export function releaseStylePreset(config: AutoTradeConfig): AutoTradeConfig {
-  if (!config.stylePresetActive) return config;
-  return { ...config, stylePresetActive: false };
-}
-
-export const STYLE_FIELD_LABEL: Record<(typeof STYLE_PRESET_FIELDS)[number], string> = {
-  riskPct: '1회 리스크',
-  maxLeverage: '레버리지 상한',
-  maxPositions: '최대 포지션',
-  dailyLossPct: '1일 손실 한도',
-  minWinRate: '최소 승률',
-  minRR: '최소 손익비',
-  earlyStop: '조기 손절',
-  partialTp: '50% 반익절',
-};
-
-/** 프리셋 항목 하나를 사람이 읽는 값으로 — `4.5%` · `상한 없음 · 유동` · `ON` */
-export type StyleField = (typeof STYLE_PRESET_FIELDS)[number];
-
-export function styleFieldValue(field: StyleField, config: Pick<AutoTradeConfig, StyleField>): string {
-  switch (field) {
-    case 'riskPct':
-      return `${config.riskPct}%`;
-    case 'maxLeverage':
-      return leverageCapLabel(config.maxLeverage);
-    case 'maxPositions':
-      return `${config.maxPositions}개`;
-    case 'dailyLossPct':
-      return config.dailyLossPct === 0 ? '끔' : `${config.dailyLossPct}%`;
-    case 'minWinRate':
-      return `${config.minWinRate}%`;
-    case 'minRR':
-      return `${config.minRR}R`;
-    case 'earlyStop':
-      return config.earlyStop ? 'ON' : 'OFF';
-    case 'partialTp':
-      return config.partialTp ? 'ON' : 'OFF';
+  if (Number(src.minRR) === LEGACY_DEFAULTS.minRR) {
+    patch.minRR = DEFAULTS.minRR;
+    fields.push('최소 손익비');
   }
-}
-
-/** 프리셋과 다른 항목 — 빈 배열이면 프리셋 그대로다. */
-export function stylePresetDiff(config: AutoTradeConfig, style: TradeStyle): string[] {
-  const preset = presetForStyle(style);
-  const out: string[] = [];
-  for (const field of STYLE_PRESET_FIELDS) {
-    if (config[field] !== preset[field]) out.push(STYLE_FIELD_LABEL[field]);
+  if (Number(src.entryTtlMin) === LEGACY_DEFAULTS.entryTtlMin) {
+    patch.entryTtlMin = DEFAULTS.entryTtlMin;
+    fields.push('시그널 유효시간');
   }
-  return out;
+  if (Number(src.maxLeverage) === LEGACY_DEFAULTS.maxLeverage) {
+    patch.maxLeverage = UNLIMITED_LEVERAGE;
+    fields.push('레버리지 상한(유동)');
+  }
+  if (!fields.length) return { config: src, changed: false, fields };
+  return { config: { ...src, ...patch }, changed: true, fields };
 }
 
-export function matchesStylePreset(config: AutoTradeConfig, style: TradeStyle): boolean {
-  return stylePresetDiff(config, style).length === 0;
-}
 
 /* ------------------------------------------------------------------ *
  * ② 리스크 · 안전장치 초안 → 저장 (v1.5.6)
  *   화면에서 값을 바꿔도 `저장`을 누르기 전에는 설정·네이티브 감시가 바뀌지 않는다.
  *   (현우님: "손실한도를 바꿨는데 프리셋에 적용되지가 않아. 저장 버튼 추가하고 작동하게 만들어")
+ *   v1.5.7 — 매매 스타일 프리셋이 없어져 초안 12항목만 정규화해 저장한다.
  * ------------------------------------------------------------------ */
 
 /** `② 리스크 · 안전장치`에서 직접 편집하는 항목 — 저장 버튼을 눌러야 설정에 반영된다. */
@@ -355,43 +268,14 @@ export function guardFieldsChanged(saved: AutoTradeConfig, draft: AutoTradeConfi
 }
 
 /**
- * `②` 저장 적용.
- *  · 초안을 정규화(범위 클램프)해 저장값에 얹는다. 켜짐·모드·프리셋 연동 상태는 그대로 둔다.
- *  · **프리셋이 관리하는 항목**을 프리셋 값과 다르게 저장하면 연동을 해제한다 —
- *    이후 스타일 저장이 사용자가 정한 값을 덮어쓰지 않고, `적용`을 눌러야 프리셋으로 돌아간다.
- *  · 프리셋이 관리하지 않는 항목(감시 주기·유효시간·허용 종목·자동 진입)만 바꿨으면 연동은 유지한다.
+ * `②` 저장 적용 — 초안을 정규화(범위 클램프)해 저장값에 얹는다.
+ * 반환값은 정규화된 새 설정이며 화면이 초안을 이 값으로 다시 맞춘다(클램프 반영).
  */
 export function applyGuardSave(
   saved: AutoTradeConfig,
   patch: Partial<Pick<AutoTradeConfig, GuardField>>,
-  style: TradeStyle | null,
 ): AutoTradeConfig {
-  const merged = normalizeConfig({ ...saved, ...patch });
-  const touchedPresetField = STYLE_PRESET_FIELDS.some((field) => merged[field] !== saved[field]);
-  const diverges = style != null && stylePresetDiff(merged, style).length > 0;
-  const released = saved.stylePresetActive && touchedPresetField && diverges;
-  return { ...merged, stylePresetActive: released ? false : saved.stylePresetActive };
-}
-
-/** 스타일 프리셋 1회 마이그레이션 키 — 앱(localStorage)에 남긴다. */
-export const STYLE_MIGRATION_KEY = 'cota.autotrade.migrated.stylePreset.v1';
-
-/**
- * v1.5.6 이전에 저장된 **아직 손대지 않은 기본 설정**을 저장된 매매 스타일 프리셋으로 한 번 맞춘다.
- *  · 예전 기본값(리스크 1.5% · 10x · 2포지션 · 4.5% · 승률 55%)은 스타일과 따로 놀았고,
- *    공격적 사용자도 10x 상한에 묶여 있었다.
- *  · 사용자가 직접 조정한 설정(하나라도 기본값과 다름)은 **건드리지 않는다**.
- */
-export function migrateStylePresetOnce(
-  raw: Partial<AutoTradeConfig> | null | undefined,
-  style: TradeStyle | null | undefined,
-  alreadyMigrated: boolean,
-): { config: AutoTradeConfig; changed: boolean } {
-  const normalized = normalizeConfig(raw ?? DEFAULTS);
-  if (alreadyMigrated || !style) return { config: normalized, changed: false };
-  const untouched = STYLE_PRESET_FIELDS.every((field) => normalized[field] === DEFAULTS[field]);
-  if (!untouched) return { config: normalized, changed: false };
-  return { config: applyStylePreset(normalized, style), changed: true };
+  return normalizeConfig({ ...saved, ...patch });
 }
 
 /** 레버리지 상한 문구 — `상한 없음 · 유동` / `12x` */
@@ -627,8 +511,8 @@ export function evaluateEntry(ctx: EntryContext): EntryDecision {
     return { allowed: false, code: 'symbol', reason };
   }
   // 승률 기준 — 전수 검증 채택 신호는 표본 부족으로 승률이 낮게 표기되므로,
-  // 기대값이 확실한 기법(전수 0.30R 이상)은 승률 기준을 우회해 진입한다.
-  const highExpectancy = signal.winRateBasis === 'bench' && (signal.strategyExp ?? 0) >= 0.3;
+  // 기대값이 확실한 기법(전수 0.2R 이상 = 플러스 기대값)은 승률 기준을 우회해 진입한다.
+  const highExpectancy = signal.winRateBasis === 'bench' && (signal.strategyExp ?? 0) >= 0.2;
   if (!highExpectancy && signal.winRate < config.minWinRate) {
     return {
       allowed: false,
@@ -664,11 +548,11 @@ export function evaluateEntry(ctx: EntryContext): EntryDecision {
       reason: `1일 손실 한도 −${config.dailyLossPct}%에 도달해 오늘은 진입하지 않습니다.`,
     };
   }
-  if (!manual && ctx.now - signal.detectedAt > config.entryTtlMin * 60_000) {
+  if (!manual && signalAgeMin(signal, ctx.now) > config.entryTtlMin) {
     return {
       allowed: false,
       code: 'stale',
-      reason: `감지 후 ${config.entryTtlMin}분이 지나 진입을 취소했습니다.`,
+      reason: `봉 마감 후 ${Math.round(signalAgeMin(signal, ctx.now))}분이 지나 진입을 취소했습니다(유효시간 ${config.entryTtlMin}분).`,
     };
   }
   if (plan && plan.leverage > leverageCapOf(config)) {
@@ -935,8 +819,72 @@ export interface ArmedPlan {
   expiresAt: number;
 }
 
-/** 진입가 터치 허용 오차(0.05%) — 시장가 즉시 체결이 목표가·손절가를 망치지 않게. */
+/* ------------------------------------------------------------------ *
+ * 진입 구간 · 유효시간 (v1.5.7)
+ *
+ * 기존 진입 조건은 `현재가가 진입가 ±0.05% 안으로 터치`였다. 60초 감시에서 가격이
+ * 그 좁은 띠를 스쳐 지나가면 영원히 진입하지 못했고, 시그널이 뜬 뒤 가격이 조금만
+ * 움직여도 감시 목록 전체가 '대기'로 남았다. 그래서 실제 체결이 일어나는 구간으로 넓힌다.
+ *   롱  : entry × 0.992 ~ entry × 1.005
+ *   숏  : entry × 0.995 ~ entry × 1.008
+ *  · 진입가보다 유리한 쪽으로 0.8%(롱)/0.5%(숏) 넘게 벗어나도 **손익비가 기준 이상이면** 들어간다.
+ *  · 손절가·목표가 방어선(0.1%)은 그대로 — 즉시 손절·TP 방향 오류를 막는다.
+ *  · 유효시간은 '감지 봉이 마감된 시점'부터 센다. 4H 시그널은 봉이 마감돼야 확정되므로
+ *    detectedAt(봉 시작)만으로 재면 태어나자마자 만료되는 문제가 있었다.
+ * ------------------------------------------------------------------ */
+
+/** 진입가보다 불리한(추격) 쪽 허용 — 롱은 위 0.5%, 숏은 아래 0.5% */
+export const ENTRY_CHASE = 0.005;
+/** 진입가보다 유리한 쪽 허용 — 롱은 아래 0.8%, 숏은 위 0.8% (넘으면 손익비로 판정) */
+export const ENTRY_FAVOR = 0.008;
+/** 현재가 기준 손익비 하한 — 이보다 나쁘면 진입하지 않는다(설정 minRR 과 별개의 안전선) */
+export const MIN_ENTRY_RR = 1.0;
+/** 호환 상수 — 예전 '터치 허용 오차' 표기(0.05%). 실제 진입 판정은 ENTRY_CHASE/FAVOR 를 쓴다. */
 export const TOUCH_TOLERANCE = 0.0005;
+
+/** 봉 길이(ms) — 1H·4H */
+export function tfMs(tf?: string | null): number {
+  return tf === '4H' ? 4 * 3600_000 : 3600_000;
+}
+
+/** 시그널이 실제로 확정된 시각 = 감지 봉의 마감 시각 */
+export function signalReadyAt(signal: Pick<Signal, 'tf' | 'detectedAt'>): number {
+  return Number(signal.detectedAt || 0) + tfMs(signal.tf);
+}
+
+/** 유효시간 판정용 나이(분) — 봉 마감 뒤부터 센다(음수는 0) */
+export function signalAgeMin(signal: Pick<Signal, 'tf' | 'detectedAt'>, now: number): number {
+  return Math.max(0, (now - signalReadyAt(signal)) / 60_000);
+}
+
+export interface EntryZone {
+  low: number;
+  high: number;
+}
+
+/** 지금 들어가도 되는 가격 구간 */
+export function entryZoneOf(plan: Pick<ArmedPlan, 'side' | 'entry'>): EntryZone {
+  const entry = Number(plan.entry) || 0;
+  if (plan.side === 'long') {
+    return { low: entry * (1 - ENTRY_FAVOR), high: entry * (1 + ENTRY_CHASE) };
+  }
+  return { low: entry * (1 - ENTRY_CHASE), high: entry * (1 + ENTRY_FAVOR) };
+}
+
+/** 현재가 기준 손익비 — 위험(현재가→손절) 대비 보상(현재가→목표) */
+export function rrAtPrice(side: Side, price: number, stop: number, target: number): number {
+  const risk = side === 'long' ? price - stop : stop - price;
+  const reward = side === 'long' ? target - price : price - target;
+  if (!(risk > 0) || !(reward > 0)) return 0;
+  return reward / risk;
+}
+
+/** 가격 표기 — 지수 표기 없이 최대 8자리 */
+export function fmtPrice(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '—';
+  const fixed = value.toFixed(8).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  return fixed === '-0' ? '0' : fixed;
+}
 
 export function toArmedPlan(input: {
   signal: Signal;
@@ -950,6 +898,8 @@ export function toArmedPlan(input: {
   const { signal, plan, now, ttlMin } = input;
   const pricePlace = input.pricePlace ?? signal.decimals ?? null;
   const priceEndStep = input.priceEndStep ?? signal.priceEndStep ?? 1;
+  // 봉 마감 시점부터 유효시간을 센다 — 4H 시그널이 태어나자마자 만료되지 않게.
+  const expiresAt = Math.max(now + 60_000, signalReadyAt(signal) + ttlMin * 60_000);
   return {
     key: signalKeyOf(signal),
     symbol: signal.symbol,
@@ -970,7 +920,7 @@ export function toArmedPlan(input: {
     winRate: signal.winRate,
     rr: signal.rr,
     detectedAt: signal.detectedAt,
-    expiresAt: now + ttlMin * 60_000,
+    expiresAt,
   };
 }
 
@@ -995,31 +945,86 @@ export const MIN_TARGET_GAP = 0.001; // 현재가 대비 목표가 최소 여유
 
 /**
  * 지금 가격이 진입 조건을 만족하는가.
- *  - 롱: 진입가 이하로 내려오면 진입(되돌림 매수). 손절가를 먼저 깨면 셋업 무효.
- *  - 숏: 진입가 이상으로 올라오면 진입. 손절가를 먼저 깨면 무효.
- *  - 유효시간이 지나면 취소.
+ *  - 롱: 진입 구간(entry×0.992~1.005) 안이면 진입. 그보다 더 싸면 손익비가 기준 이상일 때 진입.
+ *  - 숏: 진입 구간(entry×0.995~1.008) 안이면 진입. 그보다 더 비싸면 손익비가 기준 이상일 때 진입.
+ *  - 손절가를 먼저 깨면 셋업 무효 · 유효시간이 지나면 취소.
  *  - 손절·목표가에 이미 붙었거나 지나쳤으면 진입하지 않는다(TP/SL 방향 오류·즉시 손절 방지).
  */
 export function planTrigger(
   plan: Pick<ArmedPlan, 'side' | 'entry' | 'stop' | 'expiresAt'> & { target?: number },
   price: number,
   now: number,
+  /** 현재가 기준 최소 손익비 — 설정 minRR 을 넘기면 그 값을 쓴다 */
+  minRR: number = MIN_ENTRY_RR,
 ): PlanTrigger {
   if (!(price > 0)) return 'wait';
   if (now >= plan.expiresAt) return 'expired';
   const target = Number(plan.target ?? 0);
+  const zone = entryZoneOf(plan);
+  // 경계값 부동소수 오차(100 × 1.005 = 100.4999…)로 경계에서 한 틱씩 새지 않게 아주 작은 여유를 둔다.
+  const eps = Math.max(1e-12, (Number(plan.entry) || 0) * 1e-9);
+  const rrFloor = Math.max(MIN_ENTRY_RR, Number.isFinite(minRR) ? minRR : MIN_ENTRY_RR);
   if (plan.side === 'long') {
     if (price <= plan.stop) return 'invalidated';
     if (target > 0 && price >= target * (1 - MIN_TARGET_GAP)) return 'target-passed';
     if (price <= plan.stop * (1 + MIN_STOP_DISTANCE)) return 'near-stop';
-    if (price <= plan.entry * (1 + TOUCH_TOLERANCE)) return 'enter';
+    if (price <= zone.high + eps && price >= zone.low - eps) return 'enter';
+    // 진입가보다 더 유리하게 내려온 자리 — 손익비가 기준 이상이면 그대로 들어간다.
+    if (price < zone.low - eps && target > 0 && rrAtPrice('long', price, plan.stop, target) >= rrFloor) return 'enter';
     return 'wait';
   }
   if (price >= plan.stop) return 'invalidated';
   if (target > 0 && price <= target * (1 + MIN_TARGET_GAP)) return 'target-passed';
   if (price >= plan.stop * (1 - MIN_STOP_DISTANCE)) return 'near-stop';
-  if (price >= plan.entry * (1 - TOUCH_TOLERANCE)) return 'enter';
+  if (price >= zone.low - eps && price <= zone.high + eps) return 'enter';
+  if (price > zone.high + eps && target > 0 && rrAtPrice('short', price, plan.stop, target) >= rrFloor) return 'enter';
   return 'wait';
+}
+
+/** 감시 주기 로그에 남길 한 줄 — 왜 지금 진입하지 않는지(또는 들어가는지) 사용자가 바로 읽게 */
+export function planTriggerReason(
+  plan: Pick<ArmedPlan, 'side' | 'entry' | 'stop' | 'expiresAt'> & { target?: number },
+  price: number,
+  now: number,
+  minRR: number = MIN_ENTRY_RR,
+): string {
+  const trigger = planTrigger(plan, price, now, minRR);
+  const zone = entryZoneOf(plan);
+  const target = Number(plan.target ?? 0);
+  const sideKo = plan.side === 'long' ? '롱' : '숏';
+  const rrFloor = Math.max(MIN_ENTRY_RR, Number.isFinite(minRR) ? minRR : MIN_ENTRY_RR);
+  switch (trigger) {
+    case 'enter':
+      return `진입 조건 충족 — ${sideKo} 현재가 ${fmtPrice(price)} (진입 구간 ${fmtPrice(zone.low)}~${fmtPrice(zone.high)})`;
+    case 'expired':
+      return `진입 대기 만료 — 유효시간이 지나 감시에서 제외합니다 (현재가 ${fmtPrice(price)})`;
+    case 'invalidated':
+      return `셋업 무효 — 현재가 ${fmtPrice(price)} 가 손절가 ${fmtPrice(plan.stop)} 를 먼저 깼습니다`;
+    case 'target-passed':
+      return `진입 건너뜀 — 현재가 ${fmtPrice(price)} 가 이미 목표가 ${fmtPrice(target)} 에 닿았습니다`;
+    case 'near-stop':
+      return `진입 건너뜀 — 현재가 ${fmtPrice(price)} 가 손절가 ${fmtPrice(plan.stop)} 에 0.1% 이내로 붙었습니다`;
+    case 'wait':
+    default: {
+      if (!(price > 0)) return '시세를 받지 못해 다음 주기에 다시 확인합니다';
+      if (plan.side === 'long') {
+        if (price > zone.high) {
+          return `진입가 대기 중 — 현재가 ${fmtPrice(price)} 가 진입 상단 ${fmtPrice(zone.high)} 보다 ${(
+            ((price - zone.high) / (plan.entry || 1)) * 100
+          ).toFixed(2)}% 위(추격 금지)`;
+        }
+        const rr = target > 0 ? rrAtPrice('long', price, plan.stop, target) : 0;
+        return `진입가 대기 중 — 현재가 ${fmtPrice(price)} 는 유리한 자리지만 손익비 ${rr.toFixed(2)}R < 기준 ${rrFloor.toFixed(1)}R`;
+      }
+      if (price < zone.low) {
+        return `진입가 대기 중 — 현재가 ${fmtPrice(price)} 가 진입 하단 ${fmtPrice(zone.low)} 보다 ${(
+          ((zone.low - price) / (plan.entry || 1)) * 100
+        ).toFixed(2)}% 아래(추격 금지)`;
+      }
+      const rr = target > 0 ? rrAtPrice('short', price, plan.stop, target) : 0;
+      return `진입가 대기 중 — 현재가 ${fmtPrice(price)} 는 유리한 자리지만 손익비 ${rr.toFixed(2)}R < 기준 ${rrFloor.toFixed(1)}R`;
+    }
+  }
 }
 
 /** 같은 시그널이 다시 와도 중복으로 쌓이지 않게 키 기준 병합 */

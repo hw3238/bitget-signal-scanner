@@ -5,7 +5,7 @@ import { copyToClipboard } from '../lib/clipboard';
 import { bitgetFuturesUrl } from '../lib/coinLogo';
 import { openBitgetFutures } from '../lib/native';
 import { fmtPct, fmtPrice, fmtRR, fmtSendTime, sideFullLabel, stateLabel, tfLabel } from '../lib/format';
-import { STYLE_META, fmtUsdAmount, recommendLeverage, type Profile } from '../lib/profile';
+import { fmtUsdAmount, recommendLeverage } from '../lib/profile';
 import { ACCOUNT_UNLINKED_HINT, fmtUsdtBalance, type AccountBase } from '../lib/account';
 import {
   copyPriceText,
@@ -25,7 +25,6 @@ interface Props {
   leverage: number;
   /** 'auto' 면 시그널마다 COTA 추천 배율을 쓴다 */
   leverageMode?: 'auto' | 'manual';
-  profile?: Profile | null;
   /** 연결된 비트겟 계좌의 실시간 잔고 — 주문 수량·손익의 기준(v1.5.5) */
   account?: AccountBase;
   /** 계좌가 없을 때 자동매매 연결 화면 열기 */
@@ -53,7 +52,6 @@ export function SignalCard({
   signal,
   leverage,
   leverageMode = 'manual',
-  profile = null,
   account,
   onConnectAccount,
   riskPct = null,
@@ -71,9 +69,9 @@ export function SignalCard({
   const { entry, target, stop, eq, price } = signal;
   const dir = signal.side === 'long' ? 1 : -1;
   const changePct = ((price - entry) / (entry || 1)) * 100 * dir;
-  const auto = leverageMode === 'auto' && !!profile;
-  // v1.5.6 — 실시간 잔고 구간 + 거래소 종목 최대 배율까지 반영한 유동 추천
-  const rec = profile ? recommendLeverage(signal, profile.style, account?.equity ?? null, contract?.maxLever ?? null) : null;
+  const auto = leverageMode === 'auto';
+  // v1.5.7 — 실시간 잔고 구간 + 손절 폭 + 거래소 종목 최대 배율만으로 계산한 유동 추천(매매 스타일 없음)
+  const rec = auto ? recommendLeverage(signal, account?.equity ?? null, contract?.maxLever ?? null) : null;
   const lev = auto && rec ? rec.leverage : leverage;
   const roi = changePct * lev;
   /** 계좌 잔고 기준 실시간 평가손익 — 현재가가 진입가에서 얼마나 움직였는지 × 레버리지 */
@@ -89,7 +87,7 @@ export function SignalCard({
   const dec = signal.decimals;
 
   /** 실전 주문 콕핏 — 연결된 계좌 잔고 · 리스크% 기준 수량·증거금·손익 */
-  const appliedRisk = profile ? resolveRiskPct(profile.style, riskPct) : null;
+  const appliedRisk = resolveRiskPct(riskPct);
   const plan =
     seed > 0 && appliedRisk != null
       ? planOrderForSignal(signal, {
@@ -312,9 +310,9 @@ export function SignalCard({
           <div className="cockpit-foot">
             <span>포지션 {fmtUsd(plan.notional)}</span>
             <span>손익비 {fmtRR(plan.rr, 1)}</span>
-            {profile && (
+            {rec && (
               <span>
-                {STYLE_META[profile.style].emoji} {STYLE_META[profile.style].label}
+                {rec.tier ? `${rec.tierLabel ?? ''} 추천 ${rec.leverage}x` : `추천 ${rec.leverage}x (잔고 미확인)`}
               </span>
             )}
             {plan.cappedByAvailable && (

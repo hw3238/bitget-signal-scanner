@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ScanState } from '../hooks/useScanner';
 import type { AutoTradeApi } from '../hooks/useAutoTrade';
 import type { AccountBase } from '../lib/account';
-import type { Profile } from '../lib/profile';
 import type { Candle, Ticker } from '../engine/types';
 import { fetchBigCandles, mapLimit } from '../api/publicMarket';
 import { readCandles, writeCandles } from '../lib/scanCache';
@@ -48,11 +47,10 @@ const STATE_MARK: Record<string, string> = { pass: '✓', partial: '△', fail: 
 interface Props {
   state: ScanState;
   account: AccountBase;
-  profile: Profile | null;
   autoTrade: AutoTradeApi;
 }
 
-export function SurgeExplorer({ state, account, profile, autoTrade }: Props) {
+export function SurgeExplorer({ state, account, autoTrade }: Props) {
   const [picks, setPicks] = useState<SurgePick[]>([]);
   const [filter, setFilter] = useState<SurgeFilter>('all');
   const [loading, setLoading] = useState(false);
@@ -82,10 +80,9 @@ export function SurgeExplorer({ state, account, profile, autoTrade }: Props) {
         btc1h: btcRef.current,
         decimals: entry.decimals,
         maxLever: entry.maxLever,
-        style: profile?.style,
         equity: account.equity,
       }),
-    [account.equity, profile?.style],
+    [account.equity],
   );
 
   const loadCandles = useCallback(async (symbol: string, tf: '1H' | '4H', limit: number, force: boolean) => {
@@ -186,7 +183,7 @@ export function SurgeExplorer({ state, account, profile, autoTrade }: Props) {
     });
     setPicks(rankSurgePicks(next));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account.equity, profile?.style]);
+  }, [account.equity]);
 
   const filtered = useMemo(() => picks.filter((p) => matchSurgeFilter(p, filter)), [picks, filter]);
   const primePicks = picks.filter((p) => p.prime);

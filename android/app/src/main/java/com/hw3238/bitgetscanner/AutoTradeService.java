@@ -45,7 +45,14 @@ public class AutoTradeService extends Service {
     private static final String CHANNEL_NAME = "COTA 자동매매";
     private static final int NOTIFICATION_ID = 4407;
     private static final long MIN_INTERVAL_MS = 30_000L;
-    private static final double TOUCH_TOLERANCE = 0.0005;
+    /** 진입가보다 불리한(추격) 쪽 허용 — 롱은 위 0.5%, 숏은 아래 0.5% (웹 ENTRY_CHASE 와 같다) */
+    private static final double ENTRY_CHASE = 0.005;
+    /** 진입가보다 유리한 쪽 허용 — 롱은 아래 0.8%, 숏은 위 0.8% (넘으면 손익비로 판정) */
+    private static final double ENTRY_FAVOR = 0.008;
+    /** 현재가 기준 손익비 하한 — 이보다 나쁘면 진입하지 않는다(설정 minRR 과 별개의 안전선) */
+    private static final double MIN_ENTRY_RR = 1.0;
+    /** 같은 '진입가 대기' 로그를 다시 남기는 간격 — 매 주기 같은 문구로 로그를 채우지 않는다 */
+    private static final long WAIT_LOG_MS = 10 * 60_000L;
     /** 현재가가 손절가에 0.1% 이내로 붙으면 진입하지 않는다(즉시 손절 방지) */
     private static final double MIN_STOP_DISTANCE = 0.001;
     /** 목표가까지 0.1% 미만이면 진입하지 않는다(거래소 25585/25587 TP 방향 오류 방지) */
@@ -61,6 +68,9 @@ public class AutoTradeService extends Service {
     private final java.util.Map<String, Long> lastExitAt = new java.util.HashMap<>();
     /** 반익절 보류 사유 로그 — 같은 사유를 매 주기 반복해 쌓지 않는다(v1.5.6) */
     private final java.util.Set<String> partialSkipLogged = new java.util.HashSet<>();
+    /** 진입 대기 사유 로그 — 감시 항목별 마지막 문구·시각. 문구가 바뀌거나 10분마다 한 번만 남긴다. */
+    private final java.util.Map<String, String> waitNote = new java.util.HashMap<>();
+    private final java.util.Map<String, Long> waitAt = new java.util.HashMap<>();
 
     private final Runnable tick = new Runnable() {
         @Override
@@ -210,12 +220,17 @@ public class AutoTradeService extends Service {
         /* --- 1일 손실 한도: KST 날짜가 바뀌면 기준선을 다시 잡는다 --- */
         String today = dayKeyKst();
         double startEquity = AutoTradeStore.dayStartEquity(this);
-        if (!today.equals(AutoTradeStore.dayKey(this)) || startEquity <= 0) {
+        boolean newDay = !today.equals(AutoTradeStore.dayKey(this));
+        // 날이 바뀐 주기에만 잠금·중복 진입 기록을 초기화한다 — 잔고 조회가 실패한 주기에
+        // 기준선이 0이 됐다고 매번 clearTraded 하면 같은 시그널로 중복 주문이 나갈 수 있다.
+        if (newDay || startEquity <= 0) {
             AutoTradeStore.setDay(this, today, equity);
-            AutoTradeStore.setDailyLocked(this, false);
-            AutoTradeStore.clearTraded(this);
+            if (newDay) {
+                AutoTradeStore.setDailyLocked(this, false);
+                AutoTradeStore.clearTraded(this);
+            }
             startEquity = equity;
-            if (equity > 0) {
+            if (newDay && equity > 0) {
                 AutoTradeStore.addLog(this, "info", String.format(Locale.US,
                         "새 거래일(%s) — 기준 equity $%,.2f", today, equity));
             }
@@ -294,13 +309,17 @@ public class AutoTradeService extends Service {
                 // 오늘 거래소가 거부한 종목(상장폐지·Demo 미지원·거래 제한) — 같은 실패를 반복하지 않는다.
                 if (AutoTradeStore.isSkippedSymbol(this, symbol)) continue;
                 if (!autoEntry) {
+                    logWait(plan, key + "|manual", base, 0, 0, 0, 0, 0, longSide, 0,
+                            base + " 감시 중 — '새 시그널 자동 진입'이 꺼져 있어 원클릭 주문을 기다립니다.");
                     keep.put(plan);
                     continue;
                 }
                 String upperSymbol = symbol.toUpperCase(Locale.ROOT);
                 if (hedge ? heldSides.contains(upperSymbol + "|" + side) : heldSymbols.contains(upperSymbol)) {
-                    AutoTradeStore.addLog(this, "block", base + " " + (longSide ? "롱" : "숏")
-                            + " — 같은 종목 포지션을 이미 보유 중이라 중복 진입을 막았습니다.");
+                    logWait(plan, key + "|held", base, 0, 0, 0, 0, 0, longSide, 0,
+                            base + " " + (longSide ? "롱" : "숏")
+                                    + " — 같은 종목 포지션을 이미 보유 중이라 중복 진입을 막았습니다(포지션이 닫히면 다시 판단).");
+                    keep.put(plan);
                     continue;
                 }
 
@@ -327,31 +346,43 @@ public class AutoTradeService extends Service {
                 double entry = plan.optDouble("entry", 0);
                 double stop = plan.optDouble("stop", 0);
                 double target = plan.optDouble("target", 0);
-                // 손절가를 먼저 깨면 셋업 무효
-                if (longSide ? price <= stop : price >= stop) {
-                    AutoTradeStore.addLog(this, "info", base + " 손절가 이탈 — 셋업 무효로 진입 취소");
+                /*
+                 * 진입 판정(v1.5.7) — 웹 `planTrigger` 와 **같은 규칙**을 EntryZoneRule 이 갖는다.
+                 *   롱 entry×0.992~1.005 · 숏 entry×0.995~1.008, 더 유리한 자리는 손익비 기준 통과 시 진입.
+                 *   손절가 이탈/목표가 도달/손절가 밀착/유효시간 만료는 감시에서 제외하고 이유를 남긴다.
+                 */
+                double rrFloor = EntryZoneRule.rrFloor(config.optDouble("minRR", 1.2));
+                EntryZoneRule.Trigger trigger = EntryZoneRule.decide(
+                        longSide, entry, stop, target, price, now, plan.optLong("expiresAt", 0), rrFloor);
+                if (trigger == EntryZoneRule.Trigger.INVALIDATED
+                        || trigger == EntryZoneRule.Trigger.TARGET_PASSED
+                        || trigger == EntryZoneRule.Trigger.NEAR_STOP
+                        || trigger == EntryZoneRule.Trigger.EXPIRED) {
+                    AutoTradeStore.addLog(this, "info", EntryZoneRule.reason(
+                            base, longSide, entry, stop, target, price, now, plan.optLong("expiresAt", 0), rrFloor));
                     continue;
                 }
-                // 이미 목표가에 닿았거나 손절가에 붙은 자리는 들어가지 않는다(TP/SL 방향 오류·즉시 손절)
-                if (target > 0 && (longSide ? price >= target * (1 - MIN_TARGET_GAP) : price <= target * (1 + MIN_TARGET_GAP))) {
-                    AutoTradeStore.addLog(this, "info", base + " 이미 목표가에 닿은 자리 — 진입을 건너뜁니다.");
-                    continue;
-                }
-                if (longSide ? price <= stop * (1 + MIN_STOP_DISTANCE) : price >= stop * (1 - MIN_STOP_DISTANCE)) {
-                    AutoTradeStore.addLog(this, "info", base + " 손절가에 너무 붙은 자리 — 진입을 건너뜁니다.");
-                    continue;
-                }
-                boolean touched = longSide ? price <= entry * (1 + TOUCH_TOLERANCE) : price >= entry * (1 - TOUCH_TOLERANCE);
-                if (!touched) {
+                if (trigger != EntryZoneRule.Trigger.ENTER) {
+                    logWait(plan, key, base, price, EntryZoneRule.zoneLow(longSide, entry),
+                            EntryZoneRule.zoneHigh(longSide, entry), EntryZoneRule.rrAtPrice(longSide, price, stop, target),
+                            rrFloor, longSide, target,
+                            EntryZoneRule.reason(base, longSide, entry, stop, target, price, now, plan.optLong("expiresAt", 0), rrFloor));
                     keep.put(plan);
                     continue;
                 }
                 if (openPositions >= maxPositions) {
-                    AutoTradeStore.addLog(this, "block", String.format(Locale.US,
-                            "%s 진입 보류 — 동시 포지션 %d/%d", base, openPositions, maxPositions));
+                    logWait(plan, key + "|max", base, price, EntryZoneRule.zoneLow(longSide, entry),
+                            EntryZoneRule.zoneHigh(longSide, entry), EntryZoneRule.rrAtPrice(longSide, price, stop, target),
+                            rrFloor, longSide, target,
+                            String.format(Locale.US, "%s 진입 보류 — 동시 포지션 %d/%d (포지션이 닫히면 다시 진입합니다)",
+                                    base, openPositions, maxPositions));
                     keep.put(plan);
                     continue;
                 }
+                AutoTradeStore.addLog(this, "info", EntryZoneRule.reason(
+                        base, longSide, entry, stop, target, price, now, plan.optLong("expiresAt", 0), rrFloor));
+                waitNote.remove(key);
+                waitAt.remove(key);
                 int leverageValue = leverageFor(plan, symbol);
                 JSONObject order = buildOrder(plan, posMode, config, equity, available, leverageValue);
                 String leverage = String.valueOf(leverageValue);
@@ -611,6 +642,52 @@ public class AutoTradeService extends Service {
     /** 반익절 보류 사유 — 포지션·문구당 한 번만 로그에 남긴다 */
     private void logPartialOnce(String key, String text) {
         if (!partialSkipLogged.add(key + "|" + text)) return;
+        AutoTradeStore.addLog(this, "info", text);
+    }
+
+    /* ------------------------------------------------------------------ *
+     * 진입 대기 사유 로그 (v1.5.7)
+     *   감시 주기마다 "왜 들어가지 않았는지"를 남긴다. 다만 같은 문구를 매 주기 쌓지 않도록
+     *   항목별로 문구가 바뀌었을 때·10분마다 한 번만 기록한다.
+     * ------------------------------------------------------------------ */
+
+    private void logWait(JSONObject plan, String key, String base, double price,
+                         double zoneLow, double zoneHigh, double rrNow, double rrFloor,
+                         boolean longSide, double target) {
+        logWait(plan, key, base, price, zoneLow, zoneHigh, rrNow, rrFloor, longSide, target, null);
+    }
+
+    /** 진입 대기 로그 — 문구가 바뀌었거나 10분이 지났을 때만 남긴다(로그 40건 상한 보호). */
+    private void logWait(JSONObject plan, String key, String base, double price,
+                         double zoneLow, double zoneHigh, double rrNow, double rrFloor,
+                         boolean longSide, double target, String custom) {
+        String text = custom;
+        if (text == null) {
+            double entry = plan.optDouble("entry", 0);
+            if (!(price > 0)) {
+                text = base + " 시세를 받지 못해 다음 주기에 다시 확인합니다.";
+            } else if (longSide ? price > zoneHigh : price < zoneLow) {
+                // 추격 금지 — 진입가에서 너무 멀어졌다.
+                double gap = longSide ? (price - zoneHigh) / (entry == 0 ? 1 : entry)
+                        : (zoneLow - price) / (entry == 0 ? 1 : entry);
+                text = String.format(Locale.US,
+                        "%s %s 진입가 대기 중 — 현재가 %s 가 진입 %s %s 보다 %.2f%% %s(추격 금지). 구간 %s~%s",
+                        base, longSide ? "롱" : "숏", trim(price),
+                        longSide ? "상단" : "하단", trim(longSide ? zoneHigh : zoneLow),
+                        gap * 100, longSide ? "위" : "아래", trim(zoneLow), trim(zoneHigh));
+            } else {
+                // 유리한 자리지만 손익비가 기준 미달
+                text = String.format(Locale.US,
+                        "%s %s 진입가 대기 중 — 현재가 %s 는 유리한 자리지만 손익비 %.2fR < 기준 %.1fR. 구간 %s~%s",
+                        base, longSide ? "롱" : "숏", trim(price), rrNow, rrFloor, trim(zoneLow), trim(zoneHigh));
+            }
+        }
+        Long last = waitAt.get(key);
+        String prev = waitNote.get(key);
+        long now = System.currentTimeMillis();
+        if (text.equals(prev) && last != null && now - last < WAIT_LOG_MS) return;
+        waitNote.put(key, text);
+        waitAt.put(key, now);
         AutoTradeStore.addLog(this, "info", text);
     }
 

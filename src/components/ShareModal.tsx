@@ -4,12 +4,10 @@ import { drawShareCard } from './shareCard';
 import { ArrowUpRightIcon, CloseIcon, DownloadIcon, ShareIcon, StarIcon } from './Icons';
 import { isNativeApp, openBitgetFutures, saveImageToDevice, shareImageFromDevice } from '../lib/native';
 import { bitgetFuturesUrl } from '../lib/coinLogo';
-import type { Profile } from '../lib/profile';
 
 interface Props {
   signal: Signal;
   leverage: number;
-  profile?: Profile | null;
   /** 연결된 계좌 잔고 — 손익 표기 기준(v1.5.5) */
   seed?: number;
   auto?: boolean;
@@ -21,7 +19,6 @@ interface Props {
 export function ShareModal({
   signal,
   leverage,
-  profile = null,
   seed = 0,
   auto = false,
   isFavorite,
@@ -38,7 +35,7 @@ export function ShareModal({
     const draw = async () => {
       if (cancelled || !canvasRef.current) return;
       try {
-        await drawShareCard(canvasRef.current, signal, leverage, profile, auto, seed);
+        await drawShareCard(canvasRef.current, signal, leverage, auto, seed);
       } finally {
         if (!cancelled) setReady(true);
       }
@@ -51,7 +48,7 @@ export function ShareModal({
     return () => {
       cancelled = true;
     };
-  }, [signal, leverage, profile, auto, seed]);
+  }, [signal, leverage, auto, seed]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

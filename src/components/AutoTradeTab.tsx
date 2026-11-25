@@ -11,8 +11,6 @@ import {
   MAJOR_SYMBOLS,
   RISK_HIGH_WARN,
   RISK_PRESET_CHOICES,
-  STYLE_FIELD_LABEL,
-  STYLE_PRESET_FIELDS,
   fmtClock,
   fmtSince,
   fmtUsdt,
@@ -20,14 +18,10 @@ import {
   guardPatchOf,
   leverageCapLabel,
   partialTpState,
-  presetForStyle,
   statusBadge,
-  styleFieldValue,
-  stylePresetDiff,
   todayFillCount,
   type AutoTradeConfig,
 } from '../lib/autotrade';
-import { STYLE_META, type Profile } from '../lib/profile';
 import { NumField } from './ui';
 import { APP_VERSION, APK_DOWNLOAD_URL } from '../lib/update';
 import { accountKindLabel } from '../lib/bitgetUta';
@@ -36,8 +30,6 @@ import { openExternalUrl } from '../lib/native';
 interface Props {
   api: AutoTradeApi;
   signals: Signal[];
-  /** 온보딩·설정에서 고른 매매 스타일 — 자동매매 프리셋이 이 값을 따라간다(v1.5.6) */
-  profile: Profile | null;
 }
 
 const SYMBOL_LABEL: Record<string, string> = {
@@ -71,7 +63,7 @@ const SYMBOL_SCOPE_HINT = {
  * 🤖 비트겟 자동매매 — 키 연결 · 안전장치 · 자동/수동 주문 · 로그.
  * 실제 주문은 앱(안드로이드) 네이티브가 넣고, 이 화면은 명령과 결과만 다룬다.
  */
-export function AutoTradeTab({ api, signals, profile }: Props) {
+export function AutoTradeTab({ api, signals }: Props) {
   const {
     config,
     keys,
@@ -116,7 +108,7 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
   }, [config.mode]);
 
   /**
-   * 설정이 **밖에서** 바뀌면(프리셋 적용·설정 탭 저장) 초안도 새 값으로 맞춘다.
+   * 설정이 **밖에서** 바뀌면(설정 탭 저장·모드 변경) 초안도 새 값으로 맞춘다.
    * 저장되지 않은 초안이 있으면 사용자가 입력 중인 값을 지키기 위해 건드리지 않는다.
    */
   useEffect(() => {
@@ -142,44 +134,12 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
   const badge = statusBadge({ ...config, mode: tradeMode.mode }, running);
   const fillsToday = todayFillCount(runtime.logs, Date.now());
   const modeLabel = tradeMode.mode === 'live' ? '실거래' : '모의투자';
-  /** 지금 설정이 고른 매매 스타일 프리셋 그대로인가 — 다르면 무엇이 다른지 보여준다 */
-  const styleMeta = profile ? STYLE_META[profile.style] : null;
-  const stylePreset = profile ? presetForStyle(profile.style) : null;
-  const styleDiff = profile ? stylePresetDiff(config, profile.style) : [];
-  /**
-   * 프리셋 카드 상태 — 연동됨 / 프리셋과 다름 / 해제됨(직접 설정) / 성향 미설정.
-   * `해제됨`은 연동을 끈 상태로, 리스크·안전장치에서 저장한 값을 스타일이 덮어쓰지 않는다.
-   */
-  const presetState: 'none' | 'linked' | 'diff' | 'released' = !profile
-    ? 'none'
-    : !config.stylePresetActive
-      ? 'released'
-      : styleDiff.length > 0
-        ? 'diff'
-        : 'linked';
-  const presetLabel =
-    presetState === 'none'
-      ? '성향 미설정'
-      : presetState === 'released'
-        ? '프리셋 해제됨 · 직접 설정'
-        : presetState === 'diff'
-          ? '프리셋과 다름'
-          : '프리셋 연동됨';
   /** ② 초안에서 저장하지 않은 항목 · 저장 버튼 활성화 조건 */
   const changedGuards = useMemo(() => guardFieldsChanged(config, draft), [config, draft]);
   const guardDirty = changedGuards.length > 0;
   const justSaved = savedAt > 0 && !guardDirty;
-  const guardStateLabel = guardDirty
-    ? '저장 안 됨'
-    : justSaved
-      ? '✓ 저장됨'
-      : !profile
-        ? '직접 설정'
-        : !config.stylePresetActive
-          ? '직접 설정'
-          : styleDiff.length > 0
-            ? '프리셋과 다름'
-            : '프리셋 연동됨';
+  const guardStateLabel = guardDirty ? '저장 안 됨' : justSaved ? '✓ 저장됨' : '저장됨';
+
   /** 50% 반익절을 이미 마친 포지션 키 — 네이티브가 기록한 값 */
   const partialDone = useMemo(() => new Set(native?.partialTpDone ?? []), [native?.partialTpDone]);
 
@@ -200,34 +160,10 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
 
   /** ② 리스크 · 안전장치 저장 — 저장할 항목만 설정에 넣고 초안을 정규화된 값으로 다시 맞춘다. */
   const onSaveGuards = () => {
-    const wasActive = config.stylePresetActive;
-    const next = api.saveGuards(guardPatchOf(draft), profile?.style ?? null);
+    const next = api.saveGuards(guardPatchOf(draft));
     setDraft(next);
     setSavedAt(Date.now());
-    notify(
-      next.stylePresetActive || !profile
-        ? '✓ 저장됨 — 리스크·안전장치에 반영했습니다.'
-        : wasActive
-          ? '✓ 저장됨 — 프리셋과 달라 직접 설정으로 전환했습니다. 이 값은 덮어쓰지 않습니다.'
-          : '✓ 저장됨 — 직접 설정 값을 그대로 유지합니다.',
-    );
-  };
-
-  /** `적용` — 지금 매매 스타일의 프리셋 값으로 맞추고 연동을 켠다. */
-  const onApplyPreset = () => {
-    if (!profile) return;
-    const next = api.applyTradeStyle(profile.style);
-    setDraft(next);
-    setSavedAt(0);
-    notify('✓ 프리셋 적용됨');
-  };
-
-  /** `해제` — 값은 그대로 두고 프리셋 연동만 끊는다(직접 설정). */
-  const onReleasePreset = () => {
-    const next = api.releaseStylePreset();
-    setDraft(next);
-    setSavedAt(0);
-    notify('프리셋 해제됨 · 직접 설정');
+    notify('✓ 저장됨 — 리스크·안전장치와 24시간 감시에 반영했습니다.');
   };
 
   /** 손실 한도 초기화 — 실수로 누르면 하루 손실 기록이 0%부터 다시 세지므로 한 번 확인을 받는다. */
@@ -394,95 +330,6 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
         </div>
       )}
 
-      {/* ---------- 0. 매매 스타일 연동 (v1.5.6) ---------- */}
-      <section className="auto-card auto-style" data-auto-style>
-        <header className="auto-card-head">
-          <h3>🎯 매매 스타일 → 자동매매</h3>
-          <span
-            className={`auto-tag ${presetState === 'linked' ? 'ok' : presetState === 'released' ? 'warn' : ''}`}
-            data-style-linked
-            data-style-state={presetState}
-            data-style-active={config.stylePresetActive ? '1' : '0'}
-          >
-            {presetLabel}
-          </span>
-        </header>
-        {profile && stylePreset && styleMeta ? (
-          <div className="auto-style-body">
-            <div className="auto-style-head">
-              <b>
-                {styleMeta.emoji} {styleMeta.label}
-              </b>
-              <span>{styleMeta.range}</span>
-            </div>
-            {/* 프리셋 값과 현재 저장된 자동매매 값을 나란히 — 다른 항목은 강조한다 */}
-            <div className="auto-style-compare" data-style-compare>
-              <div className="auto-style-compare-head">
-                <span>항목</span>
-                <span>프리셋</span>
-                <span>현재</span>
-              </div>
-              {STYLE_PRESET_FIELDS.map((field) => {
-                const diff = config[field] !== stylePreset[field];
-                return (
-                  <div
-                    key={field}
-                    className={`auto-style-compare-row ${diff ? 'diff' : ''}`}
-                    data-style-row={field}
-                    data-style-row-diff={diff ? '1' : '0'}
-                  >
-                    <span>{STYLE_FIELD_LABEL[field]}</span>
-                    <span className="preset">{styleFieldValue(field, stylePreset)}</span>
-                    <b>{styleFieldValue(field, config)}</b>
-                  </div>
-                );
-              })}
-            </div>
-            {styleDiff.length > 0 ? (
-              <em data-style-diff>스타일과 다른 값: {styleDiff.join(' · ')}</em>
-            ) : (
-              <em className="same" data-style-same>
-                지금 자동매매 값이 이 프리셋과 같습니다
-              </em>
-            )}
-            {guardDirty && (
-              <em className="pending" data-style-pending>
-                저장 대기 중인 변경 {changedGuards.length}건 — ②에서 <b>저장</b>을 누르면 위 `현재` 값에 반영됩니다
-              </em>
-            )}
-            {presetState === 'released' && (
-              <em className="released" data-style-released-note>
-                프리셋 연동을 해제했습니다. ②에서 저장한 리스크·손실 한도 값을 스타일이 덮어쓰지 않습니다.
-              </em>
-            )}
-            <div className="auto-style-actions">
-              <button type="button" className="auto-primary" data-style-apply data-style-preset onClick={onApplyPreset}>
-                적용
-              </button>
-              <button
-                type="button"
-                className="auto-secondary"
-                data-style-release
-                onClick={onReleasePreset}
-                disabled={!config.stylePresetActive}
-              >
-                해제
-              </button>
-            </div>
-            <p className="auto-style-note">
-              <b>적용</b>을 누르면 위 프리셋 값(리스크·레버리지·포지션·진입 기준·반익절)으로 맞추고 연동합니다.
-              <b>해제</b>는 지금 값을 그대로 두고 연동만 끊어, ②에서 직접 정한 값을 지킵니다. 켜짐·모의/실거래·
-              허용 종목은 적용·해제 모두 건드리지 않습니다.
-            </p>
-          </div>
-        ) : (
-          <p className="auto-empty">
-            설정 탭에서 매매 스타일(보수적/공격적)을 먼저 골라주세요. 고른 스타일이 리스크·레버리지·포지션 수에
-            그대로 적용됩니다.
-          </p>
-        )}
-      </section>
-
       {/* ---------- 1. API 키 ---------- */}
       <section className="auto-card" data-auto-keys>
         <header className="auto-card-head">
@@ -641,7 +488,7 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
         <header className="auto-card-head">
           <h3>② 리스크 · 안전장치</h3>
           <span
-            className={`auto-tag ${guardDirty ? 'warn' : justSaved ? 'ok' : config.stylePresetActive ? '' : 'muted'}`}
+            className={`auto-tag ${guardDirty ? 'warn' : justSaved ? 'ok' : ''}`}
             data-auto-guard-state
             data-guard-dirty={guardDirty ? '1' : '0'}
           >
@@ -649,8 +496,8 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
           </span>
         </header>
         <p className="auto-guard-intro">
-          값을 바꾸면 오른쪽 위에 <b>저장 안 됨</b>이 뜨고 저장 버튼이 켜집니다. <b>저장</b>을 눌러야 상단 지표·프리셋
-          카드·24시간 감시에 반영됩니다.
+          값을 바꾸면 오른쪽 위에 <b>저장 안 됨</b>이 뜨고 저장 버튼이 켜집니다. <b>저장</b>을 눌러야 상단 지표와
+          24시간 감시에 반영됩니다. 여기 적은 숫자가 그대로 자동매매 기준입니다.
           {guardDirty && (
             <em data-auto-dirty-fields>바뀐 항목: {changedGuards.map((f) => GUARD_FIELD_LABEL[f]).join(' · ')}</em>
           )}
@@ -762,7 +609,7 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
               ))}
             </div>
             <em className="num-hint" data-lev-cap-label>
-              현재 {leverageCapLabel(draft.maxLeverage)} · 공격적 스타일은 상한 없이 유동으로 계산합니다
+              현재 {leverageCapLabel(draft.maxLeverage)} · 유동이면 잔고·손절 폭·거래소 최대 배율로만 계산합니다
             </em>
           </div>
           <NumField
@@ -907,15 +754,13 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
               {guardDirty
                 ? `저장 안 됨 · ${changedGuards.length}개 항목`
                 : justSaved
-                  ? '✓ 저장됨 — 상단 지표·프리셋·감시에 반영했습니다'
+                  ? '✓ 저장됨 — 상단 지표·감시에 반영했습니다'
                   : '저장된 값 그대로입니다'}
             </b>
             <span>
               {guardDirty
                 ? '저장을 눌러야 자동매매가 새 값으로 돌아갑니다.'
-                : config.stylePresetActive
-                  ? '프리셋 연동 중 — 스타일 프리셋 값과 같을 수 있습니다.'
-                  : '직접 설정 — 프리셋이 이 값을 덮어쓰지 않습니다.'}
+                : '이 값이 자동매매의 최종 기준입니다 — 다른 화면이 덮어쓰지 않습니다.'}
             </span>
           </div>
           <button

@@ -2,14 +2,7 @@ import type { Signal } from '../engine/types';
 import { assetLabel, symbolLogo } from '../lib/asset';
 import { coinIconUrl } from '../lib/coinLogo';
 import { fmtPct, fmtPrice, fmtRR, sideFullLabel, stateLabel, tfLabel } from '../lib/format';
-import {
-  STYLE_META,
-  fmtSeed,
-  fmtUsdAmount,
-  recommendLeverage,
-  seedPnl,
-  type Profile,
-} from '../lib/profile';
+import { fmtSeed, fmtUsdAmount, recommendLeverage, seedPnl } from '../lib/profile';
 
 const FONT =
   '"Pretendard Variable",Pretendard,"Noto Sans KR","Noto Sans CJK KR",-apple-system,system-ui,sans-serif';
@@ -36,13 +29,12 @@ const C = {
 
 function autorec(
   auto: boolean,
-  profile: Profile | null,
   signal: Signal,
-  /** 연결된 계좌 잔고 — 잔고 구간별 유동 추천(v1.5.6) */
+  /** 연결된 계좌 잔고 — 잔고 구간별 유동 추천(v1.5.7) */
   equity = 0,
 ): ReturnType<typeof recommendLeverage> | null {
-  if (!auto || !profile) return null;
-  return recommendLeverage(signal, profile.style, equity > 0 ? equity : null);
+  if (!auto) return null;
+  return recommendLeverage(signal, equity > 0 ? equity : null);
 }
 
 function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -178,7 +170,6 @@ export async function drawShareCard(
   canvas: HTMLCanvasElement,
   signal: Signal,
   leverage: number,
-  profile: Profile | null = null,
   auto = false,
   /** 연결된 계좌 잔고 — 없으면 손익 숫자를 그리지 않는다(v1.5.5) */
   seed = 0,
@@ -191,9 +182,9 @@ export async function drawShareCard(
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   const dir = signal.side === 'long' ? 1 : -1;
-  const rec = autorec(auto, profile, signal, seed);
+  const rec = autorec(auto, signal, seed);
   const lev = rec ? rec.leverage : leverage;
-  const pnl = auto && profile && seed > 0 ? seedPnl(signal, lev, seed) : null;
+  const pnl = auto && seed > 0 ? seedPnl(signal, lev, seed) : null;
   const roi = signal.changePct * lev;
   /** 계좌 잔고 기준 실시간 평가손익 (진입가 → 현재가) */
   const livePnl = seed > 0 ? (seed * roi) / 100 : null;
@@ -486,10 +477,8 @@ export async function drawShareCard(
   });
 
   const seedNote =
-    auto && profile
-      ? seed > 0
-        ? ` · 계좌 $${fmtSeed(seed)} 기준${rec?.tierLabel ? ` · ${rec.tierLabel}` : ''} · ${STYLE_META[profile.style].label}`
-        : ` · ${STYLE_META[profile.style].label}`
+    auto && seed > 0
+      ? ` · 계좌 $${fmtSeed(seed)} 기준${rec?.tierLabel ? ` · ${rec.tierLabel}` : ''} · COTA 추천 배율`
       : '';
   const detail = `${signal.symbol} · 비트겟 USDT-M · ${tfLabel(signal.tf)}봉 200개 실데이터 · 레버리지 ${lev}x${seedNote}`;
   fitText(ctx, detail, px, 952, pw, { size: 12, weight: 500, color: C.sub });
