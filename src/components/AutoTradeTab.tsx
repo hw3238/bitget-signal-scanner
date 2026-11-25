@@ -617,7 +617,7 @@ export function AutoTradeTab({ api, signals }: Props) {
             value={draft.minWinRate}
             suffix="%"
             onChange={(v) => setDraft((prev) => ({ ...prev, minWinRate: v }))}
-            hint="시그널 전략 승률 기준 · 전수 기대값 0.3R 이상 기법은 통과"
+            hint="시그널 전략 승률 기준 · 전수 기대값 0.2R 이상(플러스) 기법은 통과"
           />
           <NumField
             label="최소 손익비"
