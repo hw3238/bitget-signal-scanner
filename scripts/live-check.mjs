@@ -262,11 +262,12 @@ await page.locator('.menu-back').click();
 await page.waitForTimeout(300);
 
 // 💾 자동매매 ② 저장 버튼 · 프리셋 적용/해제 (v1.5.6 웹)
-await page.locator('.menu-row[data-menu="auto"]').click();
+await page.waitForSelector('.menu-auto[data-menu="auto"]', { timeout: 30000 });
+await page.locator('.menu-auto[data-menu="auto"]').click();
 await page.waitForSelector('[data-auto-root]', { timeout: 30000 });
 await page.waitForTimeout(900);
 await page.locator('[data-auto-guards]').scrollIntoViewIfNeeded();
-const saveUi = await page.evaluate(() => ({
+const autoSaveUi = await page.evaluate(() => ({
   apply: !!document.querySelector('[data-style-apply]'),
   release: !!document.querySelector('[data-style-release]'),
   saveDisabled: document.querySelector('[data-auto-config-save]')?.disabled !== false,
@@ -274,9 +275,9 @@ const saveUi = await page.evaluate(() => ({
   link: clean(document.querySelector('[data-style-linked]')?.textContent),
 }));
 check(
-  saveUi.apply && saveUi.release && saveUi.saveDisabled && saveUi.state === '프리셋 연동됨' && saveUi.link === '프리셋 연동됨',
+  autoSaveUi.apply && autoSaveUi.release && autoSaveUi.saveDisabled && autoSaveUi.state === '프리셋 연동됨' && autoSaveUi.link === '프리셋 연동됨',
   '라이브 자동매매: 적용/해제 버튼 · 저장 버튼 초기 비활성',
-  `${saveUi.link} · 저장 비활성=${saveUi.saveDisabled}`,
+  `${autoSaveUi.link} · 저장 비활성=${autoSaveUi.saveDisabled}`,
 );
 await page.locator('[data-daily-preset="7"]').click();
 await page.waitForTimeout(350);

@@ -1,9 +1,9 @@
 {
- "generatedAt": "2026-11-25T10:39:23.563Z",
- "count": 195,
+ "generatedAt": "2026-11-25T11:14:11.225Z",
+ "count": 197,
  "sources": {
-  "okx": 0,
-  "binance": 0,
+  "okx": 1,
+  "binance": 1,
   "coincap": 0
  },
  "icons": {
@@ -16,6 +16,7 @@
   "AEON": "AEON.png",
   "AERO": "AERO.png",
   "ALGO": "ALGO.png",
+  "ALICE": "ALICE.png",
   "ALLO": "ALLO.png",
   "APR": "APR.png",
   "APT": "APT.png",
@@ -111,6 +112,7 @@
   "MANTA": "MANTA.png",
   "MANTRA": "MANTRA.png",
   "MARSCOIN": "MARSCOIN.png",
+  "ME": "ME.png",
   "MEGA": "MEGA.jpg",
   "MELANIA": "MELANIA.png",
   "MET": "MET.png",
