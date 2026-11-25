@@ -136,10 +136,9 @@ function snapshotScript() {
     'cota.scan.snapshot.v1',
     JSON.stringify({ v: 1, at: now, contracts: [contract], markets: 1, analyses: [analysis], signals: [signal], tickers: [] }),
   );
-  localStorage.setItem('cota.profile.v1', JSON.stringify({ style: 'conservative', updatedAt: now }));
   localStorage.setItem(
     'bgss.settings.v1',
-    JSON.stringify({ refreshSec: 120, leverageMode: 'auto', leverage: 10, minRR: 1.5, riskPct: null, sound: false }),
+    JSON.stringify({ refreshSec: 120, leverageMode: 'auto', leverage: 10, minRR: 1.5, riskPct: 1.5, sound: false }),
   );
   // 사용자가 직접 만진 자동매매 설정 — 스타일 저장이 프리셋 필드만 바꾸고 나머지는 유지하는지 본다.
   localStorage.setItem(
@@ -162,7 +161,7 @@ function snapshotScript() {
     }),
   );
   localStorage.setItem('cota.autotrade.migrated.cryptoDefault.v1', '1');
-  localStorage.setItem('cota.autotrade.migrated.stylePreset.v1', '1');
+  localStorage.setItem('cota.autotrade.migrated.entryGate.v157', '1');
 }
 
 const run = async () => {
@@ -216,18 +215,19 @@ const run = async () => {
       disabled: btns.every((b) => b.disabled),
       labels: [...new Set(btns.map((b) => b.textContent.trim()))],
       stylePick: [...document.querySelectorAll('.settings-tab [data-style-pick]')].map((b) => b.getAttribute('data-style-pick')),
-      riskValue: document.querySelector('#settings-profile [data-risk-select]')?.value,
+      riskChips: [...document.querySelectorAll('#settings-profile [data-risk-preset]')].map((b) => b.getAttribute('data-risk-preset')),
+      riskValue: document.querySelector('#settings-profile [data-risk-input]')?.value,
       overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
     };
   });
   check(
-    '항목별 저장 버튼 10개(레버리지 모드·리스크·스타일·알림 3종·스캐너 4종)',
-    base.names.join(',') === 'leverage-mode,risk,style,notify-enabled,notify-target,ntfy,leverage,min-rr,refresh,sound',
+    '항목별 저장 버튼 9개(레버리지 모드·리스크·알림 3종·스캐너 4종)',
+    base.names.join(',') === 'leverage-mode,risk,notify-enabled,notify-target,ntfy,leverage,min-rr,refresh,sound',
     base.names.join(','),
   );
   check('바꾸기 전에는 모든 저장 버튼 비활성 · 라벨 = 저장', base.disabled && base.labels.join('|') === '저장', base.labels.join('|'));
-  check('매매 스타일 선택(보수적/공격적)이 설정 탭에 있음', base.stylePick.join('|') === 'conservative|aggressive', base.stylePick.join('|'));
-  check('리스크 기본값 = 성향 추천', base.riskValue === 'auto', base.riskValue);
+  check('매매 스타일 선택·프리셋이 설정 탭에서 사라졌다', base.stylePick.length === 0, base.stylePick.join('|'));
+  check('리스크는 숫자 칩 + 직접 입력만', base.riskChips.join(',') === '1,2,3,5,10,20,30,50' && base.riskValue === '1.5', `${base.riskChips.join(',')} · ${base.riskValue}`);
   check('390px 가로 오버플로 0건', !base.overflow);
   await page.screenshot({ path: `${OUT}/88-settings-save-buttons.png` });
 
@@ -246,10 +246,10 @@ const run = async () => {
   check('저장 클릭 → localStorage notifyTarget = all', targetStored.settings.notifyTarget === 'all', String(targetStored.settings.notifyTarget));
 
   /* ---------- 3) 리스크 저장 → 자동매매 동기화 ---------- */
-  await page.selectOption('#settings-profile [data-risk-select]', '5');
+  await page.locator('#settings-profile [data-risk-preset="5"]').click();
   await page.waitForTimeout(200);
   const riskDraftStorage = await storage();
-  check('리스크 5% 선택만으로는 저장되지 않음', riskDraftStorage.settings.riskPct == null, String(riskDraftStorage.settings.riskPct));
+  check('리스크 5% 선택만으로는 저장되지 않음', riskDraftStorage.settings.riskPct === 1.5, String(riskDraftStorage.settings.riskPct));
   check('리스크 저장 버튼 활성', !(await saveState('risk')).disabled);
   await page.locator('#settings-profile [data-save="risk"]').click();
   await page.waitForTimeout(300);
@@ -263,8 +263,6 @@ const run = async () => {
   );
 
   // 직접 입력 2.5%
-  await page.selectOption('#settings-profile [data-risk-select]', 'custom');
-  await page.waitForTimeout(200);
   const riskInput = page.locator('#settings-profile [data-risk-input]');
   await riskInput.fill('2.5');
   await page.waitForTimeout(150);
@@ -292,73 +290,38 @@ const run = async () => {
   );
   await page.screenshot({ path: `${OUT}/89-autotrade-risk-synced.png` });
 
-  /* ---------- 4) 매매 스타일 저장 → 프리셋 적용 ---------- */
+  /* ---------- 4) 매매 스타일·프리셋 제거 — 숫자만 남는다 ---------- */
   await page.locator('.bottom-nav button[data-tab="settings"]').click();
   await page.waitForSelector('#settings-profile', { timeout: 20000 });
   await page.waitForTimeout(400);
-  await page.locator('[data-style-pick="aggressive"]').click();
-  await page.waitForTimeout(250);
-  const styleDrafted = await storage();
-  check(
-    '스타일 선택만으로는 자동매매가 바뀌지 않음',
-    styleDrafted.profile.style === 'conservative' && styleDrafted.auto.riskPct === 2.5,
-    `${styleDrafted.profile.style} · ${styleDrafted.auto.riskPct}%`,
-  );
-  await page.screenshot({ path: `${OUT}/90-settings-style-draft.png` });
-  await page.locator('[data-save="style"]').click();
-  await page.waitForTimeout(400);
-  const styleSaved = await storage();
-  const styleBtn = await saveState('style');
-  check('스타일 저장 → ✓ 저장됨', styleBtn.text === '✓ 저장됨', JSON.stringify(styleBtn));
-  check('스타일 저장 → 프로필 aggressive', styleSaved.profile.style === 'aggressive', styleSaved.profile.style);
-  check(
-    '공격적 프리셋: 리스크 4% · 상한 없음 · 4포지션 · 손실 10% · 승률 45% · 1.2R',
-    styleSaved.auto.riskPct === 4 &&
-      styleSaved.auto.maxLeverage === 0 &&
-      styleSaved.auto.maxPositions === 4 &&
-      styleSaved.auto.dailyLossPct === 10 &&
-      styleSaved.auto.minWinRate === 45 &&
-      styleSaved.auto.minRR === 1.2,
-    `${styleSaved.auto.riskPct}% · ${styleSaved.auto.maxLeverage} · ${styleSaved.auto.maxPositions} · ${styleSaved.auto.dailyLossPct}% · ${styleSaved.auto.minWinRate}% · ${styleSaved.auto.minRR}R`,
-  );
-  check(
-    '프리셋 적용 후에도 켜짐·모드·주기·허용 종목·유효시간 유지',
-    styleSaved.auto.enabled === false &&
-      styleSaved.auto.mode === 'demo' &&
-      styleSaved.auto.symbols === 'all' &&
-      styleSaved.auto.intervalSec === 120 &&
-      styleSaved.auto.entryTtlMin === 240,
-    `${styleSaved.auto.mode} · ${styleSaved.auto.symbols} · ${styleSaved.auto.intervalSec}s · ${styleSaved.auto.entryTtlMin}m`,
-  );
-  check('설정 탭 리스크도 프리셋 4% 로 동기화', styleSaved.settings.riskPct === 4, String(styleSaved.settings.riskPct));
-  const styleRow = await read(() => {
-    const flat = (t) => String(t ?? '').replace(/\s+/g, ' ').trim();
-    return {
-      value: document.querySelector('#settings-profile [data-risk-select]')?.value,
-      input: document.querySelector('#settings-profile [data-risk-input]')?.value,
-      presetNote: flat(document.querySelector('[data-style-preset-note]')?.textContent),
-      styleCell: flat(document.querySelectorAll('#settings-profile .profile-cell b')[1]?.textContent),
-    };
-  });
-  check('리스크 행 = 직접 입력 4% · 성향 표시 = 공격적', styleRow.value === 'custom' && styleRow.input === '4' && /공격적 매매/.test(styleRow.styleCell), JSON.stringify(styleRow));
-  check('스타일 행에 프리셋 요약 표시', /리스크 4%/.test(styleRow.presetNote) && /상한 없음/.test(styleRow.presetNote), styleRow.presetNote);
+  const noStyle = await read(() => ({
+    styleRows: [...document.querySelectorAll('.settings-tab .setting-name')].filter((el) => /매매 스타일|매매 성향/.test(el.textContent ?? '')).length,
+    stylePick: document.querySelectorAll('.settings-tab [data-style-pick]').length,
+    presetNote: document.querySelectorAll('.settings-tab [data-style-preset-note]').length,
+    profileCell: [...document.querySelectorAll('#settings-profile .profile-cell span')].map((e) => e.textContent?.trim()),
+    settingRequired: !!document.querySelector('#settings-profile [data-settings-levrec]'),
+  }));
+  check('설정 탭에 매매 스타일·매매 성향 다시 설정 행이 없다', noStyle.styleRows === 0, String(noStyle.styleRows));
+  check('설정 탭에 스타일 선택·프리셋 요약이 없다', noStyle.stylePick === 0 && noStyle.presetNote === 0);
+  check('내 매매 기준 카드 = 계좌 잔고 · 추천 레버리지', noStyle.settingRequired && noStyle.profileCell.includes('추천 레버리지'), noStyle.profileCell.join(' / '));
 
-  // 다시 보수적으로
-  await page.locator('[data-style-pick="conservative"]').click();
-  await page.waitForTimeout(200);
-  await page.locator('[data-save="style"]').click();
-  await page.waitForTimeout(350);
-  const styleBack = await storage();
+  // ②에서 저장한 리스크·안전장치는 다른 화면이 덮어쓰지 않는다
+  const autoBefore = (await storage()).auto;
+  await page.locator('.bottom-nav button[data-tab="menu"]').click();
+  await page.waitForTimeout(400);
+  await page.locator('.menu-auto[data-menu="auto"]').click();
+  await page.waitForSelector('[data-auto-guards]', { timeout: 20000 });
+  await page.waitForTimeout(400);
+  const afterOpen = (await storage()).auto;
   check(
-    '보수적 저장 → 리스크 1.5% · 5x · 2포지션 · 허용 종목 유지',
-    styleBack.profile.style === 'conservative' &&
-      styleBack.auto.riskPct === 1.5 &&
-      styleBack.auto.maxLeverage === 5 &&
-      styleBack.auto.maxPositions === 2 &&
-      styleBack.auto.symbols === 'all' &&
-      styleBack.settings.riskPct === 1.5,
-    `${styleBack.auto.riskPct}% · ${styleBack.auto.maxLeverage}x · ${styleBack.auto.symbols}`,
+    '자동매매 화면을 열어도 저장값이 그대로(프리셋 덮어쓰기 없음)',
+    JSON.stringify(autoBefore) === JSON.stringify(afterOpen),
+    `${afterOpen.riskPct}% · ${afterOpen.maxLeverage}x · ${afterOpen.dailyLossPct}%`,
   );
+
+  await page.locator('.bottom-nav button[data-tab="settings"]').click();
+  await page.waitForSelector('#settings-profile', { timeout: 20000 });
+  await page.waitForTimeout(400);
 
   /* ---------- 5) 알림 토글·ntfy ---------- */
   await page.locator('#settings-notify .switch').click();
@@ -426,9 +389,9 @@ const run = async () => {
   const afterReload = await read(() => {
     const flat = (t) => String(t ?? '').replace(/\s+/g, ' ').trim();
     return {
-      riskValue: document.querySelector('#settings-profile [data-risk-select]')?.value,
+      riskChipOn: flat(document.querySelector('#settings-profile [data-risk-preset].on')?.textContent),
       riskInput: document.querySelector('#settings-profile [data-risk-input]')?.value,
-      styleCell: flat(document.querySelectorAll('#settings-profile .profile-cell b')[1]?.textContent),
+      levCell: flat(document.querySelectorAll('#settings-profile .profile-cell b')[1]?.textContent),
       targetOn: flat(document.querySelector('#settings-notify .notify-target button.on')?.textContent),
       ntfy: document.querySelector('#settings-notify .td-key-input')?.value,
       dirty: [...document.querySelectorAll('.settings-tab [data-save]')].filter((b) => !b.disabled).length,
@@ -436,8 +399,8 @@ const run = async () => {
     };
   });
   check(
-    '새로고침 후 저장값 유지(리스크 1.5% · 보수적 · 알림 전체 · ntfy 빈 값)',
-    afterReload.riskValue === 'custom' && afterReload.riskInput === '1.5' && /보수적 매매/.test(afterReload.styleCell) && afterReload.targetOn === '전체 종목' && afterReload.ntfy === '',
+    '새로고침 후 저장값 유지(리스크 2.5% · 추천 레버리지 · 알림 전체 · ntfy 빈 값)',
+    afterReload.riskInput === '2.5' && afterReload.levCell === 'COTA 유동 추천' && afterReload.targetOn === '전체 종목' && afterReload.ntfy === '',
     JSON.stringify(afterReload),
   );
   check('저장 직후에는 모든 저장 버튼 다시 비활성', afterReload.dirty === 0, `${afterReload.dirty}개 활성`);

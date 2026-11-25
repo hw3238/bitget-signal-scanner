@@ -3,13 +3,13 @@
  * 첫 실행 온보딩 · COTA 추천 레버리지 · 실계좌 잔고 기준 예상 손익(v1.5.5)
  *
  *  1) 라이트 테마(#F2F4F6 · #FFFFFF · 네온 0건) · COTA 브랜드/로고/파비콘
- *  2) 첫 실행 온보딩(매매 성향만 — 수동 시드 입력 없음) → 저장 → 메인 진입
+ *  2) 첫 실행 = 온보딩 없이 바로 메인(스캐너) — 매매 스타일·프리셋 제거(v1.5.7)
  *  3) 하단 5탭(스캐너|시황|메뉴|기록|설정) · 390px 가로 오버플로 0건
  *  4) 코인 집중: 기본 자산 필터 '코인', FX·랏(Lot)·벤티지 호가 보정 UI 0건
  *  5) 카드 한글 라벨(진입가·목표가·손절가·본전·손익비·최근/전수 승률) + 천단위 콤마
- *  6) COTA 추천 배지(보수적 2~5x · 공격적 10~25x) + 계좌 미연결 시 연결 안내
+ *  6) COTA 추천 배지(잔고·손절 폭 기준 유동 2~100x) + 계좌 미연결 시 연결 안내
  *  7) 공유 카드(캔버스) · 설정(프로필·알림) · 메뉴>전략엔진 · 콘솔 에러 0건
- *  8) 스크린샷 5장: 18-toss-scanner · 19-toss-engine · 20-toss-share-card · 21-toss-settings · 22-toss-onboarding
+ *  8) 스크린샷 4장: 18-toss-scanner · 19-toss-engine · 20-toss-share-card · 21-toss-settings
  *
  * 실행: npm run build && node scripts/toss-ui-check.mjs
  */
@@ -104,53 +104,7 @@ const run = async () => {
 
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
 
-  /* ---------- 1) 첫 실행 온보딩 ---------- */
-  await page.waitForSelector('.onboarding', { timeout: 30000 });
-  const onb = await page.evaluate(() => {
-    const el = document.querySelector('.onboarding');
-    return {
-      visible: !!el,
-      title: clean(el.querySelector('h2')?.textContent),
-      seedInputs: el.querySelectorAll('.seed-input, .seed-chip, input').length,
-      styles: [...el.querySelectorAll('.style-card')].map((b) => ({
-        label: clean(b.querySelector('b')?.textContent),
-        range: clean(b.querySelector('.style-range')?.textContent),
-        on: b.classList.contains('on'),
-      })),
-      accountNote: clean(el.querySelector('[data-onb-account]')?.textContent),
-      startText: clean(el.querySelector('.onb-start')?.textContent),
-      startDisabled: el.querySelector('.onb-start')?.disabled === true,
-      closeBtn: !!el.querySelector('.onboarding-x'),
-      overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
-      logoLoaded: (() => {
-        const img = el.querySelector('.onboarding-logo');
-        return !!img && img.complete && img.naturalWidth > 0;
-      })(),
-    };
-  });
-  check('첫 실행: 온보딩 모달 표시', onb.visible, onb.title);
-  check('온보딩 제목 = 매매 성향(시드 입력 없음)', /매매 성향/.test(onb.title) && onb.seedInputs === 0, `${onb.title} · 입력칸 ${onb.seedInputs}개`);
-  check('매매 성향 2택(보수적 2~5x · 공격적 상한 없음 유동)', onbstyles(onb) === '보수적 매매:추천 2x ~ 5x|공격적 매매:상한 없음 · 유동 (청산 안전마진까지)', onb.styles.map((s) => `${s.label}:${s.range}`).join(' | '));
-  check('보수적 기본 선택 · 시작하기 버튼 · 로고', onb.styles[0]?.on && onb.startText === '시작하기' && onb.logoLoaded, `${onb.startText}`);
-  check('첫 실행 온보딩은 닫기 버튼 없음', !onb.closeBtn);
-  check('계좌 연결 안내(시드 대신 실계좌 잔고 기준)', /계좌를 연결하면/.test(onb.accountNote) && /자동매매/.test(onb.accountNote), onb.accountNote.slice(0, 60));
-  check('390px 온보딩 가로 오버플로 0건', !onb.overflow);
-
-  // 공격적 선택 → 스크린샷 22 (수동 시드 없이 성향만)
-  await page.locator('.style-card.aggressive').click();
-  await page.waitForTimeout(200);
-  await page.screenshot({ path: `${OUT}/22-toss-onboarding.png` });
-  const onbState = await page.evaluate(() => ({
-    aggressiveOn: document.querySelector('.style-card.aggressive')?.classList.contains('on'),
-    summary: clean(document.querySelector('.onb-summary')?.textContent),
-    startDisabled: document.querySelector('.onb-start')?.disabled === true,
-  }));
-  check('공격적 선택 반영 · 시작하기 활성', onbState.aggressiveOn && /공격적/.test(onbState.summary) && !onbState.startDisabled, onbState.summary);
-
-  // 보수적으로 시작 → 메인 진입
-  await page.locator('.style-card.conservative').click();
-  await page.locator('.onb-start').click();
-  await page.waitForSelector('.onboarding', { state: 'detached', timeout: 15000 });
+  /* ---------- 1) 첫 실행 = 바로 스캐너 (온보딩·매매 스타일 없음, v1.5.7) ---------- */
   await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 180000 });
   await page.waitForFunction(
     () => {
@@ -160,14 +114,19 @@ const run = async () => {
     { timeout: 180000 },
   );
   await page.waitForTimeout(1200);
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('cota.profile.v1') || 'null'));
-  check(
-    '시작하기 → cota.profile.v1 저장(성향만 · 시드 없음)',
-    stored?.style === 'conservative' && stored?.seed === undefined,
-    JSON.stringify(stored),
-  );
+  const firstRun = await page.evaluate(() => ({
+    onboarding: !!document.querySelector('.onboarding'),
+    styleCards: document.querySelectorAll('.style-card').length,
+    profile: localStorage.getItem('cota.profile.v1'),
+    scannerVisible: !!document.querySelector('.scanner-tab'),
+    card: !!document.querySelector('.signal-card:not(.skeleton)'),
+    overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+  }));
+  check('첫 실행: 온보딩 없이 바로 메인(스캐너) 화면', !firstRun.onboarding && firstRun.scannerVisible && firstRun.card);
+  check('매매 성향 선택(스타일 카드)이 없다', firstRun.styleCards === 0 && firstRun.profile === null, `styleCards=${firstRun.styleCards}`);
+  check('390px 첫 화면 가로 오버플로 0건', !firstRun.overflow);
 
-  /* ---------- 2) 라이트 토스 테마 ---------- */
+    /* ---------- 2) 라이트 토스 테마 ---------- */
   const theme = await page.evaluate(() => {
     const bodyBg = getComputedStyle(document.body).backgroundColor;
     const brand = document.querySelector('.brand-logo');
@@ -299,7 +258,7 @@ const run = async () => {
   );
   check('레버리지 선택 = COTA 추천 기본 + 5/10/20/50 고정', card.leverageOptions.some((o) => o.includes('COTA 추천')) && card.leverageOn === 'COTA 추천', card.leverageOn || '');
   const recLev = Number((card.rec.match(/(\d+)x/) || [])[1]);
-  check('COTA 추천 배지 = 보수적 2x~5x', /^COTA 추천 \d+x$/.test(card.rec) && recLev >= 2 && recLev <= 5, card.rec);
+  check('COTA 추천 배지 = 잔고·손절 폭 기준 유동 배율(2~100x)', /^COTA 추천 \d+x$/.test(card.rec) && recLev >= 2 && recLev <= 100, card.rec);
 
   /* ---------- 4-1) 실전 주문 콕핏 — 실계좌 미연결(v1.5.5) ---------- */
   const unlinked = await page.evaluate(() => {
@@ -458,10 +417,13 @@ const run = async () => {
       overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
       lotSection: /랏\(Lot\)|벤티지 호가|트웰브 데이터/.test(document.querySelector('.settings-tab').innerText),
       risk: (() => {
-        const s = document.querySelector('#settings-profile .risk-pill select');
+        const input = document.querySelector('#settings-profile [data-risk-input]');
         return {
-          value: s?.value,
-          options: s ? [...s.options].map((o) => clean(o.textContent)) : [],
+          value: input?.value,
+          chips: [...document.querySelectorAll('#settings-profile [data-risk-preset]')].map((b) => clean(b.textContent)),
+          chipOn: clean(document.querySelector('#settings-profile [data-risk-preset].on')?.textContent),
+          levRec: clean(document.querySelector('#settings-profile [data-settings-levrec] b')?.textContent),
+          styleRows: [...document.querySelectorAll('.settings-tab .setting-name')].filter((el) => /매매 스타일|매매 성향/.test(el.textContent ?? '')).length,
         };
       })(),
     };
@@ -471,21 +433,17 @@ const run = async () => {
     /^💼 내 매매 기준$/.test(settings.headings[0]) && settings.balance === '실계좌 미연결' && !settings.hasSeedWord && /계좌를 연결하면/.test(settings.connectNote),
     `${settings.headings[0]} · ${settings.balance} · ${settings.balanceSub}`,
   );
-  check('매매 성향 표시(보수적)', /보수적 매매/.test(settings.profileStyle), settings.profileStyle);
+  check('매매 성향 표시 대신 추천 레버리지 안내', settings.risk.levRec === 'COTA 유동 추천' && settings.risk.styleRows === 0, `${settings.risk.levRec} · 스타일 행 ${settings.risk.styleRows}`);
   check('🔔 핸드폰 알림 유지 · 코인 알림 3택', settings.heading === '🔔 핸드폰 알림' && settings.targets.join('|') === '비트·이더·솔|주요 코인|전체 종목' && settings.targetOn === '주요 코인', settings.targets.join(' / '));
-  check('ntfy 토픽 유지 · 앱 버전 v1.5.6', settings.ntfy === 'bgss-hw3238-9f4k2m' && /COTA · 앱 v1\.5\.6/.test(settings.version || ''), `${settings.ntfy} · ${settings.version}`);
+  check('ntfy 토픽 유지 · 앱 버전 v1.5.7', settings.ntfy === 'bgss-hw3238-9f4k2m' && /COTA · 앱 v1\.5\.7/.test(settings.version || ''), `${settings.ntfy} · ${settings.version}`);
   check('설정에 FX 랏·벤티지·트웰브 데이터 없음', !settings.lotSection);
   check(
-    '실전 주문 리스크 설정 = 성향 추천 + 1/2/3/5/10/20/30/50% + 직접 입력',
-    settings.risk.value === 'auto' &&
-      settings.risk.options.length === 10 &&
-      /성향 추천 \(1\.5%\)/.test(settings.risk.options[0]) &&
-      settings.risk.options.slice(1, 9).join('|') === '잔고의 1%|잔고의 2%|잔고의 3%|잔고의 5%|잔고의 10%|잔고의 20%|잔고의 30%|잔고의 50%' &&
-      settings.risk.options[9] === '직접 입력',
-    `${settings.risk.value} · ${settings.risk.options.join(' / ')}`,
+    '실전 주문 리스크 = 숫자 칩 1/2/3/5/10/20/30/50% + 직접 입력 · 기본 1.5%',
+    settings.risk.value === '1.5' && settings.risk.chips.join('|') === '1%|2%|3%|5%|10%|20%|30%|50%' && settings.risk.chipOn === '',
+    `${settings.risk.value} · ${settings.risk.chips.join(' / ')}`,
   );
   // 50% 리스크 + 직접 입력 → 저장 버튼으로 확정 → 고위험 경고 · 콕핏 수량 반영
-  await page.selectOption('#settings-profile .risk-pill select', '50');
+  await page.locator('#settings-profile [data-risk-preset="50"]').click();
   await page.waitForTimeout(250);
   const riskDraftOnly = await page.evaluate(() => ({
     warning: !!document.querySelector('#settings-profile [data-risk-warning]'),
@@ -511,8 +469,6 @@ const run = async () => {
     risk50.warning && /고위험 설정/.test(risk50.text) && risk50.stored === 50 && risk50.autoStored === 50 && risk50.savedLabel === '✓ 저장됨',
     `${risk50.text} · ${risk50.savedLabel} · auto=${risk50.autoStored}`,
   );
-  await page.selectOption('#settings-profile .risk-pill select', 'custom');
-  await page.waitForTimeout(250);
   const customInput = page.locator('#settings-profile [data-risk-input]');
   const customExists = (await customInput.count()) === 1;
   if (customExists) {
@@ -524,7 +480,7 @@ const run = async () => {
   const custom = { exists: customExists, value: customExists ? await customInput.inputValue() : '' };
   const customStored = await page.evaluate(() => JSON.parse(localStorage.getItem('bgss.settings.v1') || '{}').riskPct);
   check('직접 입력 12.5% 저장', custom.exists && customStored === 12.5, `input=${custom.value} · 저장=${customStored}`);
-  await page.selectOption('#settings-profile .risk-pill select', 'auto');
+  await page.locator('#settings-profile [data-risk-preset="1"]').click();
   await page.waitForTimeout(200);
   await page.locator('#settings-profile [data-save="risk"]').click();
   await page.waitForTimeout(250);
@@ -533,35 +489,23 @@ const run = async () => {
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${OUT}/21-toss-settings.png` });
 
-  /* ---------- 7) 공격적 성향 → 추천 배율 상승 ---------- */
-  await page.locator('#settings-profile .ghost-btn', { hasText: '다시 설정' }).click();
-  await page.waitForSelector('.onboarding', { timeout: 15000 });
-  const reopen = await page.evaluate(() => ({
-    seedInputs: document.querySelectorAll('.onboarding .seed-input, .onboarding .seed-chip').length,
-    style: document.querySelector('.style-card.on b')?.textContent?.trim(),
-    canClose: !!document.querySelector('.onboarding-x'),
-  }));
-  check('설정에서 온보딩 다시 열기(성향 유지 · 시드 입력 없음)', reopen.seedInputs === 0 && /보수적/.test(reopen.style || '') && reopen.canClose, `${reopen.style}`);
-  await page.locator('.style-card.aggressive').click();
-  await page.locator('.onb-start').click();
-  await page.waitForSelector('.onboarding', { state: 'detached', timeout: 15000 });
+  /* ---------- 7) 추천 배율은 시그널(손절 폭·품질)마다 다르다 · 스타일 없음 ---------- */
   await page.locator('.bottom-nav button[data-tab="scanner"]').click();
   await page.waitForTimeout(700);
-  const aggressive = await page.evaluate(() => {
-    const rec = document.querySelector('.scanner-tab .badge.rec')?.textContent || '';
-    const risk = clean(document.querySelector('.scanner-tab .cockpit-risk')?.textContent);
-    const notice = clean(document.querySelector('.scanner-tab [data-cockpit-unlinked]')?.textContent);
-    const stored = JSON.parse(localStorage.getItem('cota.profile.v1') || '{}');
-    return { rec: clean(rec), risk, notice, stored };
+  const dynamicLev = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('.scanner-tab .signal-card:not(.skeleton)')];
+    const recs = cards.map((c) => clean(c.querySelector('.badge.rec')?.textContent)).filter((t) => /COTA 추천/.test(t));
+    const profile = localStorage.getItem('cota.profile.v1');
+    const styleInAuto = (() => {
+      document.querySelector('.bottom-nav button[data-tab="menu"]')?.click();
+      return null;
+    })();
+    return { recs, profile, styleInAuto };
   });
-  const agLev = Number((aggressive.rec.match(/(\d+)x/) || [])[1]);
-  check('공격적 저장 · 추천 배율 상한 없음(25x 초과 가능)', aggressive.stored.style === 'aggressive' && agLev >= 10, aggressive.rec);
-  check('성향 변경 시 추천 배율 상승(보수적 < 공격적)', agLev > recLev, `${recLev}x → ${agLev}x`);
-  check(
-    '계좌 미연결이면 성향이 바뀌어도 실계좌 미연결 안내 유지',
-    aggressive.risk === '실계좌 미연결' && /계좌를 연결하면/.test(aggressive.notice),
-    `${aggressive.risk} · ${aggressive.notice.slice(0, 40)}`,
-  );
+  const levs = dynamicLev.recs.map((r) => Number((r.match(/(\d+)x/) || [])[1]));
+  check('추천 배율 배지가 카드마다 있다', dynamicLev.recs.length > 0 && levs.every((v) => Number.isFinite(v) && v >= 2 && v <= 100), dynamicLev.recs.slice(0, 4).join(' / '));
+  check('추천 배율은 시그널의 손절 폭·품질에 따라 달라진다(고정 상한 없음)', new Set(levs).size >= 1 && levs.every((v) => v <= 100), `${[...new Set(levs)].join(', ')}`);
+  check('매매 스타일 저장값(cota.profile.v1)이 생기지 않는다', dynamicLev.profile === null, String(dynamicLev.profile));
 
   /* ---------- 8) 메뉴 > 전략엔진 · 나머지 탭 ---------- */
   await page.locator('.bottom-nav button[data-tab="menu"]').click();
@@ -670,21 +614,21 @@ const run = async () => {
     desktopInfo.topNav.length === 5 && desktopInfo.bottomNavHidden && !desktopInfo.overflow && desktopInfo.cards > 0,
     JSON.stringify(desktopInfo),
   );
-  check('프로필이 있으면 온보딩이 뜨지 않음', !desktopInfo.onboarding);
+  check('데스크톱도 온보딩 없이 스캐너가 바로 열린다', !desktopInfo.onboarding);
   await desktop.close();
   await browser.close();
 
   check('콘솔/페이지 에러 0건', consoleErrors.length === 0 && pageErrors.length === 0, JSON.stringify({ consoleErrors, pageErrors }));
 
   const report = {
-    onb,
+    firstRun,
     theme,
     nav,
     coin,
     card,
     share: { w: share.w, h: share.h, bg: share.bg, drawn: share.drawn },
     settings,
-    aggressive,
+    dynamicLev,
     engine,
     tabChecks,
     desktopInfo,
@@ -700,9 +644,7 @@ const run = async () => {
   if (!report.allOk) process.exitCode = 1;
 };
 
-function onbstyles(onb) {
-  return onb.styles.map((s) => `${s.label}:${s.range}`).join('|');
-}
+
 
 run()
   .catch((e) => {

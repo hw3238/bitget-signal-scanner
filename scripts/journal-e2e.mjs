@@ -118,7 +118,6 @@ const run = async () => {
       timezoneId: 'Asia/Seoul',
     });
     await context.addInitScript((data) => {
-      localStorage.setItem('cota.profile.v1', JSON.stringify({ style: 'conservative', updatedAt: Date.now() }));
       // v1.5.5 — 손익 기준은 연결된 계좌 잔고다. 네이티브 브리지를 흉내내 잔고 $5,000 을 준다.
       window.androidBridge = { postMessage: () => {} };
       const methods = ['bitgetHasKeys', 'bitgetTestConnection', 'autoTradeStatus', 'autoTradeStop', 'appInfo']
@@ -229,11 +228,11 @@ const run = async () => {
   );
   check('전체: 목표 달성률 40.0%', A0.stats[1]?.value === '40.0%', A0.stats[1]?.value);
   check(
-    '전체: 실현 3x 수익률 = Σ(R×손절폭)×3 = +30.00%',
-    A0.stats[2]?.value === '+30.00%' && /평균 0\.40R/.test(A0.stats[2]?.sub ?? ''),
+    '전체: 실현 10x 수익률 = Σ(R×손절폭)×10 = +100.00% (대표 배율 10x)',
+    A0.stats[2]?.value === '+100.00%' && /평균 0\.40R/.test(A0.stats[2]?.sub ?? ''),
     `${A0.stats[2]?.label} ${A0.stats[2]?.value} · ${A0.stats[2]?.sub}`,
   );
-  check('전체: 진행중 평가 = 0.4R×5%×3 = +6.00%', A0.stats[3]?.value === '+6.00%', A0.stats[3]?.value);
+  check('전체: 진행중 평가 = 0.4R×5%×10 = +20.00%', A0.stats[3]?.value === '+20.00%', A0.stats[3]?.value);
 
   check('수익곡선 SVG 렌더', A0.svg && A0.pathD > 40 && A0.clipGroups === 2, `path ${A0.pathD}자 · clip ${A0.clipGroups}`);
   check('이익 구간 = 토스 블루(#3182F6)', A0.aboveStroke === 'rgb(49, 130, 246)', A0.aboveStroke);

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 네이티브 순수 계산(반익절·수량 단위·본절 보호) 단위 검증 — v1.5.6
+# 네이티브 순수 계산(진입 구간·반익절·수량 단위·본절 보호) 단위 검증 — v1.5.7
 #   Android SDK 없이 JDK 만으로 컴파일·실행한다(javac/java).
 #   실행: npm run check:native
 set -euo pipefail
@@ -25,8 +25,11 @@ mkdir -p "$OUT"
 
 "$JAVA_BIN/javac" -encoding UTF-8 -d "$OUT" \
   "$SRC/QtyStep.java" \
+  "$SRC/EntryZoneRule.java" \
   "$SRC/PartialTpRule.java" \
   "$SRC/EarlyStopRule.java" \
-  "$ROOT/scripts/native/PartialTpRuleTest.java"
+  "$ROOT/scripts/native/PartialTpRuleTest.java" \
+  "$ROOT/scripts/native/EntryZoneRuleTest.java"
 
 "$JAVA_BIN/java" -Dfile.encoding=UTF-8 -cp "$OUT" com.hw3238.bitgetscanner.PartialTpRuleTest
+"$JAVA_BIN/java" -Dfile.encoding=UTF-8 -cp "$OUT" com.hw3238.bitgetscanner.EntryZoneRuleTest

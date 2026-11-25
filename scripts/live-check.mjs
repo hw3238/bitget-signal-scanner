@@ -41,18 +41,16 @@ page.on('pageerror', (e) => errors.push(`pageerror: ${e}`));
 const res = await page.goto(URL, { waitUntil: 'domcontentloaded' });
 check(res?.status() === 200, '라이브 페이지 응답', `HTTP ${res?.status()}`);
 
-await page.waitForSelector('.onboarding', { timeout: 30000 });
-const onb = await page.evaluate(() => ({
-  seedInputs: document.querySelectorAll('.seed-input, .seed-chip').length,
-  styles: [...document.querySelectorAll('.style-card b')].map((b) => clean(b.textContent)),
-  title: clean(document.querySelector('.onboarding h2')?.textContent),
+// v1.5.7 — 온보딩(매매 성향)이 없어져 첫 화면이 바로 스캐너여야 한다.
+await page.waitForSelector('.signal-card, .scanner-tab', { timeout: 60000 });
+const firstRun = await page.evaluate(() => ({
+  onboarding: !!document.querySelector('.onboarding'),
+  styleCards: document.querySelectorAll('.style-card').length,
+  scanner: !!document.querySelector('.scanner-tab'),
+  profile: localStorage.getItem('cota.profile.v1'),
 }));
-check(onb.seedInputs === 0, '라이브 온보딩에 수동 시드 입력 없음(v1.5.5)', String(onb.seedInputs));
-check(onb.styles.join('|') === '보수적 매매|공격적 매매', '라이브 온보딩 매매 성향 2택', onb.styles.join(' / '));
-
-// 보수적 성향으로 시작 (v1.5.5 — 시드 입력 없음)
-await page.locator('.onb-start').click();
-await page.waitForSelector('.onboarding', { state: 'detached', timeout: 15000 });
+check(!firstRun.onboarding && firstRun.scanner, '라이브 첫 화면 = 온보딩 없이 바로 스캐너', JSON.stringify(firstRun));
+check(firstRun.styleCards === 0 && firstRun.profile === null, '라이브에 매매 성향 선택·저장값 없음', `styleCards=${firstRun.styleCards}`);
 await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 180000 });
 await page.waitForFunction(
   () => {
@@ -149,22 +147,24 @@ check(
   `${settings.seed} · ${settings.headings[0]}`,
 );
 check(settings.target === '주요 코인' && settings.ntfy === 'bgss-hw3238-9f4k2m', '라이브 알림 기본값', `${settings.target} · ${settings.ntfy}`);
-check(/앱 v1\.5\.6/.test(settings.version || ''), '라이브 앱 버전 v1.5.6', settings.version);
+check(/앱 v1\.5\.7/.test(settings.version || ''), '라이브 앱 버전 v1.5.7', settings.version);
 
-// v1.5.6 — 설정 항목별 저장 버튼 · 매매 스타일 선택
+// v1.5.7 — 설정 항목별 저장 버튼 · 매매 스타일 제거
 const saveUi = await page.evaluate(() => ({
   names: [...document.querySelectorAll('.settings-tab [data-save]')].map((b) => b.getAttribute('data-save')),
   disabled: [...document.querySelectorAll('.settings-tab [data-save]')].every((b) => b.disabled),
-  stylePicks: [...document.querySelectorAll('[data-style-pick]')].map((b) => b.getAttribute('data-style-pick')),
-  presetNote: clean(document.querySelector('[data-style-preset-note]')?.textContent),
+  stylePicks: [...document.querySelectorAll('[data-style-pick]')].length,
+  presetNote: [...document.querySelectorAll('[data-style-preset-note]')].length,
+  riskChips: [...document.querySelectorAll('#settings-profile [data-risk-preset]')].map((b) => clean(b.textContent)),
+  levRec: clean(document.querySelector('#settings-profile [data-settings-levrec] b')?.textContent),
 }));
 check(
-  saveUi.names.length === 10 && saveUi.disabled,
-  '라이브 설정 항목별 저장 버튼 10개(초기 비활성)',
+  saveUi.names.length === 9 && saveUi.disabled,
+  '라이브 설정 항목별 저장 버튼 9개(초기 비활성)',
   saveUi.names.join(','),
 );
-check(saveUi.stylePicks.join('|') === 'conservative|aggressive', '라이브 설정 매매 스타일 2택', saveUi.stylePicks.join('|'));
-check(/리스크 1\.5%/.test(saveUi.presetNote), '라이브 설정 스타일 프리셋 요약', saveUi.presetNote);
+check(saveUi.stylePicks === 0 && saveUi.presetNote === 0, '라이브 설정에 매매 스타일·프리셋 없음', `style=${saveUi.stylePicks} preset=${saveUi.presetNote}`);
+check(saveUi.levRec === 'COTA 유동 추천' && saveUi.riskChips.join('|') === '1%|2%|3%|5%|10%|20%|30%|50%', '라이브 설정 = 추천 레버리지 안내 · 리스크 숫자 칩', `${saveUi.levRec} · ${saveUi.riskChips.join(',')}`);
 await page.evaluate(() => window.scrollTo(0, 0));
 await page.waitForTimeout(300);
 await page.screenshot({ path: `${OUT}/92-live-settings-save.png` });
@@ -261,23 +261,29 @@ await page.screenshot({ path: `${OUT}/87-live-surge-explorer.png` });
 await page.locator('.menu-back').click();
 await page.waitForTimeout(300);
 
-// 💾 자동매매 ② 저장 버튼 · 프리셋 적용/해제 (v1.5.6 웹)
+// 💾 자동매매 ② 저장 버튼 (v1.5.7 — 프리셋 없음)
 await page.waitForSelector('.menu-auto[data-menu="auto"]', { timeout: 30000 });
 await page.locator('.menu-auto[data-menu="auto"]').click();
 await page.waitForSelector('[data-auto-root]', { timeout: 30000 });
 await page.waitForTimeout(900);
 await page.locator('[data-auto-guards]').scrollIntoViewIfNeeded();
 const autoSaveUi = await page.evaluate(() => ({
+  styleCard: !!document.querySelector('[data-auto-style]'),
   apply: !!document.querySelector('[data-style-apply]'),
-  release: !!document.querySelector('[data-style-release]'),
   saveDisabled: document.querySelector('[data-auto-config-save]')?.disabled !== false,
   state: clean(document.querySelector('[data-auto-guard-state]')?.textContent),
-  link: clean(document.querySelector('[data-style-linked]')?.textContent),
+  levCap: clean(document.querySelector('[data-lev-cap-label]')?.textContent),
+  stored: JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}'),
 }));
 check(
-  autoSaveUi.apply && autoSaveUi.release && autoSaveUi.saveDisabled && autoSaveUi.state === '프리셋 연동됨' && autoSaveUi.link === '프리셋 연동됨',
-  '라이브 자동매매: 적용/해제 버튼 · 저장 버튼 초기 비활성',
-  `${autoSaveUi.link} · 저장 비활성=${autoSaveUi.saveDisabled}`,
+  !autoSaveUi.styleCard && !autoSaveUi.apply && autoSaveUi.saveDisabled && autoSaveUi.state === '저장됨',
+  '라이브 자동매매: 매매 스타일 카드 없음 · 저장 버튼 초기 비활성',
+  `카드=${autoSaveUi.styleCard} · ${autoSaveUi.state}`,
+);
+check(
+  autoSaveUi.stored.minWinRate === 45 || autoSaveUi.stored.minWinRate != null,
+  '라이브 자동매매 설정: 최소 승률 값 존재',
+  `${autoSaveUi.stored.minWinRate}% · ${autoSaveUi.stored.minRR}R · ${autoSaveUi.stored.entryTtlMin}분 · ${autoSaveUi.levCap}`,
 );
 await page.locator('[data-daily-preset="7"]').click();
 await page.waitForTimeout(350);
@@ -303,31 +309,25 @@ check(
   '라이브 자동매매: 저장 → ✓ 저장됨 · 7% 반영',
   `${liveSaved.state} · ${liveSaved.stored}%`,
 );
-check(liveSaved.link === '프리셋 해제됨 · 직접 설정', '라이브 자동매매: 프리셋과 다른 값 저장 → 직접 설정', liveSaved.link);
+check(liveSaved.stored === 7, '라이브 자동매매: 저장 → 7% 반영(덮어쓰는 프리셋 없음)', `${liveSaved.stored}%`);
 await page.screenshot({ path: `${OUT}/97-live-autotrade-save.png` });
-await page.locator('[data-style-apply]').click();
-await page.waitForTimeout(600);
-const liveApplied = await page.evaluate(() => ({
-  stored: JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}'),
-  link: clean(document.querySelector('[data-style-linked]')?.textContent),
-}));
-check(
-  liveApplied.stored.dailyLossPct === 4.5 && liveApplied.stored.stylePresetActive === true && liveApplied.link === '프리셋 연동됨',
-  '라이브 자동매매: 적용 → 프리셋 값 복원·연동',
-  `${liveApplied.stored.dailyLossPct}% · ${liveApplied.link}`,
-);
-await page.locator('[data-style-release]').click();
+await page.reload({ waitUntil: 'domcontentloaded' });
+await page.waitForSelector('.bottom-nav button[data-tab="menu"]', { timeout: 60000 });
+await page.locator('.bottom-nav button[data-tab="menu"]').click();
 await page.waitForTimeout(500);
-const liveReleased = await page.evaluate(() => ({
-  stored: JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}'),
-  link: clean(document.querySelector('[data-style-linked]')?.textContent),
-}));
-check(
-  liveReleased.stored.stylePresetActive === false && liveReleased.stored.dailyLossPct === 4.5 && liveReleased.link === '프리셋 해제됨 · 직접 설정',
-  '라이브 자동매매: 해제 → 값 유지·직접 설정',
-  `${liveReleased.link} · ${liveReleased.stored.dailyLossPct}%`,
-);
-await page.screenshot({ path: `${OUT}/98-live-autotrade-release.png` });
+await page.waitForSelector('.menu-auto[data-menu="auto"]', { timeout: 30000 });
+await page.locator('.menu-auto[data-menu="auto"]').click();
+await page.waitForSelector('[data-auto-root]', { timeout: 30000 });
+await page.waitForTimeout(1000);
+const liveKept = await page.evaluate(() => JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}').dailyLossPct);
+check(liveKept === 7, '라이브 자동매매: 새로고침 뒤에도 저장값 유지(7%)', `${liveKept}%`);
+// 원래 기본값(4.5%)으로 되돌려 둔다 — 실사용 설정을 바꿔 두지 않는다.
+await page.locator('[data-daily-preset="4.5"]').click();
+await page.waitForTimeout(300);
+await page.locator('[data-auto-config-save]').click();
+await page.waitForTimeout(600);
+const liveRestored = await page.evaluate(() => JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}').dailyLossPct);
+check(liveRestored === 4.5, '라이브 자동매매: 기본 4.5% 로 복원', `${liveRestored}%`);
 
 check(errors.length === 0, '라이브 콘솔·페이지 에러 0건', errors.slice(0, 3).join(' | '));
 

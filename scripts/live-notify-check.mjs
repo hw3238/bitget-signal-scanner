@@ -8,6 +8,7 @@
  * 실행: LD_LIBRARY_PATH=... node scripts/live-notify-check.mjs
  */
 import { chromium } from 'playwright';
+import { readFileSync } from 'node:fs';
 import './lib/chromium-env.mjs';
 
 const URL = 'https://hw3238.github.io/bitget-signal-scanner/';
@@ -87,8 +88,9 @@ check(
   info.targets?.join(' / '),
 );
 check(info.ntfy === 'bgss-hw3238-9f4k2m', 'ntfy 기본 전용 토픽', info.ntfy);
-check(/앱 v1\.5\.6/.test(info.version || ''), '앱 버전 표기 v1.5.6', info.version);
-check((info.update ?? '').includes('최신 버전입니다 (v1.5.6)'), '업데이트 확인 = 최신 v1.5.6', info.update);
+const APP_VERSION = (readFileSync('src/lib/update.ts', 'utf8').match(/APP_VERSION = '([^']+)'/) || [])[1] || '';
+check(new RegExp(`앱 v${APP_VERSION.replace(/\./g, '\\.')}`).test(info.version || ''), `앱 버전 표기 v${APP_VERSION}`, info.version);
+check((info.update ?? '').includes(`최신 버전입니다 (v${APP_VERSION})`), `업데이트 확인 = 최신 v${APP_VERSION}`, info.update);
 
 await page.evaluate(() => {
   const panel = document.querySelector('#settings-notify');

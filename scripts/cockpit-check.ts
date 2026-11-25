@@ -9,8 +9,8 @@ import {
   clampRiskInput,
   isHighRisk,
   copyPriceText,
+  DEFAULT_RISK_PCT,
   copyQtyText,
-  defaultRiskPct,
   fmtUsd,
   formatQty,
   planOrder,
@@ -32,17 +32,16 @@ function check(name: string, ok: boolean, detail = '') {
   }
 }
 
-/* 1) 리스크 기본값 */
-check('보수적 기본 리스크 1.5%', defaultRiskPct('conservative') === 1.5);
-check('공격적 기본 리스크 3%', defaultRiskPct('aggressive') === 3);
-check('설정값이 있으면 그 값을 쓴다', resolveRiskPct('conservative', 2) === 2);
-check('설정값 null → 성향 기본값', resolveRiskPct('aggressive', null) === 3);
-check('리스크 상한 50%로 확장', resolveRiskPct('aggressive', 50) === RISK_MAX && RISK_MAX === 50);
-check('리스크 하한 0.5%', resolveRiskPct('conservative', 0.1) === RISK_MIN && RISK_MIN === 0.5);
+/* 1) 리스크 기본값 — 매매 스타일이 없어져 기본값 하나만 쓴다(v1.5.7) */
+check('기본 리스크 1.5%', DEFAULT_RISK_PCT === 1.5);
+check('설정값이 있으면 그 값을 쓴다', resolveRiskPct(2) === 2);
+check('설정값 null → 기본 1.5%', resolveRiskPct(null) === 1.5);
+check('리스크 상한 50%', resolveRiskPct(50) === RISK_MAX && RISK_MAX === 50);
+check('리스크 하한 0.5%', resolveRiskPct(0.1) === RISK_MIN && RISK_MIN === 0.5);
 check('프리셋에 10/20/30/50% 포함', RISK_PRESETS.includes(10) && RISK_PRESETS.includes(20) && RISK_PRESETS.includes(30) && RISK_PRESETS.includes(50));
 check('직접 입력 0.5~50% 클램프', clampRiskInput(70) === 50 && clampRiskInput(0.2) === 0.5 && clampRiskInput(12.34) === 12.3);
 check('10% 이상 고위험 표시', isHighRisk(10) && isHighRisk(50) && !isHighRisk(9.9));
-check('0·음수 설정은 기본값으로', resolveRiskPct('conservative', 0) === 1.5 && resolveRiskPct('conservative', -3) === 1.5);
+check('0·음수 설정은 기본값으로', resolveRiskPct(0) === 1.5 && resolveRiskPct(-3) === 1.5);
 
 /* 2) 롱 주문 계획 */
 const long = planOrder({ seed: 1000, riskPct: 2, leverage: 10, side: 'long', entry: 100, stop: 95, target: 115 });

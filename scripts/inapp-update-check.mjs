@@ -9,6 +9,7 @@
  * 실행: node scripts/inapp-update-check.mjs
  */
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import './lib/chromium-env.mjs';
 
@@ -204,12 +205,13 @@ async function scenario(allowInstall) {
     await page.locator('.bottom-nav button', { hasText: '설정' }).first().click();
   });
   await page.waitForTimeout(900);
-  const settings = await page.evaluate(() => ({
-    version: /COTA · 앱 v1\.5\.6/.test(document.body.innerText),
+  const expected = (readFileSync('src/lib/update.ts', 'utf8').match(/APP_VERSION = '([^']+)'/) || [])[1] || '';
+  const settings = await page.evaluate((ver) => ({
+    version: new RegExp(`COTA · 앱 v${ver.replace(/\./g, '\\.')}`).test(document.body.innerText),
     updateBtn: [...document.querySelectorAll('button')].some((b) => /바로 업데이트 \(v1\.9\.0\)/.test(b.textContent ?? '')),
     hardReload: [...document.querySelectorAll('button')].some((b) => /웹 화면 즉시 새로고침/.test(b.textContent ?? '')),
-  }));
-  check(settings.version, '설정 탭 현재 버전 v1.5.6');
+  }), expected);
+  check(settings.version, `설정 탭 현재 버전 v${expected}`);
   check(settings.updateBtn, '설정 탭 인앱 업데이트 버튼');
   check(settings.hardReload, '설정 탭 웹 화면 즉시 새로고침 버튼');
   check(errors.length === 0, '설정 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));

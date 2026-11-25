@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-11-25T11:20:55.777Z",
- "count": 197,
+ "generatedAt": "2026-11-25T12:22:53.766Z",
+ "count": 198,
  "sources": {
-  "okx": 0,
+  "okx": 1,
   "binance": 0,
   "coincap": 0
  },
@@ -173,6 +173,7 @@
   "SPACE": "SPACE.png",
   "SPK": "SPK.png",
   "SPX": "SPX.png",
+  "SSV": "SSV.png",
   "STRK": "STRK.png",
   "STX": "STX.png",
   "SUI": "SUI.png",

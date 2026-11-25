@@ -574,8 +574,8 @@ const storedConfig = (page) => page.evaluate(() => JSON.parse(localStorage.getIt
   check(started[0]?.riskPct === 50 && started[0]?.maxPositions === 2, 'start 설정: 리스크 50% · 최대 2포지션');
   // 수량 = 1,234.56 × 50% ÷ 3,050 = 0.2024 → 가용 $1,000.50·5x 증거금 캡(0.0779)으로 0.077
   check(
-    typeof started[0]?.planQty === 'number' && Math.abs(started[0].planQty - 0.077) < 0.002,
-    '50% 리스크 수량 = 계좌×50%÷손절거리, 가용 95%·5x 캡 적용 → 0.077 BTC (감시 목록에 전달)',
+    typeof started[0]?.planQty === 'number' && Math.abs(started[0].planQty - 0.155) < 0.003,
+    '50% 리스크 수량 = 계좌×50%÷손절거리, 가용 95%·10x 캡 적용 → 0.155 BTC (감시 목록에 전달)',
     `planQty=${started[0]?.planQty}`,
   );
   check(
@@ -589,7 +589,7 @@ const storedConfig = (page) => page.evaluate(() => JSON.parse(localStorage.getIt
   // v1.5.4 — 조기 손절 보호 토글 (기본 ON) · 반대 시그널 전달
   check(started[0]?.earlyStop === true, '자동매매 시작 설정에 조기 손절 ON 포함', String(started[0]?.earlyStop));
   check(started[0]?.partialTp === true, '자동매매 시작 설정에 50% 반익절 ON 포함', String(started[0]?.partialTp));
-  check(started[0]?.maxLeverage === 5, '자동매매 시작 설정에 레버리지 상한 포함(보수적 5x)', `${started[0]?.maxLeverage}x`);
+  check(started[0]?.maxLeverage === 0, '자동매매 시작 설정에 레버리지 상한 없음(0 = 유동)', `${started[0]?.maxLeverage}x`);
   check(
     started[0]?.exitSignals === 1,
     '감시 시작 시 진행 중 시그널을 네이티브로 전달(반대 시그널 판단용)',
@@ -1199,7 +1199,7 @@ const readSymbolUi = (page) =>
 }
 
 /* ================================================================== *
- * 10) v1.5.6 — 매매 스타일 프리셋 연동 · 50% 반익절 · 유동 레버리지
+ * 10) v1.5.7 — 매매 스타일·프리셋 제거 · 50% 반익절 · 유동 레버리지
  * ================================================================== */
 {
   const { ctx, page, errors } = await open();
@@ -1208,47 +1208,45 @@ const readSymbolUi = (page) =>
   await page.locator('[data-menu="auto"]').click();
   await page.waitForTimeout(600);
 
-  // 보수적 프로필 vs 기본 설정(10x·55%) — 프리셋과 다르다
-  const styleCard = await text(page, '[data-auto-style]');
-  check(/매매 스타일/.test(styleCard), '자동매매 화면에 매매 스타일 연동 카드', styleCard.slice(0, 60));
-  check((await text(page, '[data-style-linked]')) === '프리셋 연동됨', '보수적 성향은 자동매매 프리셋과 연동됨', await text(page, '[data-style-linked]'));
+  // 매매 스타일 카드·적용/해제 버튼·성향 선택이 화면에서 완전히 사라졌다
+  check((await page.locator('[data-auto-style]').count()) === 0, '자동매매 화면에 매매 스타일 카드 없음');
+  check((await page.locator('[data-style-apply]').count()) === 0 && (await page.locator('[data-style-release]').count()) === 0, '프리셋 적용/해제 버튼 없음');
+  check((await page.locator('[data-style-linked]').count()) === 0, '프리셋 연동 배지 없음');
+  const guardsText = await text(page, '[data-auto-guards]');
+  check(!/프리셋/.test(guardsText) && !/매매 스타일/.test(guardsText), '② 리스크·안전장치에 프리셋·매매 스타일 문구 없음', guardsText.slice(0, 120));
+  check(/최소 승률/.test(guardsText) && /시그널 유효시간/.test(guardsText), '② 저장 버튼 구조 유지(최소 승률·유효시간 항목)');
+  check((await page.locator('[data-auto-config-save]').count()) === 1, '② 저장 버튼 유지', 'data-auto-config-save');
+
+  // 새 기본값이 화면·저장값에 반영된다 (승률 45% · 1.2R · 유효 240분 · 상한 유동)
+  const defaults = await storedConfig(page);
   check(
-    /1회 리스크/.test(styleCard) && /5x/.test(styleCard) && /50% 반익절/.test(styleCard),
-    '프리셋 값 표시(리스크·레버리지·반익절)',
-    styleCard.slice(0, 160),
+    defaults.minWinRate === 45 && defaults.minRR === 1.2 && defaults.entryTtlMin === 240 && defaults.maxLeverage === 0,
+    '기본값: 승률 45% · 1.2R · 유효 240분 · 레버리지 상한 없음',
+    JSON.stringify({ w: defaults.minWinRate, rr: defaults.minRR, ttl: defaults.entryTtlMin, lev: defaults.maxLeverage }),
   );
-  // 초안 변경 → 저장 전에는 프리셋 카드에 '저장 대기'로만 보인다
+  check(/현재 상한 없음 · 유동/.test(await text(page, '[data-lev-cap-label]')), '레버리지 상한 = 상한 없음 · 유동', await text(page, '[data-lev-cap-label]'));
+
+  // 초안 변경 → 저장 전에는 설정이 바뀌지 않는다
   await page.locator('[data-lev-cap="10"]').click();
   await page.waitForTimeout(400);
-  check((await text(page, '[data-style-linked]')) === '프리셋 연동됨', '저장 전: 프리셋 카드는 저장된 값 그대로', await text(page, '[data-style-linked]'));
-  check(/저장 대기 중인 변경/.test(await text(page, '[data-style-pending]')), '초안 변경은 저장 대기로 표시', await text(page, '[data-style-pending]'));
-  check((await storedConfig(page)).maxLeverage === 5, '저장 전에는 설정도 바뀌지 않는다(5x)', String((await storedConfig(page)).maxLeverage));
-
-  // 저장 → 프리셋과 다른 항목 강조 + 연동 해제(직접 설정)
+  check((await text(page, '[data-auto-guard-state]')) === '저장 안 됨', '초안 변경 = 저장 안 됨 배지', await text(page, '[data-auto-guard-state]'));
+  check((await storedConfig(page)).maxLeverage === 0, '저장 전에는 설정도 바뀌지 않는다(유동)', String((await storedConfig(page)).maxLeverage));
   await saveGuards(page);
-  check((await text(page, '[data-style-linked]')) === '프리셋 해제됨 · 직접 설정', '프리셋과 달라진 값을 저장하면 연동 해제', await text(page, '[data-style-linked]'));
-  check(/레버리지 상한/.test(await text(page, '[data-style-diff]')), '프리셋과 다른 항목을 알려준다', await text(page, '[data-style-diff]'));
-  check(
-    (await page.locator('[data-style-row="maxLeverage"]').getAttribute('data-style-row-diff')) === '1',
-    '비교 표: 다른 항목(레버리지 상한) 강조',
-  );
-  await page.locator('[data-auto-style]').screenshot({ path: `${OUT}/93-auto-style-compare.png` }).catch(() => {});
+  check((await storedConfig(page)).maxLeverage === 10, '저장 → 레버리지 상한 10x', String((await storedConfig(page)).maxLeverage));
 
-  // 적용 → 프리셋 값으로 복원 + 연동
-  await page.locator('[data-style-apply]').click();
-  await page.waitForTimeout(500);
-  const afterPreset = await storedConfig(page);
-  check(
-    afterPreset.riskPct === 1.5 && afterPreset.maxLeverage === 5 && afterPreset.minWinRate === 52 && afterPreset.partialTp === true,
-    '적용 → 보수적 프리셋 값으로 복원',
-    JSON.stringify(afterPreset),
-  );
-  check((await text(page, '[data-style-linked]')) === '프리셋 연동됨', '적용 후 프리셋 연동됨 표시');
-  check(/✓ 프리셋 적용됨/.test(await text(page, '.auto-toast')), '적용 피드백 토스트', await text(page, '.auto-toast'));
-  await page.locator('[data-auto-style]').screenshot({ path: `${OUT}/77-auto-style-preset.png` }).catch(() => {});
+  // 다시 유동으로 되돌려 저장 (자동매매 기본 = 유동)
+  await page.locator('[data-lev-cap="0"]').click();
+  await page.waitForTimeout(300);
+  await saveGuards(page);
+  const levCfg = await storedConfig(page);
+  check(levCfg.maxLeverage === 0, '유동 선택 → maxLeverage 0 저장', String(levCfg.maxLeverage));
+  check(/상한 없음 · 유동/.test(await text(page, '[data-lev-cap-label]')), '유동이면 상한 없음 표시', await text(page, '[data-lev-cap-label]'));
+  await page.locator('[data-lev-cap-label]').scrollIntoViewIfNeeded();
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: `${OUT}/79-auto-unlimited-leverage.png` });
 
   // 50% 반익절 토글
-  check(await page.locator('[data-auto-partialtp="on"].on').count() === 1, '50% 반익절 기본 ON');
+  check((await page.locator('[data-auto-partialtp="on"].on').count()) === 1, '50% 반익절 기본 ON');
   check(/목표가 50% 또는 \+1\.0R/.test(await text(page, '[data-auto-guards]')), '반익절 규칙(50% · +1.0R) 안내');
   await page.locator('[data-auto-partialtp="off"]').click();
   await page.waitForTimeout(300);
@@ -1260,22 +1258,9 @@ const readSymbolUi = (page) =>
   await page.locator('[data-auto-partialtp="on"]').click();
   await page.waitForTimeout(250);
   await saveGuards(page);
-  // 화면(뷰포트) 캡처 — 고정 헤더·하단 탭이 카드 위에 겹치지 않게 스크롤해서 찍는다.
   await page.locator('[data-auto-partialtp="on"]').scrollIntoViewIfNeeded();
   await page.waitForTimeout(250);
   await page.screenshot({ path: `${OUT}/78-auto-partial-tp.png` });
-
-  // 레버리지 상한 — 유동(0 = 상한 없음)
-  check(/현재 5x/.test(await text(page, '[data-lev-cap-label]')), '레버리지 상한 표시(5x)', await text(page, '[data-lev-cap-label]'));
-  await page.locator('[data-lev-cap="0"]').click();
-  await page.waitForTimeout(350);
-  await saveGuards(page);
-  const levCfg = await page.evaluate(() => JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}'));
-  check(levCfg.maxLeverage === 0, '유동 선택 → maxLeverage 0 저장', String(levCfg.maxLeverage));
-  check(/상한 없음 · 유동/.test(await text(page, '[data-lev-cap-label]')), '유동이면 상한 없음 표시', await text(page, '[data-lev-cap-label]'));
-  await page.locator('[data-lev-cap-label]').scrollIntoViewIfNeeded();
-  await page.waitForTimeout(250);
-  await page.screenshot({ path: `${OUT}/79-auto-unlimited-leverage.png` });
 
   // 포지션 카드의 반익절 진행 상태 — 키를 연결해야 포지션 조회가 열린다
   await page.locator('[data-auto-input="key"]').fill('bg_live_key_1234562c7d');
@@ -1312,43 +1297,59 @@ const readSymbolUi = (page) =>
   check(/반익절 50% 완료/.test(await text(page, '[data-pos-partial="BTCUSDT"]')), '포지션 카드: 반익절 완료 표시', await text(page, '[data-pos-partial="BTCUSDT"]'));
   await page.locator('[data-auto-positions]').screenshot({ path: `${OUT}/80-auto-partial-position.png` }).catch(() => {});
 
-  check(errors.length === 0, 'v1.5.6 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
+  check(errors.length === 0, 'v1.5.7 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
   await ctx.close();
 }
 
 /* ================================================================== *
- * 11) v1.5.6 업그레이드 — 손대지 않은 기본 설정은 성향 프리셋으로 1회 정렬
+ * 11) v1.5.7 업그레이드 — 예전 기본값(승률 55·1.5R·120분·10x)만 1회 완화
  * ================================================================== */
 {
-  const { ctx, page, errors } = await open({ profileStyle: 'aggressive' });
-  await page.waitForTimeout(400);
+  const { ctx, page, errors } = await open({
+    seedConfig: { enabled: false, mode: 'demo', autoEntry: true, minWinRate: 55, minRR: 1.5, entryTtlMin: 120, maxLeverage: 10 },
+  });
+  await page.waitForTimeout(500);
   const upgraded = await page.evaluate(() => ({
     config: JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}'),
-    migrated: localStorage.getItem('cota.autotrade.migrated.stylePreset.v1'),
+    migrated: localStorage.getItem('cota.autotrade.migrated.entryGate.v157'),
   }));
   check(
-    upgraded.config.maxLeverage === 0 && upgraded.config.riskPct === 4 && upgraded.config.maxPositions === 4,
-    '업그레이드: 공격적 성향 + 기본 설정 → 상한 없음 프리셋 자동 적용',
-    JSON.stringify(upgraded.config),
+    upgraded.config.minWinRate === 45 && upgraded.config.minRR === 1.2 && upgraded.config.entryTtlMin === 240 && upgraded.config.maxLeverage === 0,
+    '업그레이드: 예전 기본값 → 승률 45% · 1.2R · 240분 · 유동',
+    JSON.stringify({ w: upgraded.config.minWinRate, rr: upgraded.config.minRR, ttl: upgraded.config.entryTtlMin, lev: upgraded.config.maxLeverage }),
   );
   check(upgraded.migrated === '1', '업그레이드: 1회 마이그레이션 표시 저장', String(upgraded.migrated));
+  check(!('stylePresetActive' in upgraded.config), '업그레이드: stylePresetActive 필드는 버린다', JSON.stringify(upgraded.config).slice(0, 80));
 
-  await page.evaluate(() => document.querySelector('[data-tab="menu"]')?.click());
-  await page.waitForTimeout(300);
-  await page.locator('[data-menu="auto"]').click();
-  await page.waitForTimeout(600);
-  check((await text(page, '[data-style-linked]')) === '프리셋 연동됨', '업그레이드 후 자동매매 화면 = 프리셋 연동됨');
-  const styleText = await text(page, '[data-auto-style]');
-  check(/공격적 매매/.test(styleText) && /상한 없음 · 유동/.test(styleText), '공격적 프리셋 값 표시(상한 없음 · 유동)', styleText.slice(0, 140));
-  check(/현재 상한 없음 · 유동/.test(await text(page, '[data-lev-cap-label]')), '레버리지 상한 = 상한 없음 · 유동', await text(page, '[data-lev-cap-label]'));
-  await page.screenshot({ path: `${OUT}/81-auto-aggressive-unlimited.png` });
+  await openAuto(page);
+  check(/현재 상한 없음 · 유동/.test(await text(page, '[data-lev-cap-label]')), '업그레이드 후 레버리지 상한 = 유동', await text(page, '[data-lev-cap-label]'));
+  check((await page.locator('[data-auto-style]').count()) === 0, '업그레이드 후에도 매매 스타일 카드 없음');
+  await page.screenshot({ path: `${OUT}/81-auto-dynamic-leverage.png` });
   check(errors.length === 0, '업그레이드 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
   await ctx.close();
 }
 
 /* ================================================================== *
- * 12) v1.5.6 — ② 리스크·안전장치 저장 버튼 · 프리셋 적용/해제
- *     (현우님: "손실한도를 바꿈는데 프리셋에 적용되지가 않아. 저장 버튼과 적용/해제 버튼을 만들어")
+ * 11-2) 직접 조정한 값은 마이그레이션이 건드리지 않는다
+ * ================================================================== */
+{
+  const { ctx, page, errors } = await open({
+    seedConfig: { enabled: false, mode: 'demo', autoEntry: true, minWinRate: 60, minRR: 1.5, entryTtlMin: 300, maxLeverage: 25 },
+  });
+  await page.waitForTimeout(500);
+  const kept = await storedConfig(page);
+  check(
+    kept.minWinRate === 60 && kept.minRR === 1.2 && kept.entryTtlMin === 300 && kept.maxLeverage === 25,
+    '직접 조정값 유지 · 예전 기본값(1.5R)만 완화',
+    JSON.stringify({ w: kept.minWinRate, rr: kept.minRR, ttl: kept.entryTtlMin, lev: kept.maxLeverage }),
+  );
+  check(errors.length === 0, '부분 마이그레이션 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+/* ================================================================== *
+ * 12) v1.5.7 — ② 리스크·안전장치 저장 버튼 (프리셋 없음)
+ *     (현우님: "손실한도를 바꿈는데 프리셋에 적용되지가 않아. 저장 버튼 추가하고 작동하게 만들어")
  * ================================================================== */
 {
   const { ctx, page, errors } = await open();
@@ -1368,13 +1369,9 @@ const readSymbolUi = (page) =>
       return m?.querySelector('b')?.textContent?.trim() ?? '';
     });
 
-  /* 프리셋 카드: 적용 / 해제 버튼 */
-  check(await page.locator('[data-style-apply]').count() === 1, '프리셋 카드에 적용 버튼', 'data-style-apply');
-  check(await page.locator('[data-style-release]').count() === 1, '프리셋 카드에 해제 버튼', 'data-style-release');
-  check((await text(page, '[data-style-linked]')) === '프리셋 연동됨', '처음엔 프리셋 연동됨');
   check((await heroLimit()) === '−4.5%', '상단 1일 손실 한도 = −4.5%', await heroLimit());
 
-  /* ① 1일 손실 한도 변경 → 저장 전 → 저장 → 즉시 반영 */
+  /* 1일 손실 한도 변경 → 저장 전 → 저장 → 즉시 반영 */
   await page.locator('.auto-daily-limit input').fill('8');
   await page.waitForTimeout(350);
   const pending = await page.evaluate(() => ({
@@ -1399,6 +1396,7 @@ const readSymbolUi = (page) =>
     state: document.querySelector('[data-auto-guard-state]')?.textContent?.trim() ?? '',
     saveLabel: document.querySelector('[data-auto-config-save]')?.textContent?.trim() ?? '',
     syncs: window.__auto.calls.filter((c) => c.method === 'autoTradeSync'),
+    styleCard: !!document.querySelector('[data-auto-style]'),
   }));
   check(saved.stored.dailyLossPct === 8, '저장 → cota.autotrade.config.v1 에 8% 저장', `${saved.stored.dailyLossPct}%`);
   check((await heroLimit()) === '−8%', '저장 → 상단 1일 손실 한도가 즉시 −8%', await heroLimit());
@@ -1409,45 +1407,24 @@ const readSymbolUi = (page) =>
     '저장 → 네이티브 감시(autoTradeSync)에 즉시 반영',
     JSON.stringify({ dailyLossPct: lastSync.dailyLossPct, riskPct: lastSync.riskPct }),
   );
+  check(!saved.styleCard, '저장 카드 옆에 프리셋 카드가 생기지 않는다');
   await page.locator('[data-auto-config-save]').scrollIntoViewIfNeeded();
   await page.waitForTimeout(250);
   await page.screenshot({ path: `${OUT}/96-auto-guards-saved.png` }).catch(() => {});
-  check(
-    (await text(page, '[data-style-linked]')) === '프리셋 해제됨 · 직접 설정',
-    '프리셋과 다른 값을 저장 → 직접 설정으로 전환',
-    await text(page, '[data-style-linked]'),
-  );
-  check(/1일 손실 한도/.test(await text(page, '[data-style-diff]')), '프리셋 카드가 차이 항목(1일 손실 한도)을 강조', await text(page, '[data-style-diff]'));
 
-  /* ③ 적용 → 프리셋 값 복원 + 연동 */
-  await page.locator('[data-style-apply]').click();
-  await page.waitForTimeout(600);
-  check((await storedConfig(page)).dailyLossPct === 4.5, '적용 → 1일 손실 한도 4.5% 복원', `${(await storedConfig(page)).dailyLossPct}%`);
-  check((await text(page, '[data-style-linked]')) === '프리셋 연동됨', '적용 → 프리셋 연동됨', await text(page, '[data-style-linked]'));
-  check((await heroLimit()) === '−4.5%', '적용 → 상단 지표도 프리셋 값', await heroLimit());
-
-  /* ② 해제 → 값은 그대로 · 직접 설정 표시 */
-  await page.locator('[data-style-release]').click();
-  await page.waitForTimeout(500);
-  check((await text(page, '[data-style-linked]')) === '프리셋 해제됨 · 직접 설정', '해제 → 직접 설정 표시', await text(page, '[data-style-linked]'));
-  check((await storedConfig(page)).dailyLossPct === 4.5, '해제는 값을 바꾸지 않는다(4.5% 유지)');
-  check(await page.locator('[data-style-release]').isDisabled(), '해제 후 해제 버튼은 비활성');
-  check(/프리셋 해제됨 · 직접 설정/.test(await text(page, '.auto-toast')), '해제 피드백 토스트', await text(page, '.auto-toast'));
-
-  /* 해제 상태의 커스텀 손실 한도는 저장·새로고침 뒤에도 덮어써지지 않는다 */
+  /* 저장값은 새로고침 뒤에도 그대로 — 덮어쓰는 프리셋이 없다 */
   await page.locator('.auto-daily-limit input').fill('9');
   await page.waitForTimeout(300);
   await saveGuards(page);
-  check((await storedConfig(page)).dailyLossPct === 9, '해제 상태에서 9% 저장 → 그대로', `${(await storedConfig(page)).dailyLossPct}%`);
-  check((await text(page, '[data-style-linked]')) === '프리셋 해제됨 · 직접 설정', '해제 상태는 그대로 유지(적용 전까지)');
+  check((await storedConfig(page)).dailyLossPct === 9, '9% 저장 → 그대로', `${(await storedConfig(page)).dailyLossPct}%`);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1500);
   await openAuto(page);
   check((await storedConfig(page)).dailyLossPct === 9, '새로고침 뒤에도 커스텀 손실 한도 유지(9%)', `${(await storedConfig(page)).dailyLossPct}%`);
-  check((await text(page, '[data-style-linked]')) === '프리셋 해제됨 · 직접 설정', '새로고침 뒤에도 직접 설정 상태');
-  await page.locator('[data-auto-style]').screenshot({ path: `${OUT}/95-auto-style-release.png` }).catch(() => {});
+  check((await storedConfig(page)).minWinRate === 45, '새로고침 뒤에도 최소 승률 45% 유지');
+  await page.locator('[data-auto-guards]').screenshot({ path: `${OUT}/95-auto-guards-saved.png` }).catch(() => {});
 
-  check(errors.length === 0, '저장·적용/해제 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
+  check(errors.length === 0, '저장 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
   await ctx.close();
 }
 

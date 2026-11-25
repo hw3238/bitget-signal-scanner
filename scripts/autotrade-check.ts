@@ -21,12 +21,16 @@ import {
   SNAPSHOT_FRESH_MS,
   applyDailyReset,
   applyGuardSave,
-  applyStylePreset,
   buildOrderParams,
   checkDailyLoss,
   clientOidFor,
   dayKeyKst,
   emptyRuntime,
+  ENTRY_CHASE,
+  ENTRY_FAVOR,
+  ENTRY_GATE_MIGRATION_KEY,
+  LEGACY_DEFAULTS,
+  MIN_ENTRY_RR,
   evaluateEntry,
   fmtSince,
   fmtUsdt,
@@ -36,8 +40,7 @@ import {
   isMajorSymbol,
   leverageCapLabel,
   leverageCapOf,
-  matchesStylePreset,
-  migrateStylePresetOnce,
+  migrateEntryGateOnce,
   markTraded,
   mergeArmedPlans,
   migrateSymbolScopeOnce,
@@ -47,7 +50,7 @@ import {
   orderPriceText,
   partialTpState,
   planDailyReset,
-  presetForStyle,
+  planTriggerReason,
   qtyToStep,
   resolveTradeMode,
   planAutoOrder,
@@ -55,13 +58,12 @@ import {
   planTrigger,
   priceText,
   pushLog,
-  releaseStylePreset,
   rollDay,
   roundToTick,
+  signalAgeMin,
   signalKeyOf,
+  signalReadyAt,
   statusBadge,
-  styleFieldValue,
-  stylePresetDiff,
   symbolAllowed,
   todayFillCount,
   tickSizeOf,
@@ -376,12 +378,13 @@ check(
 check('게이트: 승률 미달 → winrate', genie({ config: { ...on, minWinRate: 70 }, signal: { winRate: 62 } }).code === 'winrate');
 // 전수 검증(표본 부족) 채택 신호는 승률이 낮게 표기된다 — 기대값이 확실한 기법은 승률 기준을 우회한다.
 check(
-  '게이트: 전수 검증 · 기대값 0.30R 이상 → 승률 기준 우회',
-  genie({ config: { ...on, minWinRate: 55 }, signal: { winRate: 47, winRateBasis: 'bench', strategyExp: 0.34 } }).allowed,
+  '게이트: 전수 검증 · 기대값 0.20R 이상(플러스) → 승률 기준 우회',
+  genie({ config: { ...on, minWinRate: 55 }, signal: { winRate: 47, winRateBasis: 'bench', strategyExp: 0.34 } }).allowed &&
+    genie({ config: { ...on, minWinRate: 55 }, signal: { winRate: 47, winRateBasis: 'bench', strategyExp: 0.2 } }).allowed,
 );
 check(
-  '게이트: 전수 검증 · 기대값 0.20R → 승률 기준 적용',
-  genie({ config: { ...on, minWinRate: 55 }, signal: { winRate: 47, winRateBasis: 'bench', strategyExp: 0.2 } }).code === 'winrate',
+  '게이트: 전수 검증 · 기대값 0.19R(플러스 미달) → 승률 기준 적용',
+  genie({ config: { ...on, minWinRate: 55 }, signal: { winRate: 47, winRateBasis: 'bench', strategyExp: 0.19 } }).code === 'winrate',
 );
 check(
   '게이트: 마켓 실측 신호는 기대값과 무관하게 승률 기준',
@@ -411,15 +414,42 @@ check(
  * 7) 감시 목록(진입 트리거) — 화면 꺼짐 감시의 핵심
  * ------------------------------------------------------------------ */
 const armed = toArmedPlan({ signal: sig(), plan, now, ttlMin: 120 });
-check('감시 목록: 수량·TP/SL·만료를 담는다', armed.qty === 3 && armed.target === 115 && armed.expiresAt === now + 120 * 60_000);
-check('롱: 진입가 터치 → enter', planTrigger(armed, 100.02, now) === 'enter');
-check('롱: 아직 위에 있으면 wait', planTrigger(armed, 101, now) === 'wait');
+check(
+  '감시 목록: 수량·TP/SL·만료를 담는다',
+  armed.qty === 3 && armed.target === 115 && armed.expiresAt === signalReadyAt(sig()) + 120 * 60_000,
+  `expiresAt=${armed.expiresAt} ready=${signalReadyAt(sig())}`,
+);
+check('감시 목록: 유효시간은 봉 마감 뒤부터 센다(4H 도 태어나자마자 만료되지 않음)', toArmedPlan({ signal: sig({ tf: '4H' }), plan, now, ttlMin: 240 }).expiresAt > now + 240 * 60_000);
+check('롱: 진입 구간 안(진입가 터치) → enter', planTrigger(armed, 100.02, now) === 'enter');
+check('롱: 진입가 위 0.5%까지는 추격 허용 → enter', planTrigger(armed, 100.4, now) === 'enter');
+check('롱: 진입가 아래 0.8%까지는 유리한 자리 → enter', planTrigger(armed, 99.3, now) === 'enter');
+check('롱: 0.5% 넘게 위로 벌어지면 wait(추격 금지)', planTrigger(armed, 101, now) === 'wait');
 check('롱: 손절가 먼저 깨면 invalidated', planTrigger(armed, 94.5, now) === 'invalidated');
 const shortPlan = toArmedPlan({ signal: sig({ side: 'short', entry: 100, stop: 105, target: 90 }), plan, now, ttlMin: 30 });
-check('숏: 진입가까지 오르면 enter', planTrigger(shortPlan, 99.98, now) === 'enter');
+check('숏: 진입가까지 내려오면 enter', planTrigger(shortPlan, 99.98, now) === 'enter');
+check('숏: 진입가 아래 0.5%까지 추격 허용 → enter', planTrigger(shortPlan, 99.6, now) === 'enter');
+check('숏: 진입가 위 0.8%까지 유리한 자리 → enter', planTrigger(shortPlan, 100.7, now) === 'enter');
+check('숏: 아래로 0.5% 넘게 추격하면 wait', planTrigger(shortPlan, 99.4, now) === 'wait');
+check('숏: 위로 0.8% 넘게 벌어도 손익비가 좋으면 enter', planTrigger(shortPlan, 101.5, now, 2) === 'enter');
 check('숏: 손절가 넘으면 invalidated', planTrigger(shortPlan, 106, now) === 'invalidated');
-check('만료된 감시는 expired', planTrigger(armed, 100, now + 3 * 3600_000) === 'expired');
+check('만료된 감시는 expired', planTrigger(armed, 100, now + 4 * 3600_000) === 'expired');
 check('가격 0 은 wait', planTrigger(armed, 0, now) === 'wait');
+check('진입 구간 상수 — 웹·네이티브 같은 0.5%/0.8%', ENTRY_CHASE === 0.005 && ENTRY_FAVOR === 0.008 && MIN_ENTRY_RR === 1);
+check(
+  '유리하게 더 내려왔지만 손익비가 기준 미달이면 wait',
+  planTrigger({ side: 'long', entry: 100, stop: 95, target: 103, expiresAt: now + 60_000 }, 99, now, 1.2) === 'wait',
+  planTriggerReason({ side: 'long', entry: 100, stop: 95, target: 103, expiresAt: now + 60_000 }, 99, now, 1.2),
+);
+check(
+  '대기 사유 문구 — 추격 금지·손익비 미달을 한글로 남긴다',
+  /진입가 대기 중/.test(planTriggerReason(armed, 101, now)) &&
+    /손익비/.test(planTriggerReason({ side: 'long', entry: 100, stop: 95, target: 103, expiresAt: now + 60_000 }, 99, now, 2)),
+  planTriggerReason(armed, 101, now),
+);
+check(
+  '시그널 나이: 봉 마감 전이면 0분 · 마감 뒤 30분이면 30분',
+  signalAgeMin(sig(), T0 + 30 * 60_000) === 0 && Math.round(signalAgeMin(sig(), T0 + 90 * 60_000)) === 30,
+);
 
 const merged = mergeArmedPlans([armed], [armed, { ...armed, key: 'ETHUSDT|4H|long|1' }]);
 check('감시 목록은 같은 키를 중복 저장하지 않는다', merged.length === 2);
@@ -1162,53 +1192,40 @@ check('구버전 저장본(미지정)은 반익절 ON', normalizeConfig({ riskPc
 check('레버리지 상한 0 = 상한 없음 저장', normalizeConfig({ maxLeverage: 0 }).maxLeverage === UNLIMITED_LEVERAGE);
 check('레버리지 상한 100 저장 · 100 초과는 100', normalizeConfig({ maxLeverage: 100 }).maxLeverage === 100 && normalizeConfig({ maxLeverage: 500 }).maxLeverage === 100);
 
-/* 14-2) 매매 스타일 프리셋 */
-const consPreset = presetForStyle('conservative');
-const aggPreset = presetForStyle('aggressive');
+/* 14-2) 진입 게이트 기본값 — 실전 진입이 실제로 일어나는 값 (v1.5.7) */
 check(
-  '보수적 프리셋 값',
-  consPreset.riskPct === 1.5 &&
-    consPreset.maxLeverage === 5 &&
-    consPreset.maxPositions === 2 &&
-    consPreset.dailyLossPct === 4.5 &&
-    consPreset.minWinRate === 52 &&
-    consPreset.minRR === 1.5 &&
-    consPreset.earlyStop &&
-    consPreset.partialTp,
-  JSON.stringify(consPreset),
+  '기본값: 최소 승률 45% · 손익비 1.2R · 유효 240분',
+  DEFAULTS.minWinRate === 45 && DEFAULTS.minRR === 1.2 && DEFAULTS.entryTtlMin === 240,
+  `${DEFAULTS.minWinRate}% · ${DEFAULTS.minRR}R · ${DEFAULTS.entryTtlMin}m`,
 );
+check('기본값: 레버리지 상한 없음(0 = 유동)', DEFAULTS.maxLeverage === UNLIMITED_LEVERAGE);
+check('매매 스타일 필드가 설정에 없다', !('stylePresetActive' in normalizeConfig(null)));
 check(
-  '공격적 프리셋: 레버리지 상한 없음(0 = 유동)',
-  aggPreset.maxLeverage === UNLIMITED_LEVERAGE &&
-    aggPreset.riskPct === 4 &&
-    aggPreset.maxPositions === 4 &&
-    aggPreset.dailyLossPct === 10 &&
-    aggPreset.minWinRate === 45 &&
-    aggPreset.minRR === 1.2,
-  JSON.stringify(aggPreset),
+  '구버전 저장본(승률 55·1.5R·120분·10x)은 새 기본값으로 1회 완화',
+  (() => {
+    const m = migrateEntryGateOnce({ ...LEGACY_DEFAULTS, riskPct: 1.5 }, false);
+    return (
+      m.changed &&
+      m.config?.minWinRate === 45 &&
+      m.config?.minRR === 1.2 &&
+      m.config?.entryTtlMin === 240 &&
+      m.config?.maxLeverage === 0 &&
+      m.config?.riskPct === 1.5
+    );
+  })(),
 );
-const customCfg = normalizeConfig({
-  ...DEFAULTS,
-  enabled: true,
-  mode: 'demo',
-  intervalSec: 90,
-  symbols: 'majors',
-  riskPct: 9,
-  maxLeverage: 25,
-});
-const applied = applyStylePreset(customCfg, 'aggressive');
+const gatePartial = migrateEntryGateOnce({ minWinRate: 60, minRR: 1.5, entryTtlMin: 300, maxLeverage: 25 }, false);
 check(
-  '프리셋 적용: 리스크·포지션·손실한도·레버리지',
-  applied.riskPct === 4 && applied.maxPositions === 4 && applied.dailyLossPct === 10 && applied.maxLeverage === 0,
-  `${applied.riskPct}% · ${applied.maxPositions} · ${applied.dailyLossPct}% · ${applied.maxLeverage}x`,
+  '직접 조정한 값은 그대로, 예전 기본값만 바꾼다',
+  gatePartial.changed &&
+    gatePartial.config?.minWinRate === 60 &&
+    gatePartial.config?.minRR === 1.2 &&
+    gatePartial.config?.entryTtlMin === 300 &&
+    gatePartial.config?.maxLeverage === 25,
+  JSON.stringify(gatePartial.fields),
 );
-check(
-  '프리셋 적용: 켜짐·모드·주기·허용 종목은 유지',
-  applied.enabled && applied.mode === 'demo' && applied.intervalSec === 90 && applied.symbols === 'majors',
-);
-check('프리셋 적용 후 = 프리셋과 같음', matchesStylePreset(applied, 'aggressive') && stylePresetDiff(applied, 'aggressive').length === 0);
-check('프리셋과 다른 값 목록', stylePresetDiff({ ...applied, riskPct: 9 }, 'aggressive').join() === '1회 리스크');
-check('프리셋과 다른 값: 반익절을 끄면 표시', stylePresetDiff({ ...applied, partialTp: false }, 'aggressive').includes('50% 반익절'));
+check('이미 마이그레이션·저장본 없음 → 건너뜀', !migrateEntryGateOnce({ ...LEGACY_DEFAULTS }, true).changed && !migrateEntryGateOnce(null, false).changed);
+check('진입 게이트 마이그레이션 키', ENTRY_GATE_MIGRATION_KEY === 'cota.autotrade.migrated.entryGate.v157');
 
 /* 14-3) 유동 레버리지 상한 */
 check('레버리지 상한 0 = 안전 상한 100x', leverageCapOf({ maxLeverage: 0 }) === 100 && leverageCapLabel(0) === '상한 없음 · 유동');
@@ -1261,7 +1278,7 @@ check(
 check('반익절 상태: 진행률 표기', partialTpState({ ...ptPos, markPrice: 102 }, { enabled: true, done: false }).label === '반익절 20%');
 check('반익절 상태: 숏 방향', partialTpState({ ...ptPos, holdSide: 'short', markPrice: 95 }, { enabled: true, done: false }).reached);
 
-/* 14-5) 실시간 잔고 구간별 추천 레버리지 */
+/* 14-5) 잔고·손절 폭·품질·거래소 최대 배율만 쓰는 유동 추천 레버리지 (매매 스타일 없음) */
 const levSig = { entry: 100, stop: 97, target: 110, winRate: 60, rr: 2 };
 check(
   '잔고 구간 경계: $100 / $1,000 / $5,000',
@@ -1272,147 +1289,88 @@ check(
     balanceTierOf(5000) === 'large' &&
     balanceTierOf(0) === null,
 );
-const consBase = recommendLeverage(levSig, 'conservative');
-const consSmall = recommendLeverage(levSig, 'conservative', 50);
-const consMid = recommendLeverage(levSig, 'conservative', 2000);
-const consLarge = recommendLeverage(levSig, 'conservative', 10000);
-check('보수적: 소액은 스타일 상단(5x) 유지', consSmall.leverage === 5 && consSmall.tier === 'small', `${consSmall.leverage}x`);
+const levBase = recommendLeverage(levSig);
+const levSmall = recommendLeverage(levSig, 50);
+const levMid = recommendLeverage(levSig, 2000);
+const levLarge = recommendLeverage(levSig, 10000);
+check('추천: 잔고 미확인은 표준 구간 계수로 계산', levBase.tier === null && levBase.leverage >= 2, `${levBase.leverage}x`);
 check(
-  '보수적: 중형·대형은 단계적으로 낮춤',
-  consMid.leverage < consBase.leverage && consLarge.leverage <= consMid.leverage,
-  `${consBase.leverage}/${consMid.leverage}/${consLarge.leverage}`,
+  '추천: 잔고가 클수록 배율을 단계적으로 낮춘다',
+  levSmall.leverage >= levBase.leverage && levMid.leverage < levBase.leverage && levLarge.leverage <= levMid.leverage,
+  `${levSmall.leverage}/${levBase.leverage}/${levMid.leverage}/${levLarge.leverage}`,
 );
-check('보수적: 어느 구간에서도 5x 를 넘지 않음', [consBase, consSmall, consMid, consLarge].every((r) => r.leverage <= 5));
-check('추천 객체에 잔고 구간 반영', consMid.tierLabel?.includes('중형 시드') === true && consMid.balanceApplied === true && consBase.tier === null);
-const aggLev = recommendLeverage(levSig, 'aggressive', null, 100);
-check('공격적: 25x 고정 상한 없음(30x 이상)', aggLev.leverage > 25, `${aggLev.leverage}x`);
-check('공격적: 청산 안전마진을 넘지 않음', aggLev.leverage <= aggLev.safeMax, `lev=${aggLev.leverage} safeMax=${aggLev.safeMax}`);
-check('공격적: 거래소 최대 배율 20x 로 제한', recommendLeverage(levSig, 'aggressive', null, 20).leverage === 20);
-check(
-  '공격적: 소액 시드는 중형보다 높게',
-  recommendLeverage(levSig, 'aggressive', 50).leverage >= recommendLeverage(levSig, 'aggressive', 2000).leverage,
-);
+check('추천: 어느 구간에서도 청산 안전마진을 넘지 않음', [levBase, levSmall, levMid, levLarge].every((r) => r.leverage <= r.safeMax));
+check('추천: 25x 고정 상한 없음(손절 3% · 소액은 25x 이상)', levSmall.leverage > 25, `${levSmall.leverage}x`);
+check('추천: 거래소 최대 배율 20x 로 제한', recommendLeverage(levSig, null, 20).leverage === 20);
+check('추천: 잔고 구간 라벨·반영 표시', levMid.tierLabel?.includes('중형 시드') === true && levBase.tier === null);
 check(
   '청산 안전마진 = max(2, floor(80/손절폭))',
-  recommendLeverage({ entry: 100, stop: 95, target: 110, winRate: 55, rr: 2 }, 'aggressive').safeMax === 16,
+  recommendLeverage({ entry: 100, stop: 95, target: 110, winRate: 55, rr: 2 }).safeMax === 16,
 );
-check('레버리지 없이(2인자)도 기존과 같이 계산', consBase.leverage >= 2 && consBase.leverage <= 5);
-
-/* 14-6) v1.5.6 업그레이드 1회 — 손대지 않은 기본 설정만 스타일 프리셋으로 */
-const untouchedAgg = migrateStylePresetOnce({}, 'aggressive', false);
 check(
-  '업그레이드 1회: 기본 설정 → 공격적 프리셋(상한 없음)',
-  untouchedAgg.changed && untouchedAgg.config.maxLeverage === 0 && untouchedAgg.config.riskPct === 4,
-  `changed=${untouchedAgg.changed} maxLeverage=${untouchedAgg.config.maxLeverage}`,
+  '손절 폭이 좁을수록 배율이 높다',
+  recommendLeverage({ entry: 100, stop: 99, target: 103, winRate: 55, rr: 2 }).leverage >
+    recommendLeverage({ entry: 100, stop: 94, target: 112, winRate: 55, rr: 2 }).leverage,
 );
-const customAgg = migrateStylePresetOnce({ riskPct: 3 }, 'aggressive', false);
-check(
-  '업그레이드 1회: 직접 조정한 설정은 유지',
-  !customAgg.changed && customAgg.config.riskPct === 3 && customAgg.config.maxLeverage === 10,
-  `${customAgg.config.riskPct}% · ${customAgg.config.maxLeverage}x`,
-);
-check('업그레이드 1회: 이미 마이그레이션됐으면 건너뜀', !migrateStylePresetOnce({}, 'aggressive', true).changed);
-check('업그레이드 1회: 성향이 없으면 건너뜀', !migrateStylePresetOnce({}, null, false).changed);
-check('업그레이드 1회: 보수적은 5x 프리셋', migrateStylePresetOnce({}, 'conservative', false).config.maxLeverage === 5);
+check('추천 사유 문구에 잔고 구간·안전마진이 남는다', /청산 안전마진/.test(levMid.note) && /중형 시드/.test(levMid.note), levMid.note);
 
 /* ------------------------------------------------------------------ *
- * 15) v1.5.6 — ② 리스크·안전장치 초안 저장 · 프리셋 적용/해제 버튼
- *     (현우님: "손실한도를 바꿈는데 프리셋에 적용되지가 않아. 저장 버튼과 적용/해제 버튼을 만들어")
+ * 15) v1.5.7 — ② 리스크·안전장치 초안 저장 (프리셋 없음)
  * ------------------------------------------------------------------ */
 
-/* 15-1) 프리셋 연동 상태 필드 */
-check('프리셋 연동 기본값 = ON', DEFAULTS.stylePresetActive === true && normalizeConfig(null).stylePresetActive === true);
-check('구버전 저장본(미지정)은 연동 상태로 읽기', normalizeConfig({ riskPct: 2 }).stylePresetActive === true);
-check('해제 상태 저장 · 복원', normalizeConfig({ stylePresetActive: false }).stylePresetActive === false);
-const consLinked = applyStylePreset(DEFAULTS, 'conservative');
-check(
-  '적용은 연동을 켠다(해제 상태에서도)',
-  applyStylePreset(normalizeConfig({ ...DEFAULTS, stylePresetActive: false }), 'conservative').stylePresetActive === true &&
-    consLinked.stylePresetActive === true,
-);
-const releasedCfg = releaseStylePreset(consLinked);
-check(
-  '해제 버튼: 값은 그대로 두고 연동만 끈다',
-  releasedCfg.stylePresetActive === false &&
-    releasedCfg.riskPct === consLinked.riskPct &&
-    releasedCfg.dailyLossPct === consLinked.dailyLossPct &&
-    releasedCfg.maxLeverage === consLinked.maxLeverage,
-);
-check('이미 해제면 그대로(불필요한 저장 없음)', releaseStylePreset(releasedCfg) === releasedCfg);
-
-/* 15-2) 초안 비교 — 저장 안 됨 판정 */
+/* 15-1) 초안 비교 — 저장 안 됨 판정 */
 check(
   '초안 비교: 손실 한도만 바꾸면 1개',
-  guardFieldsChanged(consLinked, { ...consLinked, dailyLossPct: 8 }).join() === 'dailyLossPct',
+  guardFieldsChanged(cfg, { ...cfg, dailyLossPct: 8 }).join() === 'dailyLossPct',
 );
-check('초안 비교: 같으면 0개', guardFieldsChanged(consLinked, { ...consLinked }).length === 0);
+check('초안 비교: 같으면 0개', guardFieldsChanged(cfg, { ...cfg }).length === 0);
 check(
   '초안 비교: 켜짐·모드는 이 카드 항목이 아니다',
-  guardFieldsChanged({ ...consLinked, enabled: false }, { ...consLinked, enabled: true, mode: 'live' }).length === 0,
+  guardFieldsChanged({ ...cfg, enabled: false }, { ...cfg, enabled: true, mode: 'live' }).length === 0,
 );
 check(
   '초안 비교: 여러 항목',
-  guardFieldsChanged(consLinked, { ...consLinked, riskPct: 3, maxLeverage: 25, symbols: 'majors' }).join() === 'riskPct,maxLeverage,symbols',
+  guardFieldsChanged(cfg, { ...cfg, riskPct: 3, maxLeverage: 25, symbols: 'majors' }).join() === 'riskPct,maxLeverage,symbols',
 );
 check(
   '저장 패치에는 이 카드 항목만 담긴다',
-  !('enabled' in guardPatchOf({ ...consLinked, enabled: true })) &&
-    !('mode' in guardPatchOf({ ...consLinked, mode: 'live' })) &&
-    guardPatchOf({ ...consLinked, dailyLossPct: 9 }).dailyLossPct === 9,
+  !('enabled' in guardPatchOf({ ...cfg, enabled: true })) &&
+    !('mode' in guardPatchOf({ ...cfg, mode: 'live' })) &&
+    guardPatchOf({ ...cfg, dailyLossPct: 9 }).dailyLossPct === 9,
 );
 
-/* 15-3) 저장 — 값 반영 · 프리셋 연동 해제 규칙 */
-const saved8 = applyGuardSave(consLinked, { dailyLossPct: 8 }, 'conservative');
+/* 15-2) 저장 — 값 반영 · 클램프 · 다른 항목 유지 */
+const saved8 = applyGuardSave(cfg, { dailyLossPct: 8 });
 check('저장: 손실 한도 8% 반영', saved8.dailyLossPct === 8, `${saved8.dailyLossPct}%`);
-check('저장: 프리셋과 달라지면 연동 해제(직접 설정)', saved8.stylePresetActive === false);
-check('저장: 켜짐·모드는 건드리지 않는다', saved8.enabled === consLinked.enabled && saved8.mode === consLinked.mode);
-const savedInterval = applyGuardSave(consLinked, { intervalSec: 90 }, 'conservative');
+check('저장: 켜짐·모드는 건드리지 않는다', saved8.enabled === cfg.enabled && saved8.mode === cfg.mode);
 check(
-  '저장: 프리셋이 관리하지 않는 항목(감시 주기)만 바꾸면 연동 유지',
-  savedInterval.intervalSec === 90 && savedInterval.stylePresetActive === true,
+  '저장: 감시 주기·유효시간·허용 종목도 그대로 저장',
+  applyGuardSave(cfg, { intervalSec: 90, entryTtlMin: 300, symbols: 'majors' }).intervalSec === 90 &&
+    applyGuardSave(cfg, { entryTtlMin: 300 }).entryTtlMin === 300 &&
+    applyGuardSave(cfg, { symbols: 'majors' }).symbols === 'majors',
 );
-const savedCustom = applyGuardSave(saved8, { dailyLossPct: 6 }, 'conservative');
-check('해제 상태 저장은 계속 직접 설정(적용 전까지 유지)', savedCustom.dailyLossPct === 6 && savedCustom.stylePresetActive === false);
-const savedPresetValue = applyGuardSave(normalizeConfig({ ...consLinked, riskPct: 5 }), { riskPct: 1.5 }, 'conservative');
-check('프리셋과 같은 값으로 저장하면 연동 유지', savedPresetValue.riskPct === 1.5 && savedPresetValue.stylePresetActive === true);
-const savedClamped = applyGuardSave(consLinked, { riskPct: 99, maxPositions: 0 }, 'conservative');
+const savedClamped = applyGuardSave(cfg, { riskPct: 99, maxPositions: 0 });
 check(
   '저장 시 범위 클램프',
   savedClamped.riskPct === LIMITS.riskPct[1] && savedClamped.maxPositions === LIMITS.maxPositions[0],
   `${savedClamped.riskPct}% · ${savedClamped.maxPositions}개`,
 );
-const savedNoStyle = applyGuardSave(consLinked, { dailyLossPct: 9 }, null);
-check('성향 미설정이면 연동 상태를 바꾸지 않는다', savedNoStyle.stylePresetActive === consLinked.stylePresetActive && savedNoStyle.dailyLossPct === 9);
+check('같은 값을 다시 저장해도 그대로(멱등)', JSON.stringify(applyGuardSave(saved8, guardPatchOf(saved8))) === JSON.stringify(saved8));
 
-/* 15-4) 적용 — 프리셋 값으로 복원 */
-const restored = applyStylePreset(saved8, 'conservative');
+/* 15-3) 진입 게이트 완화가 실제 진입을 허용하는지 — 상태 판정 */
 check(
-  '적용: 손실 한도·리스크가 프리셋 값으로 복원',
-  restored.dailyLossPct === 4.5 && restored.riskPct === 1.5 && restored.stylePresetActive && matchesStylePreset(restored, 'conservative'),
-  `${restored.riskPct}% · ${restored.dailyLossPct}%`,
-);
-check('적용: 직접 정한 감시 주기는 유지', applyStylePreset(savedInterval, 'conservative').intervalSec === 90);
-check(
-  '적용: 공격적 프리셋으로도 복원',
-  applyStylePreset(saved8, 'aggressive').dailyLossPct === 10 && applyStylePreset(saved8, 'aggressive').maxLeverage === 0,
-);
-
-/* 15-5) 프리셋 비교 표기 */
-check(
-  '비교 표기: 비율·배율·개수',
-  styleFieldValue('riskPct', consPreset) === '1.5%' &&
-    styleFieldValue('maxLeverage', aggPreset) === '상한 없음 · 유동' &&
-    styleFieldValue('maxLeverage', consPreset) === '5x' &&
-    styleFieldValue('maxPositions', consPreset) === '2개' &&
-    styleFieldValue('minRR', consPreset) === '1.5R',
+  '게이트: 승률 48% 시그널이 기본 기준(45%)을 통과',
+  genie({ config: on, signal: { winRate: 48, winRateBasis: 'market' } }).allowed,
 );
 check(
-  '비교 표기: 손실 한도 끄기·토글',
-  styleFieldValue('dailyLossPct', { ...consPreset, dailyLossPct: 0 }) === '끔' &&
-    styleFieldValue('dailyLossPct', consPreset) === '4.5%' &&
-    styleFieldValue('earlyStop', { ...consPreset, earlyStop: false }) === 'OFF' &&
-    styleFieldValue('partialTp', consPreset) === 'ON',
+  '게이트: 승률 40% 라도 전수 기대값 +0.2R 이면 통과',
+  genie({ config: on, signal: { winRate: 40, winRateBasis: 'bench', strategyExp: 0.25 } }).allowed,
 );
+check(
+  '게이트: 승률 40% · 전수 기대값 0.1R 이면 거부',
+  genie({ config: on, signal: { winRate: 40, winRateBasis: 'bench', strategyExp: 0.1 } }).code === 'winrate',
+);
+check('게이트: 손익비 1.25R 이 기본 기준(1.2R)을 통과', genie({ config: on, signal: { rr: 1.25 } }).allowed);
 
 console.log('');
 console.log(`자동매매 단위 검증: ${pass}/${pass + fails.length} 통과`);
