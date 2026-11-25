@@ -104,7 +104,6 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
   const configRef = useRef(config);
   /** 저장 직후 `✓ 저장됨` 피드백 표시 시각 (0 = 표시 안 함) */
   const [savedAt, setSavedAt] = useState(0);
-  const savedTimer = useRef<number | null>(null);
 
   /** 이 화면이 열려 있는 동안만 12초 실시간 잔고 갱신을 돌린다(나가면 interval 정리). */
   useEffect(() => {
@@ -196,17 +195,22 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
   useEffect(() => {
     return () => {
       if (toastTimer.current) window.clearTimeout(toastTimer.current);
-      if (savedTimer.current) window.clearTimeout(savedTimer.current);
     };
   }, []);
 
   /** ② 리스크 · 안전장치 저장 — 저장할 항목만 설정에 넣고 초안을 정규화된 값으로 다시 맞춘다. */
   const onSaveGuards = () => {
+    const wasActive = config.stylePresetActive;
     const next = api.saveGuards(guardPatchOf(draft), profile?.style ?? null);
     setDraft(next);
-    if (savedTimer.current) window.clearTimeout(savedTimer.current);
     setSavedAt(Date.now());
-    notify(next.stylePresetActive ? '✓ 저장됨 — 리스크·안전장치에 반영했습니다.' : '✓ 저장됨 — 프리셋 해제(직접 설정)로 값을 지킵니다.');
+    notify(
+      next.stylePresetActive || !profile
+        ? '✓ 저장됨 — 리스크·안전장치에 반영했습니다.'
+        : wasActive
+          ? '✓ 저장됨 — 프리셋과 달라 직접 설정으로 전환했습니다. 이 값은 덮어쓰지 않습니다.'
+          : '✓ 저장됨 — 직접 설정 값을 그대로 유지합니다.',
+    );
   };
 
   /** `적용` — 지금 매매 스타일의 프리셋 값으로 맞추고 연동을 켠다. */
