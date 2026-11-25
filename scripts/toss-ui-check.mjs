@@ -484,15 +484,33 @@ const run = async () => {
       settings.risk.options[9] === '직접 입력',
     `${settings.risk.value} · ${settings.risk.options.join(' / ')}`,
   );
-  // 50% 리스크 + 직접 입력 → 고위험 경고 · 콕핏 수량 반영
+  // 50% 리스크 + 직접 입력 → 저장 버튼으로 확정 → 고위험 경고 · 콕핏 수량 반영
   await page.selectOption('#settings-profile .risk-pill select', '50');
+  await page.waitForTimeout(250);
+  const riskDraftOnly = await page.evaluate(() => ({
+    warning: !!document.querySelector('#settings-profile [data-risk-warning]'),
+    stored: JSON.parse(localStorage.getItem('bgss.settings.v1') || '{}').riskPct,
+    saveDirty: document.querySelector('#settings-profile [data-save="risk"]')?.getAttribute('data-save-state'),
+  }));
+  check(
+    '리스크 선택만으로는 저장되지 않음(초안 · 경고 미리보기)',
+    riskDraftOnly.warning && riskDraftOnly.saveDirty === 'dirty' && riskDraftOnly.stored !== 50,
+    `저장=${riskDraftOnly.stored} · ${riskDraftOnly.saveDirty}`,
+  );
+  await page.locator('#settings-profile [data-save="risk"]').click();
   await page.waitForTimeout(300);
   const risk50 = await page.evaluate(() => ({
     warning: !!document.querySelector('#settings-profile [data-risk-warning]'),
     text: document.querySelector('#settings-profile [data-risk-warning]')?.textContent?.trim() ?? '',
     stored: JSON.parse(localStorage.getItem('bgss.settings.v1') || '{}').riskPct,
+    autoStored: JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}').riskPct,
+    savedLabel: document.querySelector('#settings-profile [data-save="risk"]')?.textContent?.trim(),
   }));
-  check('리스크 50% 선택 → 고위험 경고 표시', risk50.warning && /고위험 설정/.test(risk50.text) && risk50.stored === 50, risk50.text);
+  check(
+    '리스크 50% 저장 → ✓ 저장됨 · 고위험 경고 · 자동매매에도 50%',
+    risk50.warning && /고위험 설정/.test(risk50.text) && risk50.stored === 50 && risk50.autoStored === 50 && risk50.savedLabel === '✓ 저장됨',
+    `${risk50.text} · ${risk50.savedLabel} · auto=${risk50.autoStored}`,
+  );
   await page.selectOption('#settings-profile .risk-pill select', 'custom');
   await page.waitForTimeout(250);
   const customInput = page.locator('#settings-profile [data-risk-input]');
@@ -500,12 +518,16 @@ const run = async () => {
   if (customExists) {
     await customInput.fill('12.5');
     await page.waitForTimeout(250);
+    await page.locator('#settings-profile [data-save="risk"]').click();
+    await page.waitForTimeout(300);
   }
   const custom = { exists: customExists, value: customExists ? await customInput.inputValue() : '' };
   const customStored = await page.evaluate(() => JSON.parse(localStorage.getItem('bgss.settings.v1') || '{}').riskPct);
   check('직접 입력 12.5% 저장', custom.exists && customStored === 12.5, `input=${custom.value} · 저장=${customStored}`);
   await page.selectOption('#settings-profile .risk-pill select', 'auto');
   await page.waitForTimeout(200);
+  await page.locator('#settings-profile [data-save="risk"]').click();
+  await page.waitForTimeout(250);
   check('설정 탭 가로 오버플로 0건', !settings.overflow);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(300);

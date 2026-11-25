@@ -312,22 +312,36 @@ async function browserChecks() {
     );
     check((afterTest.note ?? '').includes('ntfy'), '테스트 결과 안내 문구', afterTest.note);
 
-    // 알림 대상 전환 → 과거 시그널이 몰려 오지 않음
+    // 알림 대상 전환 → 저장 버튼으로 확정 (초안만으로는 저장되지 않는다)
     await page.locator('#settings-notify .notify-target button', { hasText: '전체 종목' }).click();
+    await page.waitForTimeout(300);
+    const targetDraft = await page.evaluate(() => ({
+      target: JSON.parse(localStorage.getItem('bgss.settings.v1') || '{}').notifyTarget,
+      state: document.querySelector('#settings-notify [data-save="notify-target"]')?.getAttribute('data-save-state'),
+    }));
+    check(targetDraft.target !== 'all' && targetDraft.state === 'dirty', '알림 대상 클릭만으로는 저장되지 않음', `${targetDraft.target} · ${targetDraft.state}`);
+    await page.locator('#settings-notify [data-save="notify-target"]').click();
     await page.waitForTimeout(2000);
     const afterTarget = await page.evaluate(() => ({
       notified: window.__notified.length,
       target: JSON.parse(localStorage.getItem('bgss.settings.v1') || '{}').notifyTarget,
+      label: document.querySelector('#settings-notify [data-save="notify-target"]')?.textContent?.trim(),
     }));
-    check(afterTarget.target === 'all', '알림 대상 전환 → localStorage 저장', String(afterTarget.target));
+    check(afterTarget.target === 'all' && afterTarget.label === '✓ 저장됨', '알림 대상 전환 → 저장 · ✓ 저장됨', `${afterTarget.target} · ${afterTarget.label}`);
     check(afterTarget.notified === 1, '대상 넓혀도 기존 시그널은 다시 울리지 않음', `${afterTarget.notified}건`);
 
-    // OFF 토글
+    // OFF 토글 → 저장
     await page.locator('#settings-notify .switch').click();
+    await page.waitForTimeout(250);
+    const offDraft = await page.evaluate(() => JSON.parse(localStorage.getItem('bgss.settings.v1') || '{}').notifyEnabled);
+    check(offDraft !== false, '알림 토글만으로는 저장되지 않음', String(offDraft));
+    await page.locator('#settings-notify [data-save="notify-enabled"]').click();
     await page.waitForTimeout(400);
     const off = await page.evaluate(() => JSON.parse(localStorage.getItem('bgss.settings.v1') || '{}').notifyEnabled);
-    check(off === false, '알림 OFF → localStorage 저장');
+    check('알림 OFF 저장', off === false);
     await page.locator('#settings-notify .switch').click();
+    await page.waitForTimeout(200);
+    await page.locator('#settings-notify [data-save="notify-enabled"]').click();
     await page.waitForTimeout(300);
 
     // 새로고침 후에도 같은 시그널 중복 알림 없음

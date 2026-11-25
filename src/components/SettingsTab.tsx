@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Settings } from '../lib/storage';
 import { BENCH_GATE, MIN_RR, MIN_TRADES, MIN_WINRATE } from '../engine/backtest';
 import { STOP_WIDTH } from '../engine/risk';
 import type { ScanState } from '../hooks/useScanner';
+import type { AutoTradeApi } from '../hooks/useAutoTrade';
 import { BENCH_INFO, STRATEGIES, type Signal } from '../engine/types';
 import {
   NOTIFY_TARGETS,
@@ -13,7 +14,8 @@ import {
 } from '../lib/notify';
 import { isNativeApp, nativeAppInfo, openExternalUrl } from '../lib/native';
 import { useApkUpdate } from '../lib/useApkUpdate';
-import { STYLE_META, type Profile } from '../lib/profile';
+import { STYLE_META, type Profile, type TradeStyle } from '../lib/profile';
+import { isDirty, stylePresetSummary } from '../lib/settingsSync';
 import { ACCOUNT_UNLINKED_HINT, fmtUsdtBalance, type AccountBase } from '../lib/account';
 import {
   RISK_PRESETS,
@@ -32,6 +34,65 @@ import {
   RELEASES_PAGE,
   type UpdateCheckResult,
 } from '../lib/update';
+
+/**
+ * 저장 전 초안 — 항목을 눌러도 바로 저장하지 않고, `저장` 버튼으로 확정한다(v1.5.6).
+ *  · 다른 화면(계좌·자동매매)에서 저장값이 바뀌면 초안도 따라간다(편집 중인 초안은 보존).
+ *  · 저장값이 그대로면 사용자가 누르기 전까지 아무것도 바뀌지 않는다.
+ */
+function useDraft<T>(saved: T) {
+  const [draft, setDraft] = useState<T>(saved);
+  const savedRef = useRef(saved);
+  const prevDirtyRef = useRef(false);
+  useEffect(() => {
+    if (!Object.is(savedRef.current, saved)) {
+      savedRef.current = saved;
+      // 저장값이 바뀜 — 이전 화면에서 초안이 깨끗했다면 새 저장값을 따른다.
+      // (사용자가 편집 중인 초안이 있으면 그대로 둔다. 스타일 저장 → 리스크 프리셋 동기화도 이 경로)
+      if (!prevDirtyRef.current) setDraft(saved);
+    }
+    prevDirtyRef.current = isDirty(saved, draft);
+  });
+  return [draft, setDraft] as const;
+}
+
+/** 항목별 저장 버튼 — 변경이 있을 때만 눌리고, 저장하면 `✓ 저장됨` 으로 바뀐다. */
+function SaveButton({
+  name,
+  dirty,
+  onSave,
+}: {
+  /** 테스트·자동화용 식별자 (`data-save`) */
+  name: string;
+  dirty: boolean;
+  onSave: () => void;
+}) {
+  const [savedAt, setSavedAt] = useState(0);
+  useEffect(() => {
+    if (!savedAt) return;
+    const id = window.setTimeout(() => setSavedAt(0), 2400);
+    return () => window.clearTimeout(id);
+  }, [savedAt]);
+  const saved = savedAt > 0 && !dirty;
+  return (
+    <div className="setting-save">
+      {dirty && !saved && <span className="save-dirty">저장 안 됨</span>}
+      <button
+        type="button"
+        className={`save-btn ${dirty ? 'dirty' : ''} ${saved ? 'saved' : ''}`}
+        data-save={name}
+        data-save-state={saved ? 'saved' : dirty ? 'dirty' : 'clean'}
+        disabled={!dirty}
+        onClick={() => {
+          onSave();
+          setSavedAt(Date.now());
+        }}
+      >
+        {saved ? '✓ 저장됨' : '저장'}
+      </button>
+    </div>
+  );
+}
 
 interface Props {
   settings: Settings;
@@ -55,6 +116,12 @@ interface Props {
     shown: boolean;
     ntfy: boolean;
   }>;
+  /** 🤖 자동매매 설정 — 리스크 저장이 즉시 반영됐는지 화면에 같이 보여준다(v1.5.6) */
+  autoTrade: AutoTradeApi;
+  /** 1회 리스크 저장 → 설정 + 자동매매 리스크 동기화 */
+  onSaveRisk: (riskPct: number | null) => void;
+  /** 매매 스타일 저장 → 자동매매 프리셋 적용 */
+  onSaveStyle: (style: TradeStyle) => void;
 }
 
 export function SettingsTab({
@@ -70,11 +137,13 @@ export function SettingsTab({
   onEditProfile,
   onConnectAccount,
   onTestNotification,
+  autoTrade,
+  onSaveRisk,
+  onSaveStyle,
 }: Props) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<UpdateCheckResult | null>(null);
   const [apkVersion, setApkVersion] = useState<string | null>(null);
-  const [ntfyDraft, setNtfyDraft] = useState(settings.notifyNtfy);
   const [permission, setPermission] = useState<NotifyPermission | null>(null);
   const [testing, setTesting] = useState(false);
   const [testNote, setTestNote] = useState('');
@@ -82,6 +151,18 @@ export function SettingsTab({
   const [riskCustom, setRiskCustom] = useState(false);
   const native = isNativeApp();
   const apkUpdate = useApkUpdate();
+
+  /* ---------------- 항목별 초안(draft) — 저장 버튼으로만 확정 ---------------- */
+  const [leverageModeDraft, setLeverageModeDraft] = useDraft(settings.leverageMode);
+  const [riskDraft, setRiskDraft] = useDraft<number | null>(settings.riskPct);
+  const [styleDraft, setStyleDraft] = useDraft<TradeStyle>(profile?.style ?? 'conservative');
+  const [notifyDraft, setNotifyDraft] = useDraft(settings.notifyEnabled);
+  const [targetDraft, setTargetDraft] = useDraft(settings.notifyTarget);
+  const [ntfyDraft, setNtfyDraft] = useDraft(settings.notifyNtfy);
+  const [leverageDraft, setLeverageDraft] = useDraft(settings.leverage);
+  const [minRRDraft, setMinRRDraft] = useDraft(settings.minRR);
+  const [refreshDraft, setRefreshDraft] = useDraft(settings.refreshSec);
+  const [soundDraft, setSoundDraft] = useDraft(settings.sound);
 
   useEffect(() => {
     void notificationPermission().then(setPermission);
@@ -93,10 +174,9 @@ export function SettingsTab({
     return next;
   };
 
-  const toggleNotify = () => {
-    const next = !settings.notifyEnabled;
-    onChange({ notifyEnabled: next });
-    if (next) void grantPermission();
+  const saveNotifyEnabled = () => {
+    onChange({ notifyEnabled: notifyDraft });
+    if (notifyDraft) void grantPermission();
   };
 
   const runNotifyTest = async () => {
@@ -158,6 +238,19 @@ export function SettingsTab({
   const apk = apkUpdate.state;
 
   const style = profile ? STYLE_META[profile.style] : null;
+  const activeStyle = profile?.style ?? 'conservative';
+  const riskSelectValue =
+    riskDraft == null
+      ? 'auto'
+      : riskCustom || !(RISK_PRESETS as readonly number[]).includes(riskDraft)
+        ? 'custom'
+        : String(riskDraft);
+  const showRiskInput =
+    riskDraft != null && (riskCustom || !(RISK_PRESETS as readonly number[]).includes(riskDraft));
+  /** 지금 저장할 리스크(성향 추천 포함) — 자동매매와 비교해 안내한다 */
+  const draftRiskValue = resolveRiskPct(activeStyle, riskDraft);
+  const autoRisk = autoTrade.config.riskPct;
+  const styleChanged = styleDraft !== activeStyle;
 
   return (
     <div className="tab settings-tab">
@@ -204,13 +297,26 @@ export function SettingsTab({
               시그널마다 손절 폭·승률·손익비로 계산한 COTA 추천 배율을 쓰거나, 직접 고정할 수 있습니다.
             </div>
           </div>
-          <div className="segmented">
-            <button className={settings.leverageMode === 'auto' ? 'on' : ''} onClick={() => onChange({ leverageMode: 'auto' })}>
-              COTA 추천
-            </button>
-            <button className={settings.leverageMode === 'manual' ? 'on' : ''} onClick={() => onChange({ leverageMode: 'manual' })}>
-              직접 고정
-            </button>
+          <div className="setting-actions">
+            <div className="segmented">
+              <button
+                className={leverageModeDraft === 'auto' ? 'on' : ''}
+                onClick={() => setLeverageModeDraft('auto')}
+              >
+                COTA 추천
+              </button>
+              <button
+                className={leverageModeDraft === 'manual' ? 'on' : ''}
+                onClick={() => setLeverageModeDraft('manual')}
+              >
+                직접 고정
+              </button>
+            </div>
+            <SaveButton
+              name="leverage-mode"
+              dirty={isDirty(settings.leverageMode, leverageModeDraft)}
+              onSave={() => onChange({ leverageMode: leverageModeDraft })}
+            />
           </div>
         </div>
         <div className="setting-row risk-setting">
@@ -221,74 +327,114 @@ export function SettingsTab({
               0.5~50%까지 직접 입력할 수 있습니다.
               {profile ? ` 지금 설정은 잔고의 ${defaultRiskPct(profile.style)}% 기준입니다.` : ''}
             </div>
-          </div>
-          <div className="risk-control">
-            <label className="select-pill risk-pill">
-              <span>리스크</span>
-              <select
-                value={
-                  settings.riskPct == null
-                    ? 'auto'
-                    : riskCustom || !(RISK_PRESETS as readonly number[]).includes(settings.riskPct)
-                      ? 'custom'
-                      : String(settings.riskPct)
-                }
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === 'auto') {
-                    setRiskCustom(false);
-                    onChange({ riskPct: null });
-                  } else if (v === 'custom') {
-                    setRiskCustom(true);
-                    if (settings.riskPct == null) onChange({ riskPct: clampRiskInput(2.5) });
-                  } else {
-                    setRiskCustom(false);
-                    onChange({ riskPct: Number(v) });
-                  }
-                }}
-                aria-label="1회 허용 손실률"
-                data-risk-select
-              >
-                <option value="auto">
-                  성향 추천 ({profile ? defaultRiskPct(profile.style) : 1.5}%)
-                </option>
-                {RISK_PRESETS.map((v) => (
-                  <option key={v} value={v}>
-                    잔고의 {v}%
-                  </option>
-                ))}
-                <option value="custom">직접 입력</option>
-              </select>
-            </label>
-            {settings.riskPct != null && (riskCustom || !(RISK_PRESETS as readonly number[]).includes(settings.riskPct)) && (
-              <label className="risk-custom">
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min={0.5}
-                  max={50}
-                  step={0.1}
-                  value={settings.riskPct}
-                  onChange={(e) => onChange({ riskPct: clampRiskInput(Number(e.target.value)) })}
-                  aria-label="1회 허용 손실률 직접 입력"
-                  data-risk-input
-                />
-                <i>%</i>
-              </label>
+            {draftRiskValue !== autoRisk && (
+              <div className="risk-sync-hint" data-risk-sync-hint>
+                자동매매는 지금 {autoRisk}% — 저장하면 함께 {draftRiskValue}%로 바뀝니다.
+              </div>
             )}
           </div>
+          <div className="setting-actions">
+            <div className="risk-control">
+              <label className="select-pill risk-pill">
+                <span>리스크</span>
+                <select
+                  value={riskSelectValue}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === 'auto') {
+                      setRiskCustom(false);
+                      setRiskDraft(null);
+                    } else if (v === 'custom') {
+                      setRiskCustom(true);
+                      if (riskDraft == null) setRiskDraft(clampRiskInput(2.5));
+                    } else {
+                      setRiskCustom(false);
+                      setRiskDraft(Number(v));
+                    }
+                  }}
+                  aria-label="1회 허용 손실률"
+                  data-risk-select
+                >
+                  <option value="auto">
+                    성향 추천 ({profile ? defaultRiskPct(profile.style) : 1.5}%)
+                  </option>
+                  {RISK_PRESETS.map((v) => (
+                    <option key={v} value={v}>
+                      잔고의 {v}%
+                    </option>
+                  ))}
+                  <option value="custom">직접 입력</option>
+                </select>
+              </label>
+              {showRiskInput && (
+                <label className="risk-custom">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0.5}
+                    max={50}
+                    step={0.1}
+                    value={riskDraft ?? ''}
+                    onChange={(e) => setRiskDraft(clampRiskInput(Number(e.target.value)))}
+                    aria-label="1회 허용 손실률 직접 입력"
+                    data-risk-input
+                  />
+                  <i>%</i>
+                </label>
+              )}
+            </div>
+            <SaveButton
+              name="risk"
+              dirty={isDirty(settings.riskPct, riskDraft)}
+              onSave={() => onSaveRisk(riskDraft)}
+            />
+          </div>
         </div>
-        {isHighRisk(resolveRiskPct(profile?.style ?? 'conservative', settings.riskPct)) && (
+        {isHighRisk(draftRiskValue) && (
           <div className="risk-high-warn" data-risk-warning>
             ⚠️ 고위험 설정: 연속 손실 시 계좌 잔고 감소가 커집니다
           </div>
         )}
+        <div className="setting-row">
+          <div>
+            <div className="setting-name">매매 스타일</div>
+            <div className="setting-desc">
+              고른 스타일을 저장하면 자동매매의 리스크·레버리지 상한·최대 포지션·진입 기준·50% 반익절이
+              그 프리셋으로 <b>즉시</b> 바뀝니다. 켜짐·모의/실거래·감시 주기·허용 종목은 그대로 유지됩니다.
+              {styleChanged
+                ? ` 저장하면 ${STYLE_META[styleDraft].label}로 바뀝니다.`
+                : ` 지금은 ${STYLE_META[activeStyle].label}입니다.`}
+            </div>
+            <div className="style-preset-note" data-style-preset-note>
+              {STYLE_META[styleDraft].emoji} {stylePresetSummary(styleDraft)}
+            </div>
+          </div>
+          <div className="setting-actions">
+            <div className="segmented style-pick">
+              {(['conservative', 'aggressive'] as TradeStyle[]).map((s) => (
+                <button
+                  key={s}
+                  data-style-pick={s}
+                  className={styleDraft === s ? 'on' : ''}
+                  onClick={() => setStyleDraft(s)}
+                >
+                  {STYLE_META[s].emoji} {STYLE_META[s].label.replace(' 매매', '')}
+                </button>
+              ))}
+            </div>
+            <SaveButton
+              name="style"
+              dirty={isDirty(activeStyle, styleDraft)}
+              onSave={() => onSaveStyle(styleDraft)}
+            />
+          </div>
+        </div>
         <div className="setting-row compact">
           <div>
             <div className="setting-name">매매 성향 다시 설정</div>
             <div className="setting-desc">
-              보수적/공격적 성향을 바꾸면 추천 배율과 1회 리스크가 다시 계산되고, 자동매매 설정(리스크·레버리지·
-              포지션·진입 기준·50% 반익절)도 그 프리셋으로 함께 맞춰집니다. 공격적은 레버리지 상한을 두지 않습니다.
+              온보딩 화면에서 보수적/공격적을 다시 고를 수 있습니다. 위의 매매 스타일 저장과 같은 프리셋이
+              자동매매에 적용됩니다(공격적은 레버리지 상한을 두지 않습니다).
             </div>
           </div>
           <button className="ghost-btn" onClick={onEditProfile}>
@@ -432,33 +578,47 @@ export function SettingsTab({
               감지된 새 시그널을 폰으로 알려줍니다. 끄면 알림이 오지 않습니다(기본 켜짐).
             </div>
           </div>
-          <button
-            className={`switch ${settings.notifyEnabled ? 'on' : ''}`}
-            onClick={toggleNotify}
-            aria-label="시그널 알림 켜기/끄기"
-            aria-pressed={settings.notifyEnabled}
-          >
-            <span />
-          </button>
+          <div className="setting-actions">
+            <button
+              className={`switch ${notifyDraft ? 'on' : ''}`}
+              onClick={() => setNotifyDraft(!notifyDraft)}
+              aria-label="시그널 알림 켜기/끄기"
+              aria-pressed={notifyDraft}
+            >
+              <span />
+            </button>
+            <SaveButton
+              name="notify-enabled"
+              dirty={isDirty(settings.notifyEnabled, notifyDraft)}
+              onSave={saveNotifyEnabled}
+            />
+          </div>
         </div>
 
         <div className="setting-row">
           <div>
             <div className="setting-name">알림 대상</div>
             <div className="setting-desc">
-              {NOTIFY_TARGETS.find((t) => t.key === settings.notifyTarget)?.desc ?? ''}
+              {NOTIFY_TARGETS.find((t) => t.key === targetDraft)?.desc ?? ''}
             </div>
           </div>
-          <div className="segmented notify-target">
-            {NOTIFY_TARGETS.map((t) => (
-              <button
-                key={t.key}
-                className={settings.notifyTarget === t.key ? 'on' : ''}
-                onClick={() => onChange({ notifyTarget: t.key })}
-              >
-                {t.label}
-              </button>
-            ))}
+          <div className="setting-actions">
+            <div className="segmented notify-target">
+              {NOTIFY_TARGETS.map((t) => (
+                <button
+                  key={t.key}
+                  className={targetDraft === t.key ? 'on' : ''}
+                  onClick={() => setTargetDraft(t.key)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <SaveButton
+              name="notify-target"
+              dirty={isDirty(settings.notifyTarget, targetDraft)}
+              onSave={() => onChange({ notifyTarget: targetDraft })}
+            />
           </div>
         </div>
 
@@ -505,9 +665,11 @@ export function SettingsTab({
               spellCheck={false}
               onChange={(e) => setNtfyDraft(e.target.value)}
             />
-            <button className="ghost-btn" onClick={() => onChange({ notifyNtfy: ntfyDraft.trim() })}>
-              저장
-            </button>
+            <SaveButton
+              name="ntfy"
+              dirty={ntfyDraft.trim() !== settings.notifyNtfy}
+              onSave={() => onChange({ notifyNtfy: ntfyDraft.trim() })}
+            />
             {settings.notifyNtfy && (
               <button
                 className="ghost-btn"
@@ -539,12 +701,19 @@ export function SettingsTab({
               코인·주식선물 시그널 카드와 백테스트 수익률에 반영됩니다.
             </div>
           </div>
-          <div className="segmented">
-            {[5, 10, 20, 50].map((l) => (
-              <button key={l} className={settings.leverage === l ? 'on' : ''} onClick={() => onChange({ leverage: l })}>
-                {l}x
-              </button>
-            ))}
+          <div className="setting-actions">
+            <div className="segmented">
+              {[5, 10, 20, 50].map((l) => (
+                <button key={l} className={leverageDraft === l ? 'on' : ''} onClick={() => setLeverageDraft(l)}>
+                  {l}x
+                </button>
+              ))}
+            </div>
+            <SaveButton
+              name="leverage"
+              dirty={isDirty(settings.leverage, leverageDraft)}
+              onSave={() => onChange({ leverage: leverageDraft })}
+            />
           </div>
         </div>
 
@@ -553,12 +722,19 @@ export function SettingsTab({
             <div className="setting-name">최소 손익비 필터</div>
             <div className="setting-desc">진입 시점 손익비가 이 값보다 낮은 셋업은 목록에서 제외합니다.</div>
           </div>
-          <div className="segmented">
-            {[1.2, 1.5, 1.8, 2, 2.5].map((r) => (
-              <button key={r} className={settings.minRR === r ? 'on' : ''} onClick={() => onChange({ minRR: r })}>
-                {r.toFixed(1)}R
-              </button>
-            ))}
+          <div className="setting-actions">
+            <div className="segmented">
+              {[1.2, 1.5, 1.8, 2, 2.5].map((r) => (
+                <button key={r} className={minRRDraft === r ? 'on' : ''} onClick={() => setMinRRDraft(r)}>
+                  {r.toFixed(1)}R
+                </button>
+              ))}
+            </div>
+            <SaveButton
+              name="min-rr"
+              dirty={isDirty(settings.minRR, minRRDraft)}
+              onSave={() => onChange({ minRR: minRRDraft })}
+            />
           </div>
         </div>
 
@@ -567,12 +743,19 @@ export function SettingsTab({
             <div className="setting-name">자동 갱신 주기</div>
             <div className="setting-desc">캔들·티커를 다시 받아 백테스트와 시그널을 갱신합니다.</div>
           </div>
-          <div className="segmented">
-            {[30, 60, 120, 0].map((s) => (
-              <button key={s} className={settings.refreshSec === s ? 'on' : ''} onClick={() => onChange({ refreshSec: s })}>
-                {s === 0 ? '꺼짐' : `${s}초`}
-              </button>
-            ))}
+          <div className="setting-actions">
+            <div className="segmented">
+              {[30, 60, 120, 0].map((s) => (
+                <button key={s} className={refreshDraft === s ? 'on' : ''} onClick={() => setRefreshDraft(s)}>
+                  {s === 0 ? '꺼짐' : `${s}초`}
+                </button>
+              ))}
+            </div>
+            <SaveButton
+              name="refresh"
+              dirty={isDirty(settings.refreshSec, refreshDraft)}
+              onSave={() => onChange({ refreshSec: refreshDraft })}
+            />
           </div>
         </div>
 
@@ -581,9 +764,21 @@ export function SettingsTab({
             <div className="setting-name">새 시그널 알림음</div>
             <div className="setting-desc">새로운 진행중 시그널이 감지되면 짧은 알림을 냅니다.</div>
           </div>
-          <button className={`switch ${settings.sound ? 'on' : ''}`} onClick={() => onChange({ sound: !settings.sound })}>
-            <span />
-          </button>
+          <div className="setting-actions">
+            <button
+              className={`switch ${soundDraft ? 'on' : ''}`}
+              onClick={() => setSoundDraft(!soundDraft)}
+              aria-label="새 시그널 알림음 켜기/끄기"
+              aria-pressed={soundDraft}
+            >
+              <span />
+            </button>
+            <SaveButton
+              name="sound"
+              dirty={isDirty(settings.sound, soundDraft)}
+              onSave={() => onChange({ sound: soundDraft })}
+            />
+          </div>
         </div>
       </section>
 

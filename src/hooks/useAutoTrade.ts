@@ -909,8 +909,29 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
   }, [keys.hasKeys, liveRefresh, refreshAccount, refreshKeys, refreshPositions, supported]);
 
   /**
+   * ⚙️ 설정 탭의 1회 리스크 저장을 자동매매 설정에도 반영한다(v1.5.6).
+   *  · 설정 탭(`bgss.settings.v1`)과 자동매매(`cota.autotrade.config.v1`)가 같은 값이 되어야
+   *    카드 콕핏·원클릭·자동매매 주문 수량이 서로 다른 리스크로 계산되지 않는다.
+   *  · 켜져 있으면 감시 목록도 새 리스크로 다시 계산된다(네이티브가 주문 직전 잔고로 재계산).
+   */
+  const setRiskPct = useCallback(
+    (riskPct: number) => {
+      const next = normalizeConfig({ riskPct }).riskPct;
+      if (config.riskPct === next) return;
+      setConfig((prev) => normalizeConfig({ ...prev, riskPct: next }));
+      log({
+        at: Date.now(),
+        level: 'info',
+        text: `설정 탭 1회 리스크 ${next}% 저장 — 자동매매도 이 리스크로 주문 수량을 계산합니다.`,
+      });
+    },
+    [config.riskPct, log],
+  );
+
+  /**
    * 🎯 매매 스타일 → 자동매매 프리셋 연동(v1.5.6).
-   * 온보딩에서 성향을 처음 고르거나 바꿀 때, 그리고 자동매매 화면의 `스타일 프리셋 맞추기`가 부른다.
+   * 온보딩에서 성향을 처음 고르거나 바꿀 때, 설정 탭에서 스타일을 저장할 때,
+   * 그리고 자동매매 화면의 `스타일 프리셋 맞추기`가 부른다.
    * 켜짐·모의/실거래·감시 주기·허용 종목은 사용자가 고른 값을 그대로 둔다.
    */
   const applyTradeStyle = useCallback(
@@ -929,14 +950,22 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
   /** 켜져 있는 동안 새 시그널을 감시 목록으로 계속 넘긴다(중복은 키로 병합). */
   const armedRef = useRef<ArmedPlan[]>([]);
   const lastSyncRef = useRef(0);
+  /** 마지막으로 감시 목록에 반영한 설정 — 설정 저장은 15초 제한을 건너뛰고 곧바로 반영한다. */
+  const lastConfigSigRef = useRef('');
   useEffect(() => {
     if (!config.enabled || !supported) {
       armedRef.current = [];
+      lastConfigSigRef.current = '';
       return;
     }
     const now = Date.now();
-    if (now - lastSyncRef.current < 15_000) return;
+    const sig = JSON.stringify(config);
+    const configChanged = sig !== lastConfigSigRef.current;
+    // 시그널이 자주 바뀔 때 거래소를 두드리지 않도록 15초에 한 번만 동기화하되,
+    // 설정(리스크·허용 종목 등) 저장은 사용자가 누른 결과이므로 바로 반영한다(v1.5.6).
+    if (!configChanged && now - lastSyncRef.current < 15_000) return;
     lastSyncRef.current = now;
+    lastConfigSigRef.current = sig;
     const { plans } = buildPlans(signals, now);
     // 설정(허용 종목·유효시간)이 바뀌면 이미 감시 중인 목록에서도 빠져야 한다 — 만료·제외 종목은 버린다.
     const alive = armedRef.current.filter((p) => p.expiresAt > now && symbolAllowed(config, p.symbol));
@@ -983,6 +1012,8 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
     liveRefresh,
     setLiveRefresh,
     patchConfig: (patch: Partial<AutoTradeConfig>) => setConfig((prev) => normalizeConfig({ ...prev, ...patch })),
+    /** 설정 탭 1회 리스크 저장 → 자동매매 리스크 동기화 */
+    setRiskPct,
     saveKeys,
     forgetKeys,
     testConnection,

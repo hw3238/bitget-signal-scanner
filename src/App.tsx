@@ -21,7 +21,8 @@ import { useApkUpdate } from './lib/useApkUpdate';
 import { useSignalNotifications } from './lib/notify';
 import { APK_DOWNLOAD_URL, checkForUpdate, RELEASES_PAGE } from './lib/update';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from './lib/storage';
-import { loadProfile, recommendLeverage, saveProfile, type Profile } from './lib/profile';
+import { loadProfile, recommendLeverage, saveProfile, type Profile, type TradeStyle } from './lib/profile';
+import { planRiskSave, planStyleSave } from './lib/settingsSync';
 
 type Tab = TabKey;
 
@@ -179,6 +180,33 @@ export default function App() {
     setOnboarding(false);
     if (styleChanged) autoTrade.applyTradeStyle(next.style);
   };
+
+  /**
+   * ⚙️ 설정 탭 저장 → 자동매매 연동(v1.5.6).
+   *  · 1회 리스크: 설정과 자동매매가 같은 값이 되도록 함께 저장한다.
+   *  · 매매 스타일: 프리셋(리스크·레버리지 상한·포지션·진입 기준·반익절)을 자동매매에 적용하고,
+   *    설정 탭 리스크도 프리셋 값으로 맞춘다 — 두 화면이 다른 리스크로 계산되지 않게.
+   */
+  const saveSettingsRisk = useCallback(
+    (riskPct: number | null) => {
+      const plan = planRiskSave(profile?.style ?? 'conservative', riskPct);
+      patchSettings({ riskPct: plan.settingsRiskPct });
+      autoTrade.setRiskPct(plan.autoRiskPct);
+    },
+    [autoTrade.setRiskPct, patchSettings, profile?.style],
+  );
+
+  const saveTradeStyle = useCallback(
+    (style: TradeStyle) => {
+      const plan = planStyleSave({ config: autoTrade.config, style });
+      const next: Profile = { style: plan.style, updatedAt: Date.now() };
+      saveProfile(next);
+      setProfile(next);
+      autoTrade.applyTradeStyle(plan.style);
+      patchSettings({ riskPct: plan.settingsRiskPct });
+    },
+    [autoTrade.applyTradeStyle, autoTrade.config, patchSettings],
+  );
 
   /** 시그널 카드·설정의 '계좌 연결' 안내 → 메뉴의 비트겟 자동매매 화면 */
   const openAutoTrade = useCallback(() => {
@@ -342,6 +370,9 @@ export default function App() {
             account={autoTrade.accountBase}
             onEditProfile={() => setOnboarding(true)}
             onConnectAccount={openAutoTrade}
+            autoTrade={autoTrade}
+            onSaveRisk={saveSettingsRisk}
+            onSaveStyle={saveTradeStyle}
           />
         )}
       </main>
