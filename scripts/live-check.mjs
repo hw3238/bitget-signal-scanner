@@ -231,8 +231,11 @@ const surge = await page.evaluate(() => {
 });
 check(surge.count >= 3 && surge.first?.reqs === 6, '라이브 급등 탐색기: 카드·6요건 배지', `${surge.count}장 · ${surge.first?.base} ${surge.first?.scoreText}`);
 check(
-  surge.first?.score >= 1 && surge.first.score <= 100 && /진입|목표|손절|레버리지/.test(surge.sub ?? ''),
-  '라이브 급등 탐색기: 점수·진입/목표/손절/레버리지',
+  surge.first?.score >= 1 &&
+    surge.first.score <= 100 &&
+    surge.first.cells?.length === 4 &&
+    surge.first.cells.every((v) => v && v !== '-'),
+  '라이브 급등 탐색기: 점수·진입/목표/손절/레버리지 4칸',
   `${surge.first?.score}점 · ${surge.first?.cells?.join(' / ')}`,
 );
 check(/코인 선물 \d+개 중/.test(surge.sub ?? '') && surge.top === surge.first?.base, '라이브 급등 탐색기: 유니버스·TOP 요약', `${surge.sub} · TOP ${surge.top} · 요건4+ ${surge.prime}`);
