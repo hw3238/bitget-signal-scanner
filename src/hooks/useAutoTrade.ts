@@ -18,6 +18,7 @@ import {
   STYLE_MIGRATION_KEY,
   SYMBOL_MIGRATION_KEY,
   applyDailyReset,
+  applyGuardSave,
   applyStylePreset as applyStylePresetToConfig,
   buildOrderParams,
   checkDailyLoss,
@@ -36,6 +37,7 @@ import {
   planDailyReset,
   priceText,
   pushLog,
+  releaseStylePreset as releaseStylePresetInConfig,
   resolveTradeMode,
   rollDay,
   signalKeyOf,
@@ -48,6 +50,7 @@ import {
   type AutoRuntime,
   type AutoTradeConfig,
   type EntryDecision,
+  type GuardField,
   type PlaceOrderParams,
 } from '../lib/autotrade';
 import { accountKindLabel } from '../lib/bitgetUta';
@@ -931,20 +934,64 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
   /**
    * 🎯 매매 스타일 → 자동매매 프리셋 연동(v1.5.6).
    * 온보딩에서 성향을 처음 고르거나 바꿀 때, 설정 탭에서 스타일을 저장할 때,
-   * 그리고 자동매매 화면의 `스타일 프리셋 맞추기`가 부른다.
+   * 그리고 자동매매 화면의 `적용` 버튼이 부른다.
    * 켜짐·모의/실거래·감시 주기·허용 종목은 사용자가 고른 값을 그대로 둔다.
+   * 적용 결과 설정을 돌려준다 — 화면이 초안(draft)을 곧바로 맞출 수 있게.
    */
   const applyTradeStyle = useCallback(
-    (style: TradeStyle) => {
+    (style: TradeStyle): AutoTradeConfig => {
       const preset = presetForStyle(style);
-      setConfig((prev) => applyStylePresetToConfig(prev, style));
+      const next = applyStylePresetToConfig(config, style);
+      setConfig(next);
       log({
         at: Date.now(),
         level: 'info',
         text: `매매 스타일 프리셋 적용 — ${style === 'aggressive' ? '⚡ 공격적' : '🛡️ 보수적'} · 리스크 ${preset.riskPct}% · 레버리지 ${leverageCapLabel(preset.maxLeverage)} · 최대 ${preset.maxPositions}포지션 · 1일 손실 ${preset.dailyLossPct}% · 50% 반익절 ${preset.partialTp ? 'ON' : 'OFF'}`,
       });
+      return next;
     },
-    [log],
+    [config, log],
+  );
+
+  /**
+   * 🔗 프리셋 연동 해제 — 지금 값을 그대로 두고 `직접 설정` 상태로 바꾼다.
+   *  이후 리스크·안전장치 저장값은 스타일 저장에 덮어쓰이지 않는다(`적용`을 눌러야 돌아간다).
+   */
+  const releaseStylePreset = useCallback((): AutoTradeConfig => {
+    const next = releaseStylePresetInConfig(config);
+    if (next !== config) {
+      setConfig(next);
+      log({
+        at: Date.now(),
+        level: 'info',
+        text: '매매 스타일 프리셋 연동 해제 — 지금 리스크·안전장치 값을 직접 설정으로 유지합니다.',
+      });
+    }
+    return next;
+  }, [config, log]);
+
+  /**
+   * 💾 `② 리스크 · 안전장치` 저장 — 초안을 설정에 반영한다(v1.5.6).
+   *  · 저장 즉시 `cota.autotrade.config.v1`(effect)과 네이티브 감시(autoTradeSync effect)에 반영된다.
+   *  · 프리셋이 관리하는 항목을 프리셋과 다르게 저장하면 연동을 해제해 값을 지킨다(`applyGuardSave`).
+   *  · 반환값은 정규화된 저장 결과 — 화면이 초안을 이 값으로 다시 맞춘다(클램프 반영).
+   */
+  const saveGuards = useCallback(
+    (patch: Partial<Pick<AutoTradeConfig, GuardField>>, style: TradeStyle | null): AutoTradeConfig => {
+      const next = applyGuardSave(config, patch, style);
+      setConfig(next);
+      const wasActive = config.stylePresetActive;
+      log({
+        at: Date.now(),
+        level: 'info',
+        text:
+          `리스크·안전장치 저장 — 리스크 ${next.riskPct}% · 1일 손실 ${next.dailyLossPct === 0 ? '끔' : `−${next.dailyLossPct}%`}` +
+          ` · 최대 ${next.maxPositions}포지션 · 레버리지 ${leverageCapLabel(next.maxLeverage)}` +
+          (wasActive && !next.stylePresetActive ? ' · 프리셋 연동 해제(직접 설정)' : ''),
+      });
+      return next;
+    },
+    [config, log],
   );
 
   /** 켜져 있는 동안 새 시그널을 감시 목록으로 계속 넘긴다(중복은 키로 병합). */
@@ -1025,8 +1072,12 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
     quickOrder,
     closePosition,
     simulate,
-    /** 매매 스타일 프리셋을 자동매매 설정에 적용 */
+    /** 매매 스타일 프리셋을 자동매매 설정에 적용 (적용 버튼) */
     applyTradeStyle,
+    /** 매매 스타일 프리셋 연동 해제 (해제 버튼) — 값은 그대로 둔다 */
+    releaseStylePreset,
+    /** ② 리스크·안전장치 저장 — 저장 버튼이 부른다 */
+    saveGuards,
     setError,
     reloadKeys: refreshKeys,
   };

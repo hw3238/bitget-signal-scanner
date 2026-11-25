@@ -5,21 +5,27 @@ import { fmtUsd, formatQty } from '../lib/orderCockpit';
 import { fmtPct } from '../lib/format';
 import {
   DEFAULTS,
+  GUARD_FIELD_LABEL,
   LIMITS,
   LIVE_REFRESH_MS,
   MAJOR_SYMBOLS,
   RISK_HIGH_WARN,
   RISK_PRESET_CHOICES,
+  STYLE_FIELD_LABEL,
+  STYLE_PRESET_FIELDS,
   fmtClock,
   fmtSince,
   fmtUsdt,
+  guardFieldsChanged,
+  guardPatchOf,
   leverageCapLabel,
-  matchesStylePreset,
   partialTpState,
   presetForStyle,
   statusBadge,
+  styleFieldValue,
   stylePresetDiff,
   todayFillCount,
+  type AutoTradeConfig,
 } from '../lib/autotrade';
 import { STYLE_META, type Profile } from '../lib/profile';
 import { NumField } from './ui';
@@ -90,6 +96,15 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
   const [toast, setToast] = useState<string | null>(null);
   /** 앞선 토스트의 3.2초 타이머가 새 토스트를 지워 버리지 않게 하나만 유지한다 */
   const toastTimer = useRef<number | null>(null);
+  /**
+   * ② 리스크 · 안전장치 초안 — 이 카드에서 바꾼 값은 `저장`을 눌러야 설정·네이티브 감시에 반영된다.
+   * (현우님: "손실한도를 바꿨는데 프리셋에 적용되지가 않아 → 저장 버튼 추가")
+   */
+  const [draft, setDraft] = useState<AutoTradeConfig>(config);
+  const configRef = useRef(config);
+  /** 저장 직후 `✓ 저장됨` 피드백 표시 시각 (0 = 표시 안 함) */
+  const [savedAt, setSavedAt] = useState(0);
+  const savedTimer = useRef<number | null>(null);
 
   /** 이 화면이 열려 있는 동안만 12초 실시간 잔고 갱신을 돌린다(나가면 interval 정리). */
   useEffect(() => {
@@ -100,6 +115,23 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
   useEffect(() => {
     setDemoChoice(config.mode !== 'live');
   }, [config.mode]);
+
+  /**
+   * 설정이 **밖에서** 바뀌면(프리셋 적용·설정 탭 저장) 초안도 새 값으로 맞춘다.
+   * 저장되지 않은 초안이 있으면 사용자가 입력 중인 값을 지키기 위해 건드리지 않는다.
+   */
+  useEffect(() => {
+    const prev = configRef.current;
+    if (prev === config) return;
+    configRef.current = config;
+    setDraft((cur) => (JSON.stringify(cur) === JSON.stringify(prev) ? config : cur));
+  }, [config]);
+
+  useEffect(() => {
+    if (!savedAt) return;
+    const id = window.setTimeout(() => setSavedAt(0), 2600);
+    return () => window.clearTimeout(id);
+  }, [savedAt]);
 
   const openSignals = useMemo(() => signals.filter((s) => s.state === 'open' && s.asset !== 'fx'), [signals]);
   /** 🔗 v1.5.5 — 시드는 언제나 연결된 계좌 잔고. 계좌가 없으면 0(계산 불가). */
@@ -115,7 +147,40 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
   const styleMeta = profile ? STYLE_META[profile.style] : null;
   const stylePreset = profile ? presetForStyle(profile.style) : null;
   const styleDiff = profile ? stylePresetDiff(config, profile.style) : [];
-  const styleLinked = profile ? matchesStylePreset(config, profile.style) : false;
+  /**
+   * 프리셋 카드 상태 — 연동됨 / 프리셋과 다름 / 해제됨(직접 설정) / 성향 미설정.
+   * `해제됨`은 연동을 끈 상태로, 리스크·안전장치에서 저장한 값을 스타일이 덮어쓰지 않는다.
+   */
+  const presetState: 'none' | 'linked' | 'diff' | 'released' = !profile
+    ? 'none'
+    : !config.stylePresetActive
+      ? 'released'
+      : styleDiff.length > 0
+        ? 'diff'
+        : 'linked';
+  const presetLabel =
+    presetState === 'none'
+      ? '성향 미설정'
+      : presetState === 'released'
+        ? '프리셋 해제됨 · 직접 설정'
+        : presetState === 'diff'
+          ? '프리셋과 다름'
+          : '프리셋 연동됨';
+  /** ② 초안에서 저장하지 않은 항목 · 저장 버튼 활성화 조건 */
+  const changedGuards = useMemo(() => guardFieldsChanged(config, draft), [config, draft]);
+  const guardDirty = changedGuards.length > 0;
+  const justSaved = savedAt > 0 && !guardDirty;
+  const guardStateLabel = guardDirty
+    ? '저장 안 됨'
+    : justSaved
+      ? '✓ 저장됨'
+      : !profile
+        ? '직접 설정'
+        : !config.stylePresetActive
+          ? '직접 설정'
+          : styleDiff.length > 0
+            ? '프리셋과 다름'
+            : '프리셋 연동됨';
   /** 50% 반익절을 이미 마친 포지션 키 — 네이티브가 기록한 값 */
   const partialDone = useMemo(() => new Set(native?.partialTpDone ?? []), [native?.partialTpDone]);
 
@@ -131,8 +196,35 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
   useEffect(() => {
     return () => {
       if (toastTimer.current) window.clearTimeout(toastTimer.current);
+      if (savedTimer.current) window.clearTimeout(savedTimer.current);
     };
   }, []);
+
+  /** ② 리스크 · 안전장치 저장 — 저장할 항목만 설정에 넣고 초안을 정규화된 값으로 다시 맞춘다. */
+  const onSaveGuards = () => {
+    const next = api.saveGuards(guardPatchOf(draft), profile?.style ?? null);
+    setDraft(next);
+    if (savedTimer.current) window.clearTimeout(savedTimer.current);
+    setSavedAt(Date.now());
+    notify(next.stylePresetActive ? '✓ 저장됨 — 리스크·안전장치에 반영했습니다.' : '✓ 저장됨 — 프리셋 해제(직접 설정)로 값을 지킵니다.');
+  };
+
+  /** `적용` — 지금 매매 스타일의 프리셋 값으로 맞추고 연동을 켠다. */
+  const onApplyPreset = () => {
+    if (!profile) return;
+    const next = api.applyTradeStyle(profile.style);
+    setDraft(next);
+    setSavedAt(0);
+    notify('✓ 프리셋 적용됨');
+  };
+
+  /** `해제` — 값은 그대로 두고 프리셋 연동만 끊는다(직접 설정). */
+  const onReleasePreset = () => {
+    const next = api.releaseStylePreset();
+    setDraft(next);
+    setSavedAt(0);
+    notify('프리셋 해제됨 · 직접 설정');
+  };
 
   /** 손실 한도 초기화 — 실수로 누르면 하루 손실 기록이 0%부터 다시 세지므로 한 번 확인을 받는다. */
   const onResetDaily = async () => {
@@ -302,8 +394,13 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
       <section className="auto-card auto-style" data-auto-style>
         <header className="auto-card-head">
           <h3>🎯 매매 스타일 → 자동매매</h3>
-          <span className={`auto-tag ${styleLinked ? 'ok' : ''}`} data-style-linked>
-            {!profile ? '성향 미설정' : styleLinked ? '프리셋 연동됨' : '프리셋과 다름'}
+          <span
+            className={`auto-tag ${presetState === 'linked' ? 'ok' : presetState === 'released' ? 'warn' : ''}`}
+            data-style-linked
+            data-style-state={presetState}
+            data-style-active={config.stylePresetActive ? '1' : '0'}
+          >
+            {presetLabel}
           </span>
         </header>
         {profile && stylePreset && styleMeta ? (
@@ -314,41 +411,64 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
               </b>
               <span>{styleMeta.range}</span>
             </div>
-            <div className="auto-style-grid">
-              <span>
-                1회 리스크 <b>{stylePreset.riskPct}%</b>
-              </span>
-              <span>
-                레버리지 <b>{leverageCapLabel(stylePreset.maxLeverage)}</b>
-              </span>
-              <span>
-                최대 포지션 <b>{stylePreset.maxPositions}개</b>
-              </span>
-              <span>
-                1일 손실 <b>{stylePreset.dailyLossPct}%</b>
-              </span>
-              <span>
-                최소 승률 <b>{stylePreset.minWinRate}%</b>
-              </span>
-              <span>
-                최소 손익비 <b>{stylePreset.minRR}R</b>
-              </span>
-              <span>
-                50% 반익절 <b>{stylePreset.partialTp ? 'ON' : 'OFF'}</b>
-              </span>
+            {/* 프리셋 값과 현재 저장된 자동매매 값을 나란히 — 다른 항목은 강조한다 */}
+            <div className="auto-style-compare" data-style-compare>
+              <div className="auto-style-compare-head">
+                <span>항목</span>
+                <span>프리셋</span>
+                <span>현재</span>
+              </div>
+              {STYLE_PRESET_FIELDS.map((field) => {
+                const diff = config[field] !== stylePreset[field];
+                return (
+                  <div
+                    key={field}
+                    className={`auto-style-compare-row ${diff ? 'diff' : ''}`}
+                    data-style-row={field}
+                    data-style-row-diff={diff ? '1' : '0'}
+                  >
+                    <span>{STYLE_FIELD_LABEL[field]}</span>
+                    <span className="preset">{styleFieldValue(field, stylePreset)}</span>
+                    <b>{styleFieldValue(field, config)}</b>
+                  </div>
+                );
+              })}
             </div>
-            {styleDiff.length > 0 && <em data-style-diff>스타일과 다른 값: {styleDiff.join(' · ')}</em>}
-            <button
-              type="button"
-              className="auto-primary"
-              data-style-preset
-              onClick={() => api.applyTradeStyle(profile.style)}
-            >
-              {styleLinked ? '✓ 프리셋과 같음 — 다시 맞추기' : '스타일 프리셋 맞추기'}
-            </button>
+            {styleDiff.length > 0 ? (
+              <em data-style-diff>스타일과 다른 값: {styleDiff.join(' · ')}</em>
+            ) : (
+              <em className="same" data-style-same>
+                지금 자동매매 값이 이 프리셋과 같습니다
+              </em>
+            )}
+            {guardDirty && (
+              <em className="pending" data-style-pending>
+                저장 대기 중인 변경 {changedGuards.length}건 — ②에서 <b>저장</b>을 누르면 위 `현재` 값에 반영됩니다
+              </em>
+            )}
+            {presetState === 'released' && (
+              <em className="released" data-style-released-note>
+                프리셋 연동을 해제했습니다. ②에서 저장한 리스크·손실 한도 값을 스타일이 덮어쓰지 않습니다.
+              </em>
+            )}
+            <div className="auto-style-actions">
+              <button type="button" className="auto-primary" data-style-apply data-style-preset onClick={onApplyPreset}>
+                적용
+              </button>
+              <button
+                type="button"
+                className="auto-secondary"
+                data-style-release
+                onClick={onReleasePreset}
+                disabled={!config.stylePresetActive}
+              >
+                해제
+              </button>
+            </div>
             <p className="auto-style-note">
-              온보딩·설정에서 매매 스타일을 바꾸면 리스크·레버리지·포지션 수·진입 기준·50% 반익절이 그 스타일로
-              자동 변경됩니다. 켜짐·모의/실거래·허용 종목은 건드리지 않습니다.
+              <b>적용</b>을 누르면 위 프리셋 값(리스크·레버리지·포지션·진입 기준·반익절)으로 맞추고 연동합니다.
+              <b>해제</b>는 지금 값을 그대로 두고 연동만 끊어, ②에서 직접 정한 값을 지킵니다. 켜짐·모의/실거래·
+              허용 종목은 적용·해제 모두 건드리지 않습니다.
             </p>
           </div>
         ) : (
@@ -516,18 +636,31 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
       <section className="auto-card" data-auto-guards>
         <header className="auto-card-head">
           <h3>② 리스크 · 안전장치</h3>
-          <span className="auto-tag">기본값 권장</span>
+          <span
+            className={`auto-tag ${guardDirty ? 'warn' : justSaved ? 'ok' : config.stylePresetActive ? '' : 'muted'}`}
+            data-auto-guard-state
+            data-guard-dirty={guardDirty ? '1' : '0'}
+          >
+            {guardStateLabel}
+          </span>
         </header>
+        <p className="auto-guard-intro">
+          값을 바꾸면 오른쪽 위에 <b>저장 안 됨</b>이 뜨고 저장 버튼이 켜집니다. <b>저장</b>을 눌러야 상단 지표·프리셋
+          카드·24시간 감시에 반영됩니다.
+          {guardDirty && (
+            <em data-auto-dirty-fields>바뀐 항목: {changedGuards.map((f) => GUARD_FIELD_LABEL[f]).join(' · ')}</em>
+          )}
+        </p>
         <div className="auto-risk-block">
           <NumField
             label="1회 리스크"
-            value={config.riskPct}
+            value={draft.riskPct}
             suffix="%"
-            onChange={(v) => api.patchConfig({ riskPct: v })}
+            onChange={(v) => setDraft((prev) => ({ ...prev, riskPct: v }))}
             hint={
               seed > 0
-                ? `0.5~50% 직접 입력 · 계좌 ${fmtUsd(seed)}의 ${config.riskPct}% = ${fmtUsd(
-                    (seed * config.riskPct) / 100,
+                ? `0.5~50% 직접 입력 · 계좌 ${fmtUsd(seed)}의 ${draft.riskPct}% = ${fmtUsd(
+                    (seed * draft.riskPct) / 100,
                   )}`
                 : '0.5~50% 직접 입력 · 계좌를 연결하면 금액으로 표시됩니다'
             }
@@ -537,15 +670,15 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
               <button
                 key={v}
                 type="button"
-                className={`risk-chip ${Math.abs(config.riskPct - v) < 1e-9 ? 'on' : ''} ${v >= RISK_HIGH_WARN ? 'high' : ''}`}
-                onClick={() => api.patchConfig({ riskPct: v })}
+                className={`risk-chip ${Math.abs(draft.riskPct - v) < 1e-9 ? 'on' : ''} ${v >= RISK_HIGH_WARN ? 'high' : ''}`}
+                onClick={() => setDraft((prev) => ({ ...prev, riskPct: v }))}
                 data-risk-preset={v}
               >
                 {v}%
               </button>
             ))}
           </div>
-          {config.riskPct >= RISK_HIGH_WARN && (
+          {draft.riskPct >= RISK_HIGH_WARN && (
             <div className="risk-high-warn" data-risk-warning>
               ⚠️ 고위험 설정: 연속 손실 시 계좌 잔고 감소가 커집니다
             </div>
@@ -554,26 +687,26 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
         <div className="auto-num-grid">
           <NumField
             label="최대 동시 포지션"
-            value={config.maxPositions}
+            value={draft.maxPositions}
             suffix="개"
-            onChange={(v) => api.patchConfig({ maxPositions: v })}
+            onChange={(v) => setDraft((prev) => ({ ...prev, maxPositions: v }))}
             hint={`${LIMITS.maxPositions[0]}~${LIMITS.maxPositions[1]}개 · 기본 ${DEFAULTS.maxPositions}개`}
           />
           <div className="auto-daily-limit">
             <NumField
               label="1일 손실 한도"
-              value={config.dailyLossPct}
+              value={draft.dailyLossPct}
               suffix="%"
-              onChange={(v) => api.patchConfig({ dailyLossPct: v })}
-              hint={config.dailyLossPct === 0 ? '한도 끄기 — 스스로 멈추지 않습니다' : '닿으면 당일 자동 진입 중지 · 0 = 끄기'}
+              onChange={(v) => setDraft((prev) => ({ ...prev, dailyLossPct: v }))}
+              hint={draft.dailyLossPct === 0 ? '한도 끄기 — 스스로 멈추지 않습니다' : '닿으면 당일 자동 진입 중지 · 0 = 끄기'}
             />
             <div className="risk-presets compact" role="group" aria-label="1일 손실 한도 빠른 선택">
               {[3, 4.5, 7, 10, 15, 100].map((v) => (
                 <button
                   key={v}
                   type="button"
-                  className={`risk-chip ${Math.abs(config.dailyLossPct - v) < 1e-9 ? 'on' : ''}`}
-                  onClick={() => api.patchConfig({ dailyLossPct: v })}
+                  className={`risk-chip ${Math.abs(draft.dailyLossPct - v) < 1e-9 ? 'on' : ''}`}
+                  onClick={() => setDraft((prev) => ({ ...prev, dailyLossPct: v }))}
                   data-daily-preset={v}
                 >
                   {v}%
@@ -581,8 +714,8 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
               ))}
               <button
                 type="button"
-                className={`risk-chip off ${config.dailyLossPct === 0 ? 'on' : ''}`}
-                onClick={() => api.patchConfig({ dailyLossPct: 0 })}
+                className={`risk-chip off ${draft.dailyLossPct === 0 ? 'on' : ''}`}
+                onClick={() => setDraft((prev) => ({ ...prev, dailyLossPct: 0 }))}
                 data-daily-preset="off"
               >
                 끄기
@@ -602,11 +735,11 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
           <div className="auto-lev-cap">
             <NumField
               label="레버리지 상한"
-              value={config.maxLeverage}
-              suffix={config.maxLeverage > 0 ? 'x' : undefined}
-              onChange={(v) => api.patchConfig({ maxLeverage: v })}
+              value={draft.maxLeverage}
+              suffix={draft.maxLeverage > 0 ? 'x' : undefined}
+              onChange={(v) => setDraft((prev) => ({ ...prev, maxLeverage: v }))}
               hint={
-                config.maxLeverage > 0
+                draft.maxLeverage > 0
                   ? '시그널 추천 배율도 이 값을 넘지 않음'
                   : '상한 없음 · 유동 — 청산 안전마진·거래소 최대 배율까지만'
               }
@@ -616,8 +749,8 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
                 <button
                   key={v}
                   type="button"
-                  className={`risk-chip ${config.maxLeverage === v ? 'on' : ''} ${v === 0 ? 'off' : ''}`}
-                  onClick={() => api.patchConfig({ maxLeverage: v })}
+                  className={`risk-chip ${draft.maxLeverage === v ? 'on' : ''} ${v === 0 ? 'off' : ''}`}
+                  onClick={() => setDraft((prev) => ({ ...prev, maxLeverage: v }))}
                   data-lev-cap={v}
                 >
                   {v === 0 ? '유동' : `${v}x`}
@@ -625,35 +758,35 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
               ))}
             </div>
             <em className="num-hint" data-lev-cap-label>
-              현재 {leverageCapLabel(config.maxLeverage)} · 공격적 스타일은 상한 없이 유동으로 계산합니다
+              현재 {leverageCapLabel(draft.maxLeverage)} · 공격적 스타일은 상한 없이 유동으로 계산합니다
             </em>
           </div>
           <NumField
             label="최소 승률"
-            value={config.minWinRate}
+            value={draft.minWinRate}
             suffix="%"
-            onChange={(v) => api.patchConfig({ minWinRate: v })}
+            onChange={(v) => setDraft((prev) => ({ ...prev, minWinRate: v }))}
             hint="시그널 전략 승률 기준 · 전수 기대값 0.3R 이상 기법은 통과"
           />
           <NumField
             label="최소 손익비"
-            value={config.minRR}
+            value={draft.minRR}
             suffix="R"
-            onChange={(v) => api.patchConfig({ minRR: v })}
+            onChange={(v) => setDraft((prev) => ({ ...prev, minRR: v }))}
             hint="이보다 낮은 셋업은 건너뜀"
           />
           <NumField
             label="감시 주기"
-            value={config.intervalSec}
+            value={draft.intervalSec}
             suffix="초"
-            onChange={(v) => api.patchConfig({ intervalSec: v })}
+            onChange={(v) => setDraft((prev) => ({ ...prev, intervalSec: v }))}
             hint="화면이 꺼져 있어도 이 주기로 확인"
           />
           <NumField
             label="시그널 유효시간"
-            value={config.entryTtlMin}
+            value={draft.entryTtlMin}
             suffix="분"
-            onChange={(v) => api.patchConfig({ entryTtlMin: v })}
+            onChange={(v) => setDraft((prev) => ({ ...prev, entryTtlMin: v }))}
             hint="지나면 진입 대기를 취소"
           />
         </div>
@@ -664,53 +797,53 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
             <div className="segmented slim">
               <button
                 type="button"
-                className={config.symbols === 'crypto' ? 'on' : ''}
-                onClick={() => api.patchConfig({ symbols: 'crypto' })}
+                className={draft.symbols === 'crypto' ? 'on' : ''}
+                onClick={() => setDraft((prev) => ({ ...prev, symbols: 'crypto' }))}
                 data-auto-symbols="crypto"
               >
                 전체 코인
               </button>
               <button
                 type="button"
-                className={config.symbols === 'majors' ? 'on' : ''}
-                onClick={() => api.patchConfig({ symbols: 'majors' })}
+                className={draft.symbols === 'majors' ? 'on' : ''}
+                onClick={() => setDraft((prev) => ({ ...prev, symbols: 'majors' }))}
                 data-auto-symbols="majors"
               >
                 메이저 4종
               </button>
               <button
                 type="button"
-                className={config.symbols === 'all' ? 'on' : ''}
-                onClick={() => api.patchConfig({ symbols: 'all' })}
+                className={draft.symbols === 'all' ? 'on' : ''}
+                onClick={() => setDraft((prev) => ({ ...prev, symbols: 'all' }))}
                 data-auto-symbols="all"
               >
                 주식선물 포함
               </button>
             </div>
-            <em>{SYMBOL_SCOPE_HINT[config.symbols] ?? SYMBOL_SCOPE_HINT.crypto}</em>
+            <em>{SYMBOL_SCOPE_HINT[draft.symbols] ?? SYMBOL_SCOPE_HINT.crypto}</em>
           </div>
           <div className="auto-option">
             <span>조기 손절 보호</span>
             <div className="segmented slim">
               <button
                 type="button"
-                className={config.earlyStop ? 'on' : ''}
-                onClick={() => api.patchConfig({ earlyStop: true })}
+                className={draft.earlyStop ? 'on' : ''}
+                onClick={() => setDraft((prev) => ({ ...prev, earlyStop: true }))}
                 data-auto-earlystop="on"
               >
                 켜기
               </button>
               <button
                 type="button"
-                className={!config.earlyStop ? 'on' : ''}
-                onClick={() => api.patchConfig({ earlyStop: false })}
+                className={!draft.earlyStop ? 'on' : ''}
+                onClick={() => setDraft((prev) => ({ ...prev, earlyStop: false }))}
                 data-auto-earlystop="off"
               >
                 끄기
               </button>
             </div>
             <em>
-              {config.earlyStop
+              {draft.earlyStop
                 ? 'SL 전 반대 시그널·추세 붕괴가 확인되면 선제 청산 · 진입 2분은 보호'
                 : '손절가는 거래소에 맡기고 SL에서만 청산합니다'}
             </em>
@@ -720,23 +853,23 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
             <div className="segmented slim">
               <button
                 type="button"
-                className={config.partialTp ? 'on' : ''}
-                onClick={() => api.patchConfig({ partialTp: true })}
+                className={draft.partialTp ? 'on' : ''}
+                onClick={() => setDraft((prev) => ({ ...prev, partialTp: true }))}
                 data-auto-partialtp="on"
               >
                 켜기
               </button>
               <button
                 type="button"
-                className={!config.partialTp ? 'on' : ''}
-                onClick={() => api.patchConfig({ partialTp: false })}
+                className={!draft.partialTp ? 'on' : ''}
+                onClick={() => setDraft((prev) => ({ ...prev, partialTp: false }))}
                 data-auto-partialtp="off"
               >
                 끄기
               </button>
             </div>
             <em>
-              {config.partialTp
+              {draft.partialTp
                 ? '목표가 50% 또는 +1.0R 도달 시 보유의 50%를 시장가 분할 익절 · 남은 절반은 본절 보호 강화'
                 : '분할 익절 없이 목표가까지 전량을 들고 갑니다'}
             </em>
@@ -744,15 +877,53 @@ export function AutoTradeTab({ api, signals, profile }: Props) {
           <div className="auto-option">
             <span>새 시그널 자동 진입</span>
             <div className="segmented slim">
-              <button type="button" className={config.autoEntry ? 'on' : ''} onClick={() => api.patchConfig({ autoEntry: true })}>
+              <button
+                type="button"
+                className={draft.autoEntry ? 'on' : ''}
+                onClick={() => setDraft((prev) => ({ ...prev, autoEntry: true }))}
+              >
                 자동
               </button>
-              <button type="button" className={!config.autoEntry ? 'on' : ''} onClick={() => api.patchConfig({ autoEntry: false })}>
+              <button
+                type="button"
+                className={!draft.autoEntry ? 'on' : ''}
+                onClick={() => setDraft((prev) => ({ ...prev, autoEntry: false }))}
+              >
                 원클릭만
               </button>
             </div>
-            <em>{config.autoEntry ? '규칙을 통과한 새 시그널을 자동 주문' : '카드의 ⚡ 버튼을 눌렀을 때만 주문'}</em>
+            <em>{draft.autoEntry ? '규칙을 통과한 새 시그널을 자동 주문' : '카드의 ⚡ 버튼을 눌렀을 때만 주문'}</em>
           </div>
+        </div>
+
+        {/* 저장 — 이 카드의 변경은 여기서 확정한다 */}
+        <div className={`auto-guard-save ${guardDirty ? 'dirty' : ''}`}>
+          <div className="auto-guard-save-info">
+            <b>
+              {guardDirty
+                ? `저장 안 됨 · ${changedGuards.length}개 항목`
+                : justSaved
+                  ? '✓ 저장됨 — 상단 지표·프리셋·감시에 반영했습니다'
+                  : '저장된 값 그대로입니다'}
+            </b>
+            <span>
+              {guardDirty
+                ? '저장을 눌러야 자동매매가 새 값으로 돌아갑니다.'
+                : config.stylePresetActive
+                  ? '프리셋 연동 중 — 스타일 프리셋 값과 같을 수 있습니다.'
+                  : '직접 설정 — 프리셋이 이 값을 덮어쓰지 않습니다.'}
+            </span>
+          </div>
+          <button
+            type="button"
+            className={`save-btn ${guardDirty ? 'dirty' : ''} ${justSaved ? 'saved' : ''}`}
+            data-auto-config-save
+            data-save-state={guardDirty ? 'dirty' : justSaved ? 'saved' : 'clean'}
+            disabled={!guardDirty}
+            onClick={onSaveGuards}
+          >
+            {justSaved ? '✓ 저장됨' : '저장'}
+          </button>
         </div>
       </section>
 

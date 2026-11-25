@@ -6107,6 +6107,202 @@ textarea {
   margin-top: 2px;
 }
 
+/* v1.5.6 — ② 리스크·안전장치 초안 저장 */
+.auto-tag.warn {
+  color: #8a5a00;
+  background: var(--amber-soft);
+}
+
+.auto-tag.muted {
+  color: var(--sub);
+  background: var(--card-2);
+}
+
+.auto-guard-intro {
+  margin: 0 0 2px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--sub);
+  word-break: keep-all;
+}
+
+.auto-guard-intro b {
+  color: var(--ink-2);
+  font-weight: 800;
+}
+
+.auto-guard-intro em {
+  display: block;
+  margin-top: 4px;
+  font-style: normal;
+  font-weight: 800;
+  color: #8a5a00;
+}
+
+.auto-guard-save {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 11px;
+  border-radius: 12px;
+  background: var(--card-2);
+  border: 1px solid var(--line);
+}
+
+.auto-guard-save.dirty {
+  background: var(--blue-soft);
+  border-color: rgba(49, 130, 246, 0.28);
+}
+
+.auto-guard-save-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.auto-guard-save-info b {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.auto-guard-save-info span {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--sub);
+  word-break: keep-all;
+}
+
+.auto-guard-save .save-btn {
+  flex: 0 0 auto;
+  padding: 11px 18px;
+  font-size: 12.5px;
+}
+
+/* 프리셋 값 ↔ 현재 값 비교 */
+.auto-style-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--card-2);
+  border-radius: 11px;
+  padding: 7px 9px;
+}
+
+.auto-style-compare-head,
+.auto-style-compare-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.85fr) minmax(0, 0.85fr);
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  padding: 3px 0;
+}
+
+.auto-style-compare-head {
+  color: var(--sub);
+  font-weight: 700;
+  font-size: 9.5px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+}
+
+.auto-style-compare-head span:not(:first-child) {
+  text-align: right;
+}
+
+.auto-style-compare-row > span:first-child {
+  color: var(--ink-2);
+  font-weight: 700;
+}
+
+.auto-style-compare-row .preset {
+  text-align: right;
+  color: var(--sub);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.auto-style-compare-row b {
+  text-align: right;
+  color: var(--ink);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.auto-style-compare-row.diff {
+  background: var(--amber-soft);
+  border-radius: 7px;
+  padding: 3px 5px;
+}
+
+.auto-style-compare-row.diff > span:first-child,
+.auto-style-compare-row.diff b {
+  color: #8a5a00;
+}
+
+.auto-style [data-style-same],
+.auto-style [data-style-released-note] {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--sub);
+  background: var(--card-2);
+  border-radius: 9px;
+  padding: 7px 9px;
+}
+
+.auto-style [data-style-released-note] {
+  color: var(--blue-2);
+  background: var(--blue-soft);
+}
+
+.auto-style [data-style-pending] {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: #8a5a00;
+  background: var(--amber-soft);
+  border-radius: 9px;
+  padding: 7px 9px;
+}
+
+.auto-style [data-style-pending] b {
+  font-weight: 800;
+}
+
+.auto-style-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.auto-style-actions .auto-primary {
+  flex: 1 1 auto;
+  margin-top: 0;
+}
+
+.auto-secondary {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 12px 18px;
+  letter-spacing: -0.3px;
+}
+
+.auto-secondary:disabled {
+  color: #b6bec8;
+  background: var(--card-2);
+}
+
 /* 레버리지 상한 — 유동(0 = 상한 없음) */
 .auto-lev-cap {
   display: flex;

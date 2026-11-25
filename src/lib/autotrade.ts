@@ -62,6 +62,14 @@ export interface AutoTradeConfig {
   earlyStop: boolean;
   /** 목표가 50% 또는 +1.0R 도달 시 보유의 50% 분할 익제 (v1.5.6 · 기본 ON) */
   partialTp: boolean;
+  /**
+   * 매매 스타일 프리셋 연동 여부 (기본 ON).
+   *  · true  — 스타일(보수적/공격적) 프리셋이 리스크 항목을 정한다. `적용`을 누르면 프리셋 값으로 맞춘다.
+   *  · false — 사용자가 `리스크 · 안전장치`에서 직접 정한 값을 그대로 쓴다(해제 상태).
+   *    해제 상태에서는 `리스크 · 안전장치` 저장값이 스타일 프리셋으로 덮어쓰이지 않는다.
+   *    (다시 맞추려면 `적용` 또는 설정 탭의 매매 스타일 저장 = 사용자가 직접 지시한 경우뿐)
+   */
+  stylePresetActive: boolean;
 }
 
 /** 메이저 4종 — 'majors' 범위에서 허용하는 종목 */
@@ -82,6 +90,7 @@ export const DEFAULTS: AutoTradeConfig = {
   entryTtlMin: 120,
   earlyStop: true,
   partialTp: true,
+  stylePresetActive: true,
 };
 
 /** 레버리지 상한 '0' = 상한 없음(유동) — 청산 안전마진·거래소 최대 배율만 지킨다 */
@@ -131,6 +140,8 @@ export function normalizeConfig(raw: Partial<AutoTradeConfig> | null | undefined
     entryTtlMin: num(src.entryTtlMin, DEFAULTS.entryTtlMin),
     earlyStop: src.earlyStop !== false,
     partialTp: src.partialTp !== false,
+    // 미지정·구버전 저장본은 연동 상태(true)로 읽는다 — 사용자가 `해제`를 눌러야 false 가 된다.
+    stylePresetActive: src.stylePresetActive !== false,
   };
   return {
     ...merged,
@@ -222,14 +233,23 @@ export function presetForStyle(style: TradeStyle): StylePreset {
   return STYLE_PRESETS[style] ?? STYLE_PRESETS.conservative;
 }
 
-/** 현재 설정을 해당 스타일 프리셋에 맞춘다 — enabled·mode·intervalSec·symbols 등은 유지 */
+/**
+ * 현재 설정을 해당 스타일 프리셋에 맞춘다 — enabled·mode·intervalSec·symbols 등은 유지.
+ * `적용` 버튼·온보딩·설정 탭의 스타일 저장이 부르며, 프리셋을 맞추는 것이 곧 **연동**이다.
+ */
 export function applyStylePreset(config: AutoTradeConfig, style: TradeStyle): AutoTradeConfig {
   const preset = presetForStyle(style);
   const patch: Partial<AutoTradeConfig> = {};
   for (const field of STYLE_PRESET_FIELDS) {
     (patch as Record<string, unknown>)[field] = preset[field];
   }
-  return normalizeConfig({ ...config, ...patch });
+  return normalizeConfig({ ...config, ...patch, stylePresetActive: true });
+}
+
+/** 프리셋 연동 해제 — 지금 값을 그대로 두고 '직접 설정' 상태로만 바꾼다. */
+export function releaseStylePreset(config: AutoTradeConfig): AutoTradeConfig {
+  if (!config.stylePresetActive) return config;
+  return { ...config, stylePresetActive: false };
 }
 
 export const STYLE_FIELD_LABEL: Record<(typeof STYLE_PRESET_FIELDS)[number], string> = {
@@ -243,6 +263,30 @@ export const STYLE_FIELD_LABEL: Record<(typeof STYLE_PRESET_FIELDS)[number], str
   partialTp: '50% 반익절',
 };
 
+/** 프리셋 항목 하나를 사람이 읽는 값으로 — `4.5%` · `상한 없음 · 유동` · `ON` */
+export type StyleField = (typeof STYLE_PRESET_FIELDS)[number];
+
+export function styleFieldValue(field: StyleField, config: Pick<AutoTradeConfig, StyleField>): string {
+  switch (field) {
+    case 'riskPct':
+      return `${config.riskPct}%`;
+    case 'maxLeverage':
+      return leverageCapLabel(config.maxLeverage);
+    case 'maxPositions':
+      return `${config.maxPositions}개`;
+    case 'dailyLossPct':
+      return config.dailyLossPct === 0 ? '끔' : `${config.dailyLossPct}%`;
+    case 'minWinRate':
+      return `${config.minWinRate}%`;
+    case 'minRR':
+      return `${config.minRR}R`;
+    case 'earlyStop':
+      return config.earlyStop ? 'ON' : 'OFF';
+    case 'partialTp':
+      return config.partialTp ? 'ON' : 'OFF';
+  }
+}
+
 /** 프리셋과 다른 항목 — 빈 배열이면 프리셋 그대로다. */
 export function stylePresetDiff(config: AutoTradeConfig, style: TradeStyle): string[] {
   const preset = presetForStyle(style);
@@ -255,6 +299,78 @@ export function stylePresetDiff(config: AutoTradeConfig, style: TradeStyle): str
 
 export function matchesStylePreset(config: AutoTradeConfig, style: TradeStyle): boolean {
   return stylePresetDiff(config, style).length === 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * ② 리스크 · 안전장치 초안 → 저장 (v1.5.6)
+ *   화면에서 값을 바꿔도 `저장`을 누르기 전에는 설정·네이티브 감시가 바뀌지 않는다.
+ *   (현우님: "손실한도를 바꿨는데 프리셋에 적용되지가 않아. 저장 버튼 추가하고 작동하게 만들어")
+ * ------------------------------------------------------------------ */
+
+/** `② 리스크 · 안전장치`에서 직접 편집하는 항목 — 저장 버튼을 눌러야 설정에 반영된다. */
+export const GUARD_FIELDS = [
+  'riskPct',
+  'maxPositions',
+  'dailyLossPct',
+  'maxLeverage',
+  'minWinRate',
+  'minRR',
+  'intervalSec',
+  'entryTtlMin',
+  'symbols',
+  'earlyStop',
+  'partialTp',
+  'autoEntry',
+] as const;
+
+export type GuardField = (typeof GUARD_FIELDS)[number];
+
+export const GUARD_FIELD_LABEL: Record<GuardField, string> = {
+  riskPct: '1회 리스크',
+  maxPositions: '최대 동시 포지션',
+  dailyLossPct: '1일 손실 한도',
+  maxLeverage: '레버리지 상한',
+  minWinRate: '최소 승률',
+  minRR: '최소 손익비',
+  intervalSec: '감시 주기',
+  entryTtlMin: '시그널 유효시간',
+  symbols: '허용 종목',
+  earlyStop: '조기 손절 보호',
+  partialTp: '50% 반익절',
+  autoEntry: '새 시그널 자동 진입',
+};
+
+/** 초안에서 **저장할 항목만** 뽑는다 — 켜짐·모의/실거래는 이 카드가 건드리지 않는다. */
+export function guardPatchOf(draft: AutoTradeConfig): Pick<AutoTradeConfig, GuardField> {
+  const patch = {} as Pick<AutoTradeConfig, GuardField>;
+  for (const field of GUARD_FIELDS) {
+    (patch as Record<string, unknown>)[field] = draft[field];
+  }
+  return patch;
+}
+
+/** 저장값과 초안이 다른 항목 — `저장 안 됨` 배지·저장 버튼 활성화 판정 */
+export function guardFieldsChanged(saved: AutoTradeConfig, draft: AutoTradeConfig): GuardField[] {
+  return GUARD_FIELDS.filter((field) => saved[field] !== draft[field]);
+}
+
+/**
+ * `②` 저장 적용.
+ *  · 초안을 정규화(범위 클램프)해 저장값에 얹는다. 켜짐·모드·프리셋 연동 상태는 그대로 둔다.
+ *  · **프리셋이 관리하는 항목**을 프리셋 값과 다르게 저장하면 연동을 해제한다 —
+ *    이후 스타일 저장이 사용자가 정한 값을 덮어쓰지 않고, `적용`을 눌러야 프리셋으로 돌아간다.
+ *  · 프리셋이 관리하지 않는 항목(감시 주기·유효시간·허용 종목·자동 진입)만 바꿨으면 연동은 유지한다.
+ */
+export function applyGuardSave(
+  saved: AutoTradeConfig,
+  patch: Partial<Pick<AutoTradeConfig, GuardField>>,
+  style: TradeStyle | null,
+): AutoTradeConfig {
+  const merged = normalizeConfig({ ...saved, ...patch });
+  const touchedPresetField = STYLE_PRESET_FIELDS.some((field) => merged[field] !== saved[field]);
+  const diverges = style != null && stylePresetDiff(merged, style).length > 0;
+  const released = saved.stylePresetActive && touchedPresetField && diverges;
+  return { ...merged, stylePresetActive: released ? false : saved.stylePresetActive };
 }
 
 /** 스타일 프리셋 1회 마이그레이션 키 — 앱(localStorage)에 남긴다. */

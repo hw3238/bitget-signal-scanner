@@ -20,6 +20,7 @@ import {
   RISK_PRESET_CHOICES,
   SNAPSHOT_FRESH_MS,
   applyDailyReset,
+  applyGuardSave,
   applyStylePreset,
   buildOrderParams,
   checkDailyLoss,
@@ -29,6 +30,8 @@ import {
   evaluateEntry,
   fmtSince,
   fmtUsdt,
+  guardFieldsChanged,
+  guardPatchOf,
   isCryptoSymbol,
   isMajorSymbol,
   leverageCapLabel,
@@ -52,10 +55,12 @@ import {
   planTrigger,
   priceText,
   pushLog,
+  releaseStylePreset,
   rollDay,
   roundToTick,
   signalKeyOf,
   statusBadge,
+  styleFieldValue,
   stylePresetDiff,
   symbolAllowed,
   todayFillCount,
@@ -1309,6 +1314,105 @@ check(
 check('업그레이드 1회: 이미 마이그레이션됐으면 건너뜀', !migrateStylePresetOnce({}, 'aggressive', true).changed);
 check('업그레이드 1회: 성향이 없으면 건너뜀', !migrateStylePresetOnce({}, null, false).changed);
 check('업그레이드 1회: 보수적은 5x 프리셋', migrateStylePresetOnce({}, 'conservative', false).config.maxLeverage === 5);
+
+/* ------------------------------------------------------------------ *
+ * 15) v1.5.6 — ② 리스크·안전장치 초안 저장 · 프리셋 적용/해제 버튼
+ *     (현우님: "손실한도를 바꿈는데 프리셋에 적용되지가 않아. 저장 버튼과 적용/해제 버튼을 만들어")
+ * ------------------------------------------------------------------ */
+
+/* 15-1) 프리셋 연동 상태 필드 */
+check('프리셋 연동 기본값 = ON', DEFAULTS.stylePresetActive === true && normalizeConfig(null).stylePresetActive === true);
+check('구버전 저장본(미지정)은 연동 상태로 읽기', normalizeConfig({ riskPct: 2 }).stylePresetActive === true);
+check('해제 상태 저장 · 복원', normalizeConfig({ stylePresetActive: false }).stylePresetActive === false);
+const consLinked = applyStylePreset(DEFAULTS, 'conservative');
+check(
+  '적용은 연동을 켠다(해제 상태에서도)',
+  applyStylePreset(normalizeConfig({ ...DEFAULTS, stylePresetActive: false }), 'conservative').stylePresetActive === true &&
+    consLinked.stylePresetActive === true,
+);
+const releasedCfg = releaseStylePreset(consLinked);
+check(
+  '해제 버튼: 값은 그대로 두고 연동만 끈다',
+  releasedCfg.stylePresetActive === false &&
+    releasedCfg.riskPct === consLinked.riskPct &&
+    releasedCfg.dailyLossPct === consLinked.dailyLossPct &&
+    releasedCfg.maxLeverage === consLinked.maxLeverage,
+);
+check('이미 해제면 그대로(불필요한 저장 없음)', releaseStylePreset(releasedCfg) === releasedCfg);
+
+/* 15-2) 초안 비교 — 저장 안 됨 판정 */
+check(
+  '초안 비교: 손실 한도만 바꾸면 1개',
+  guardFieldsChanged(consLinked, { ...consLinked, dailyLossPct: 8 }).join() === 'dailyLossPct',
+);
+check('초안 비교: 같으면 0개', guardFieldsChanged(consLinked, { ...consLinked }).length === 0);
+check(
+  '초안 비교: 켜짐·모드는 이 카드 항목이 아니다',
+  guardFieldsChanged({ ...consLinked, enabled: false }, { ...consLinked, enabled: true, mode: 'live' }).length === 0,
+);
+check(
+  '초안 비교: 여러 항목',
+  guardFieldsChanged(consLinked, { ...consLinked, riskPct: 3, maxLeverage: 25, symbols: 'majors' }).join() === 'riskPct,maxLeverage,symbols',
+);
+check(
+  '저장 패치에는 이 카드 항목만 담긴다',
+  !('enabled' in guardPatchOf({ ...consLinked, enabled: true })) &&
+    !('mode' in guardPatchOf({ ...consLinked, mode: 'live' })) &&
+    guardPatchOf({ ...consLinked, dailyLossPct: 9 }).dailyLossPct === 9,
+);
+
+/* 15-3) 저장 — 값 반영 · 프리셋 연동 해제 규칙 */
+const saved8 = applyGuardSave(consLinked, { dailyLossPct: 8 }, 'conservative');
+check('저장: 손실 한도 8% 반영', saved8.dailyLossPct === 8, `${saved8.dailyLossPct}%`);
+check('저장: 프리셋과 달라지면 연동 해제(직접 설정)', saved8.stylePresetActive === false);
+check('저장: 켜짐·모드는 건드리지 않는다', saved8.enabled === consLinked.enabled && saved8.mode === consLinked.mode);
+const savedInterval = applyGuardSave(consLinked, { intervalSec: 90 }, 'conservative');
+check(
+  '저장: 프리셋이 관리하지 않는 항목(감시 주기)만 바꾸면 연동 유지',
+  savedInterval.intervalSec === 90 && savedInterval.stylePresetActive === true,
+);
+const savedCustom = applyGuardSave(saved8, { dailyLossPct: 6 }, 'conservative');
+check('해제 상태 저장은 계속 직접 설정(적용 전까지 유지)', savedCustom.dailyLossPct === 6 && savedCustom.stylePresetActive === false);
+const savedPresetValue = applyGuardSave(normalizeConfig({ ...consLinked, riskPct: 5 }), { riskPct: 1.5 }, 'conservative');
+check('프리셋과 같은 값으로 저장하면 연동 유지', savedPresetValue.riskPct === 1.5 && savedPresetValue.stylePresetActive === true);
+const savedClamped = applyGuardSave(consLinked, { riskPct: 99, maxPositions: 0 }, 'conservative');
+check(
+  '저장 시 범위 클램프',
+  savedClamped.riskPct === LIMITS.riskPct[1] && savedClamped.maxPositions === LIMITS.maxPositions[0],
+  `${savedClamped.riskPct}% · ${savedClamped.maxPositions}개`,
+);
+const savedNoStyle = applyGuardSave(consLinked, { dailyLossPct: 9 }, null);
+check('성향 미설정이면 연동 상태를 바꾸지 않는다', savedNoStyle.stylePresetActive === consLinked.stylePresetActive && savedNoStyle.dailyLossPct === 9);
+
+/* 15-4) 적용 — 프리셋 값으로 복원 */
+const restored = applyStylePreset(saved8, 'conservative');
+check(
+  '적용: 손실 한도·리스크가 프리셋 값으로 복원',
+  restored.dailyLossPct === 4.5 && restored.riskPct === 1.5 && restored.stylePresetActive && matchesStylePreset(restored, 'conservative'),
+  `${restored.riskPct}% · ${restored.dailyLossPct}%`,
+);
+check('적용: 직접 정한 감시 주기는 유지', applyStylePreset(savedInterval, 'conservative').intervalSec === 90);
+check(
+  '적용: 공격적 프리셋으로도 복원',
+  applyStylePreset(saved8, 'aggressive').dailyLossPct === 10 && applyStylePreset(saved8, 'aggressive').maxLeverage === 0,
+);
+
+/* 15-5) 프리셋 비교 표기 */
+check(
+  '비교 표기: 비율·배율·개수',
+  styleFieldValue('riskPct', consPreset) === '1.5%' &&
+    styleFieldValue('maxLeverage', aggPreset) === '상한 없음 · 유동' &&
+    styleFieldValue('maxLeverage', consPreset) === '5x' &&
+    styleFieldValue('maxPositions', consPreset) === '2개' &&
+    styleFieldValue('minRR', consPreset) === '1.5R',
+);
+check(
+  '비교 표기: 손실 한도 끄기·토글',
+  styleFieldValue('dailyLossPct', { ...consPreset, dailyLossPct: 0 }) === '끔' &&
+    styleFieldValue('dailyLossPct', consPreset) === '4.5%' &&
+    styleFieldValue('earlyStop', { ...consPreset, earlyStop: false }) === 'OFF' &&
+    styleFieldValue('partialTp', consPreset) === 'ON',
+);
 
 console.log('');
 console.log(`자동매매 단위 검증: ${pass}/${pass + fails.length} 통과`);
