@@ -5,6 +5,7 @@ import type { AccountBase } from '../lib/account';
 import type { Profile } from '../lib/profile';
 import type { SwapLogEntry } from '../lib/storage';
 import { AutoTradeTab } from './AutoTradeTab';
+import { SurgeExplorer } from './SurgeExplorer';
 import { statusBadge } from '../lib/autotrade';
 import { EngineTab } from './EngineTab';
 import { KimchiRadar } from './KimchiRadar';
@@ -14,7 +15,7 @@ import { PositionSurvival } from './PositionSurvival';
 import { SizingCalc } from './SizingCalc';
 import { FeeCalc } from './FeeCalc';
 
-export type MenuView = 'auto' | 'kimchi' | 'lag' | 'doppel' | 'survival' | 'sizing' | 'fee' | 'engine';
+export type MenuView = 'auto' | 'surge' | 'kimchi' | 'lag' | 'doppel' | 'survival' | 'sizing' | 'fee' | 'engine';
 
 interface MenuItem {
   key: MenuView;
@@ -30,8 +31,16 @@ const GROUPS: Array<{ title: string; items: MenuItem[] }> = [
     title: '실전 레이더',
     items: [
       {
-        key: 'kimchi',
+        key: 'surge',
         emoji: '🚀',
+        title: '급등 탐색기',
+        desc: '6가지 급등 요건을 점수화해 출발 직전 코인과 진입·목표·손절을 추천',
+        tag: '6요건 · 100점',
+        hot: true,
+      },
+      {
+        key: 'kimchi',
+        emoji: '🥬',
         title: '김프 & 송금 레이더',
         desc: '국내·해외 시세 차이와 지금 가장 유리한 송금 코인 TOP 3',
         tag: '업비트 ↔ 비트겟',
@@ -115,6 +124,7 @@ interface Props {
 
 const TITLES: Record<MenuView, string> = {
   auto: '비트겟 자동매매',
+  surge: '급등 탐색기',
   kimchi: '김프 & 송금 레이더',
   lag: '키맞추기 레이더',
   doppel: '차트 도플갱어',
@@ -148,6 +158,7 @@ export function MenuTab({
           <b>{TITLES[view]}</b>
         </div>
         {view === 'auto' && <AutoTradeTab api={autoTrade} signals={signals} profile={profile} />}
+        {view === 'surge' && <SurgeExplorer state={state} account={account} profile={profile} autoTrade={autoTrade} />}
         {view === 'kimchi' && <KimchiRadar state={state} />}
         {view === 'lag' && <KeyMatchRadar state={state} />}
         {view === 'doppel' && <Doppelganger state={state} />}
@@ -168,10 +179,10 @@ export function MenuTab({
           <div>
             <div className="menu-hero-eyebrow">COTA 트레이더 올인원</div>
             <h2>시장 · 리스크 · 분석</h2>
-            <p>코인 트레이더가 매일 쓰는 8가지 도구를 한 곳에 모았습니다.</p>
+            <p>코인 트레이더가 매일 쓰는 9가지 도구를 한 곳에 모았습니다.</p>
           </div>
           <div className="menu-hero-count">
-            <b>8</b>
+            <b>9</b>
             <span>tools</span>
           </div>
         </div>

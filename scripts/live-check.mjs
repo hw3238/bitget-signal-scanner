@@ -194,6 +194,52 @@ check(dash.strat.length > 0 && dash.strat.every((s) => /[+-]?\d+\.\d{2}R$/.test(
 check(dash.kpi.length >= 3 && !dash.overflow, '라이브 곡선 KPI · 390px 오버플로 0건', dash.kpi.join(' / '));
 await page.screenshot({ path: `${OUT}/52-live-history-dashboard.png`, fullPage: true });
 
+// 🚀 급등 탐색기 (v1.5.6 웹 기능)
+await page.locator('.bottom-nav button[data-tab="menu"]').click();
+await page.waitForTimeout(600);
+const menu = await page.evaluate(() => ({
+  surge: !!document.querySelector('.menu-row[data-menu="surge"]'),
+  label: clean(document.querySelector('.menu-row[data-menu="surge"] .menu-copy b')?.textContent),
+  hero: clean(document.querySelector('.menu-hero-count b')?.textContent),
+  tools: document.querySelectorAll('.menu-row').length,
+}));
+check(menu.surge && /급등 탐색기/.test(menu.label) && menu.tools === 8 && menu.hero === '9', '라이브 메뉴: 🚀 급등 탐색기(도구 9)', `${menu.label} · ${menu.tools}+자동매매=${menu.hero}`);
+
+await page.locator('.menu-row[data-menu="surge"]').click();
+await page.waitForSelector('.surge-card', { timeout: 240000 });
+await page.waitForFunction(() => !document.querySelector('[data-surge-progress]'), { timeout: 240000 });
+await page.waitForTimeout(800);
+const surge = await page.evaluate(() => {
+  const cards = [...document.querySelectorAll('.surge-card')];
+  const first = cards[0];
+  return {
+    count: cards.length,
+    sub: clean(document.querySelector('[data-surge-sub]')?.textContent),
+    top: clean(document.querySelector('[data-surge-top]')?.textContent),
+    prime: clean(document.querySelector('[data-surge-prime-count]')?.textContent),
+    first: first
+      ? {
+          base: clean(first.querySelector('.surge-name b')?.firstChild?.textContent),
+          score: Number(first.dataset.score),
+          scoreText: clean(first.querySelector('.surge-score')?.textContent),
+          reqs: first.querySelectorAll('.surge-reqs li').length,
+          cells: [...first.querySelectorAll('.surge-cell b')].map((b) => clean(b.textContent)),
+          why: clean(first.querySelector('.surge-why')?.textContent),
+        }
+      : null,
+  };
+});
+check(surge.count >= 3 && surge.first?.reqs === 6, '라이브 급등 탐색기: 카드·6요건 배지', `${surge.count}장 · ${surge.first?.base} ${surge.first?.scoreText}`);
+check(
+  surge.first?.score >= 1 && surge.first.score <= 100 && /진입|목표|손절|레버리지/.test(surge.sub ?? ''),
+  '라이브 급등 탐색기: 점수·진입/목표/손절/레버리지',
+  `${surge.first?.score}점 · ${surge.first?.cells?.join(' / ')}`,
+);
+check(/코인 선물 \d+개 중/.test(surge.sub ?? '') && surge.top === surge.first?.base, '라이브 급등 탐색기: 유니버스·TOP 요약', `${surge.sub} · TOP ${surge.top} · 요건4+ ${surge.prime}`);
+await page.screenshot({ path: `${OUT}/87-live-surge-explorer.png` });
+await page.locator('.menu-back').click();
+await page.waitForTimeout(300);
+
 check(errors.length === 0, '라이브 콘솔·페이지 에러 0건', errors.slice(0, 3).join(' | '));
 
 await browser.close();
