@@ -151,6 +151,24 @@ check(
 check(settings.target === '주요 코인' && settings.ntfy === 'bgss-hw3238-9f4k2m', '라이브 알림 기본값', `${settings.target} · ${settings.ntfy}`);
 check(/앱 v1\.5\.6/.test(settings.version || ''), '라이브 앱 버전 v1.5.6', settings.version);
 
+// v1.5.6 — 설정 항목별 저장 버튼 · 매매 스타일 선택
+const saveUi = await page.evaluate(() => ({
+  names: [...document.querySelectorAll('.settings-tab [data-save]')].map((b) => b.getAttribute('data-save')),
+  disabled: [...document.querySelectorAll('.settings-tab [data-save]')].every((b) => b.disabled),
+  stylePicks: [...document.querySelectorAll('[data-style-pick]')].map((b) => b.getAttribute('data-style-pick')),
+  presetNote: clean(document.querySelector('[data-style-preset-note]')?.textContent),
+}));
+check(
+  saveUi.names.length === 10 && saveUi.disabled,
+  '라이브 설정 항목별 저장 버튼 10개(초기 비활성)',
+  saveUi.names.join(','),
+);
+check(saveUi.stylePicks.join('|') === 'conservative|aggressive', '라이브 설정 매매 스타일 2택', saveUi.stylePicks.join('|'));
+check(/리스크 1\.5%/.test(saveUi.presetNote), '라이브 설정 스타일 프리셋 요약', saveUi.presetNote);
+await page.evaluate(() => window.scrollTo(0, 0));
+await page.waitForTimeout(300);
+await page.screenshot({ path: `${OUT}/92-live-settings-save.png` });
+
 // 내 진입 원탭 → 기록 대시보드
 await page.locator('.bottom-nav button[data-tab="scanner"]').click();
 await page.waitForTimeout(700);
