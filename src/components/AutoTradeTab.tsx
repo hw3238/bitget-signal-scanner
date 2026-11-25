@@ -42,6 +42,13 @@ const LEVEL_LABEL: Record<string, string> = {
   error: '오류',
 };
 
+/** 허용 종목 선택별 하단 설명 */
+const SYMBOL_SCOPE_HINT = {
+  crypto: '주식선물 제외 모든 비트겟 코인 선물',
+  majors: `${MAJOR_SYMBOLS.map((s) => SYMBOL_LABEL[s] ?? s).join(' · ')} 4종만`,
+  all: '주식선물 포함 모든 비트겟 USDT-M 종목',
+} as const;
+
 /**
  * 🤖 비트겟 자동매매 — 키 연결 · 안전장치 · 자동/수동 주문 · 로그.
  * 실제 주문은 앱(안드로이드) 네이티브가 넣고, 이 화면은 명령과 결과만 다룬다.
@@ -555,6 +562,14 @@ export function AutoTradeTab({ api, signals }: Props) {
             <div className="segmented slim">
               <button
                 type="button"
+                className={config.symbols === 'crypto' ? 'on' : ''}
+                onClick={() => api.patchConfig({ symbols: 'crypto' })}
+                data-auto-symbols="crypto"
+              >
+                전체 코인
+              </button>
+              <button
+                type="button"
                 className={config.symbols === 'majors' ? 'on' : ''}
                 onClick={() => api.patchConfig({ symbols: 'majors' })}
                 data-auto-symbols="majors"
@@ -567,10 +582,10 @@ export function AutoTradeTab({ api, signals }: Props) {
                 onClick={() => api.patchConfig({ symbols: 'all' })}
                 data-auto-symbols="all"
               >
-                전체 종목
+                주식선물 포함
               </button>
             </div>
-            <em>{config.symbols === 'majors' ? MAJOR_SYMBOLS.map((s) => SYMBOL_LABEL[s] ?? s).join(' · ') : '모든 비트겟 USDT-M 종목'}</em>
+            <em>{SYMBOL_SCOPE_HINT[config.symbols] ?? SYMBOL_SCOPE_HINT.crypto}</em>
           </div>
           <div className="auto-option">
             <span>조기 손절 보호</span>

@@ -384,9 +384,46 @@ const NATIVE_MOCK = () => {
 
 const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 
-async function open({ native = true, blockMarket = true, oldApk = false } = {}) {
+async function open({ native = true, blockMarket = true, oldApk = false, seedConfig = null, altSignal = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   await ctx.addInitScript(`(${snapshotScript.toString()})();`);
+  // 알트 코인(DOGE) 시그널을 하나 더 심어 '전체 코인' 기본값이 실제 감시 목록에 들어가는지 본다.
+  if (altSignal) {
+    await ctx.addInitScript(() => {
+      const raw = localStorage.getItem('cota.scan.snapshot.v1');
+      if (!raw) return;
+      const snap = JSON.parse(raw);
+      const now = Date.now();
+      const sig = snap.signals[0];
+      const doge = {
+        ...sig,
+        id: `DOGEUSDT|1H|long|${now}`,
+        symbol: 'DOGEUSDT',
+        base: 'DOGE',
+        entry: 0.4,
+        stop: 0.38,
+        target: 0.45,
+        eq: 0.39,
+        price: 0.4,
+        decimals: 4,
+      };
+      snap.signals = [...snap.signals, doge];
+      snap.analyses = [...snap.analyses, { ...snap.analyses[0], symbol: 'DOGEUSDT', base: 'DOGE', signals: [doge] }];
+      snap.contracts = [
+        ...snap.contracts,
+        { ...snap.contracts[0], symbol: 'DOGEUSDT', base: 'DOGE', decimals: 4, minTradeNum: 1, volumePlace: 0, minTradeUsdt: 5 },
+      ];
+      localStorage.setItem('cota.scan.snapshot.v1', JSON.stringify(snap));
+    });
+  }
+  // 예전 버전이 저장해 둔 설정을 심는다 — 새로고침 때 다시 덮지 않도록 없을 때만 쓴다.
+  if (seedConfig) {
+    await ctx.addInitScript(
+      `if (!localStorage.getItem('cota.autotrade.config.v1')) localStorage.setItem('cota.autotrade.config.v1', JSON.stringify(${JSON.stringify(
+        seedConfig,
+      )}));`,
+    );
+  }
   if (native) await ctx.addInitScript(`window.__oldApk = ${oldApk ? 'true' : 'false'}; (${NATIVE_MOCK.toString()})();`);
   if (blockMarket) {
     // 실 API 호출을 끊어 복원한 스냅숏 시그널이 그대로 유지되게 한다(결정적 검증).
@@ -982,6 +1019,127 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   const dupDialog = page.__dialogs.slice(-1).join(' ');
   check(/이미 진입/.test(dupDialog), '같은 시그널 재주문은 중복 진입으로 막힘', dupDialog.slice(0, 80));
   check(errors.length === 0, '오류 안내 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+/* ================================================================== *
+ * 10) 허용 종목 기본값 = '전체 코인' · 구 'majors' 1회 마이그레이션
+ *     (현우님: "자동매매가 이루어지지 않는데 왜 그러는 거야?" → 기본 허용 종목이 메이저 4종)
+ * ================================================================== */
+const openAuto = async (page) => {
+  await page.evaluate(() => document.querySelector('[data-tab="menu"]')?.click());
+  await page.waitForTimeout(300);
+  await page.locator('[data-menu="auto"]').click();
+  await page.waitForTimeout(400);
+};
+
+const readSymbolUi = (page) =>
+  page.evaluate(() => {
+    const option = [...document.querySelectorAll('.auto-option')].find((o) =>
+      o.textContent?.includes('허용 종목'),
+    );
+    return {
+      stored: JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}').symbols,
+      buttons: document.querySelectorAll('[data-auto-symbols]').length,
+      onCrypto: !!document.querySelector('[data-auto-symbols="crypto"].on'),
+      onMajors: !!document.querySelector('[data-auto-symbols="majors"].on'),
+      onAll: !!document.querySelector('[data-auto-symbols="all"].on'),
+      hint: option?.querySelector('em')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+    };
+  });
+
+{
+  // (a) 저장된 설정이 없으면 기본값은 '전체 코인'
+  const { ctx, page, errors } = await open();
+  await openAuto(page);
+  const fresh = await readSymbolUi(page);
+  check(fresh.stored === 'crypto' && fresh.onCrypto, '허용 종목 기본값 = 전체 코인(crypto)', fresh.stored);
+  check(fresh.buttons === 3, '허용 종목 3택(전체 코인·메이저 4종·주식선물 포함)', `${fresh.buttons}개`);
+  check(/주식선물 제외 모든 비트겟 코인 선물/.test(fresh.hint), '전체 코인 설명 = 주식선물 제외 모든 코인 선물', fresh.hint);
+  await page.locator('.auto-options').screenshot({ path: `${OUT}/75-auto-symbol-scope.png` }).catch(() => {});
+
+  await page.locator('[data-auto-symbols="majors"]').click();
+  await page.waitForTimeout(250);
+  const majors = await readSymbolUi(page);
+  check(
+    majors.stored === 'majors' && majors.onMajors && !majors.onCrypto,
+    '메이저 4종 선택 → 설정 저장',
+    majors.stored,
+  );
+  check(/비트 · 이더 · 솔 · 리플 4종만/.test(majors.hint), '메이저 4종 설명', majors.hint);
+
+  await page.locator('[data-auto-symbols="all"]').click();
+  await page.waitForTimeout(250);
+  const all = await readSymbolUi(page);
+  check(all.stored === 'all' && all.onAll, '주식선물 포함 선택 → 설정 저장', all.stored);
+  check(/주식선물 포함 모든 비트겟 USDT-M 종목/.test(all.hint), '주식선물 포함 설명', all.hint);
+  check(errors.length === 0, '허용 종목 UI 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+{
+  // (b) 예전 버전이 저장한 'majors'(구 기본값)는 1회만 'crypto' 로 옮긴다 — 나머지 설정은 그대로
+  const { ctx, page, errors } = await open({
+    seedConfig: { enabled: false, mode: 'demo', autoEntry: true, riskPct: 2.5, maxPositions: 3, symbols: 'majors', earlyStop: true },
+  });
+  await openAuto(page);
+  const migrated = await page.evaluate(() => ({
+    config: JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}'),
+    flag: localStorage.getItem('cota.autotrade.migrated.cryptoDefault.v1'),
+    onCrypto: !!document.querySelector('[data-auto-symbols="crypto"].on'),
+  }));
+  check(migrated.config.symbols === 'crypto' && migrated.onCrypto, '저장된 majors → crypto 로 1회 전환', migrated.config.symbols);
+  check(migrated.config.riskPct === 2.5 && migrated.config.maxPositions === 3, '마이그레이션은 허용 종목만 바꾼다(다른 설정 유지)', `${migrated.config.riskPct}% · ${migrated.config.maxPositions}포지션`);
+  check(migrated.flag === '1', '마이그레이션 완료 표시 저장', String(migrated.flag));
+
+  // 다시 '메이저 4종'을 고르면 새로고침해도 유지되어야 한다(1회성)
+  await page.locator('[data-auto-symbols="majors"]').click();
+  await page.waitForTimeout(250);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1400);
+  await openAuto(page);
+  const kept = await readSymbolUi(page);
+  check(kept.stored === 'majors' && kept.onMajors, '마이그레이션 후 직접 고른 메이저 4종은 유지', kept.stored);
+  check(errors.length === 0, '마이그레이션 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+{
+  // (c) 실제 감시 목록 — 기본 '전체 코인'이면 알트(DOGE) 시그널도 네이티브로 넘어간다
+  const { ctx, page, errors } = await open({ altSignal: true });
+  await openAuto(page);
+  await page.fill('[data-auto-input="key"]', 'bg_demokey_1234567890abcdef');
+  await page.fill('[data-auto-input="secret"]', 'secretsecretsecretsecretsecret12');
+  await page.fill('[data-auto-input="passphrase"]', 'cota-passphrase');
+  await page.locator('[data-auto-save]').click();
+  await page.waitForTimeout(1000);
+  await page.locator('[data-auto-toggle]').click();
+  await page.waitForTimeout(900);
+  const cryptoStart = await page.evaluate(() => ({
+    plans: (window.__auto.plans ?? []).map((p) => p.symbol),
+    labels: (window.__auto.plans ?? []).map((p) => p.base),
+  }));
+  check(
+    cryptoStart.plans.includes('BTCUSDT') && cryptoStart.plans.includes('DOGEUSDT'),
+    '전체 코인 기본값: 알트(DOGE) 시그널도 감시 목록에 들어간다',
+    cryptoStart.plans.join(' / '),
+  );
+  await page.locator('[data-auto-stop]').click();
+  await page.waitForTimeout(400);
+
+  // '메이저 4종'으로 바꾸면 같은 시그널에서 알트는 빠진다(사용자가 직접 고른 범위는 그대로 존중)
+  await openAuto(page);
+  await page.locator('[data-auto-symbols="majors"]').click();
+  await page.waitForTimeout(300);
+  await page.locator('[data-auto-toggle]').click();
+  await page.waitForTimeout(900);
+  const majorsStart = await page.evaluate(() => (window.__auto.plans ?? []).map((p) => p.symbol));
+  check(
+    majorsStart.includes('BTCUSDT') && !majorsStart.includes('DOGEUSDT'),
+    '메이저 4종을 고르면 알트 시그널은 감시하지 않는다',
+    majorsStart.join(' / '),
+  );
+  check(errors.length === 0, '감시 목록 범위 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
   await ctx.close();
 }
 

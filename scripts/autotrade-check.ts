@@ -28,8 +28,11 @@ import {
   evaluateEntry,
   fmtSince,
   fmtUsdt,
+  isCryptoSymbol,
+  isMajorSymbol,
   markTraded,
   mergeArmedPlans,
+  migrateSymbolScopeOnce,
   normalizeConfig,
   normalizePosMode,
   orderSideFor,
@@ -151,7 +154,7 @@ const cfg = normalizeConfig(null);
 check('기본값: 자동매매 OFF', cfg.enabled === false);
 check('기본값: 모의투자', cfg.mode === 'demo');
 check('기본값: 1회 리스크 1.5% · 최대 2포지션 · 1일 손실 4.5%', cfg.riskPct === 1.5 && cfg.maxPositions === 2 && cfg.dailyLossPct === 4.5);
-check('기본값: 메이저 4종', cfg.symbols === 'majors' && MAJOR_SYMBOLS.length === 4);
+check('기본값: 전체 코인(주식선물·FX 제외)', cfg.symbols === 'crypto' && MAJOR_SYMBOLS.length === 4);
 check('이상한 값은 기본값으로', normalizeConfig({ riskPct: Number.NaN, maxPositions: 0 }).riskPct === DEFAULTS.riskPct);
 check(
   '리스크 상·하한 클램프',
@@ -159,7 +162,56 @@ check(
 );
 check('포지션 수는 정수로', normalizeConfig({ maxPositions: 2.7 }).maxPositions === 3);
 check('잘못된 mode 는 demo 로', normalizeConfig({ mode: 'x' as never }).mode === 'demo');
-check('허용 종목: 메이저만 / 전체', symbolAllowed(cfg, 'BTCUSDT') && !symbolAllowed(cfg, 'DOGEUSDT') && symbolAllowed({ ...cfg, symbols: 'all' }, 'DOGEUSDT'));
+check('허용 종목: 저장된 majors / all 은 그대로, 미지정은 crypto', normalizeConfig({ symbols: 'majors' }).symbols === 'majors' && normalizeConfig({ symbols: 'all' }).symbols === 'all' && normalizeConfig({}).symbols === 'crypto' && normalizeConfig({ symbols: 'nope' as never }).symbols === 'crypto');
+
+/* v1.5.5 재배포 — 허용 종목 기본값 '전체 코인' (주식선물·FX 제외) */
+const cryptoCfg = normalizeConfig({ ...cfg, symbols: 'crypto' });
+const majorsCfg = normalizeConfig({ ...cfg, symbols: 'majors' });
+const allCfg = normalizeConfig({ ...cfg, symbols: 'all' });
+check(
+  '허용 종목(crypto): 알트 코인도 통과',
+  symbolAllowed(cryptoCfg, 'BTCUSDT') && symbolAllowed(cryptoCfg, 'DOGEUSDT') && symbolAllowed(cryptoCfg, 'PEPEUSDT'),
+);
+check(
+  '허용 종목(crypto): 주식선물(TSLA·MSTR·NVDA) 제외',
+  !symbolAllowed(cryptoCfg, 'TSLAUSDT') && !symbolAllowed(cryptoCfg, 'MSTRUSDT') && !symbolAllowed(cryptoCfg, 'NVDAUSDT'),
+);
+check(
+  '허용 종목(crypto): 금·지수·환율(FX) 제외',
+  !symbolAllowed(cryptoCfg, 'XAUUSDT') && !symbolAllowed(cryptoCfg, 'SP500USDT') && !symbolAllowed(cryptoCfg, 'EURUSDUSDT'),
+);
+check(
+  '허용 종목(majors): BTC·ETH·SOL·XRP 만',
+  MAJOR_SYMBOLS.every((s) => symbolAllowed(majorsCfg, s)) && !symbolAllowed(majorsCfg, 'DOGEUSDT') && !symbolAllowed(majorsCfg, 'TSLAUSDT'),
+);
+check(
+  '허용 종목(all): 주식선물·FX 포함 전 종목',
+  symbolAllowed(allCfg, 'TSLAUSDT') && symbolAllowed(allCfg, 'XAUUSDT') && symbolAllowed(allCfg, 'DOGEUSDT'),
+);
+check('코인 판정: 스캐너 분류와 같은 규칙', isCryptoSymbol('BTCUSDT') && !isCryptoSymbol('TSLAUSDT') && !isCryptoSymbol('XAUUSDT') && !isCryptoSymbol(''));
+check('메이저 판정', isMajorSymbol('btcusdt') && !isMajorSymbol('DOGEUSDT'));
+
+/* 1회성 마이그레이션 — 구 기본값 'majors' → 'crypto', 이후 사용자 선택은 유지 */
+const mg1 = migrateSymbolScopeOnce({ symbols: 'majors', riskPct: 3 }, false);
+check(
+  '마이그레이션: 저장된 majors → crypto 1회 전환(다른 설정은 유지)',
+  mg1.changed && mg1.config?.symbols === 'crypto' && mg1.config?.riskPct === 3,
+  JSON.stringify(mg1.config),
+);
+const mg2 = migrateSymbolScopeOnce({ symbols: 'majors' }, true);
+check('마이그레이션: 옮긴 뒤 사용자가 고른 majors 는 유지', !mg2.changed && mg2.config?.symbols === 'majors');
+const mg3 = migrateSymbolScopeOnce({ symbols: 'all' }, false);
+check('마이그레이션: all 선택은 건드리지 않는다', !mg3.changed && mg3.config?.symbols === 'all');
+const mg4 = migrateSymbolScopeOnce({ symbols: 'crypto' }, false);
+check('마이그레이션: 이미 crypto 면 changed=false', !mg4.changed);
+check(
+  '마이그레이션: 저장된 설정이 없으면 그대로(null) → 기본값 crypto',
+  migrateSymbolScopeOnce(null, false).config === null && normalizeConfig(null).symbols === 'crypto',
+);
+check(
+  '마이그레이션: 변경 결과도 normalizeConfig 를 통과한다',
+  normalizeConfig(mg1.config).symbols === 'crypto' && normalizeConfig(mg1.config).riskPct === 3,
+);
 
 /* ------------------------------------------------------------------ *
  * 3) 1일 손실 한도
@@ -291,7 +343,21 @@ check('게이트: autoEntry=false · 자동 → manual-only', genie({ config: { 
 check('게이트: autoEntry=false · 원클릭 → 통과', genie({ config: { ...on, autoEntry: false }, manual: true }).allowed);
 check('게이트: 키 없음 → no-keys', genie({ config: on, hasKeys: false }).code === 'no-keys');
 check('게이트: 종료된 시그널 → not-open', genie({ config: on, signal: { state: 'loss' } }).code === 'not-open');
-check('게이트: 메이저 아닌 종목 → symbol', genie({ config: on, signal: { symbol: 'DOGEUSDT', base: 'DOGE' } }).code === 'symbol');
+check('게이트: 메이저 4종 외 종목 → symbol', genie({ config: { ...on, symbols: 'majors' }, signal: { symbol: 'DOGEUSDT', base: 'DOGE' } }).code === 'symbol');
+const altCrypto = genie({ config: { ...on, symbols: 'crypto' }, signal: { symbol: 'DOGEUSDT', base: 'DOGE' } });
+check('게이트: 전체 코인이면 알트 코인 통과', altCrypto.allowed, altCrypto.reason);
+const stockCrypto = genie({ config: { ...on, symbols: 'crypto' }, signal: { symbol: 'TSLAUSDT', base: 'TSLA' } });
+check(
+  '게이트: 전체 코인 · 주식선물은 코인 종목 아님 사유로 거부',
+  stockCrypto.code === 'symbol' && /코인 종목이 아니어서 제외/.test(stockCrypto.reason),
+  stockCrypto.reason,
+);
+const majorReason = genie({ config: { ...on, symbols: 'majors' }, signal: { symbol: 'DOGEUSDT', base: 'DOGE' } });
+check('게이트: 메이저 4종 범위 사유 문구', /메이저 4종/.test(majorReason.reason), majorReason.reason);
+check(
+  '게이트: 주식선물 포함이면 주식선물 통과',
+  genie({ config: { ...on, symbols: 'all' }, signal: { symbol: 'TSLAUSDT', base: 'TSLA' } }).allowed,
+);
 check('게이트: 승률 미달 → winrate', genie({ config: { ...on, minWinRate: 70 }, signal: { winRate: 62 } }).code === 'winrate');
 // 전수 검증(표본 부족) 채택 신호는 승률이 낮게 표기된다 — 기대값이 확실한 기법은 승률 기준을 우회한다.
 check(

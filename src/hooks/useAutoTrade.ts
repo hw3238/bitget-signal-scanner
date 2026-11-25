@@ -15,6 +15,7 @@ import {
   LIVE_REFRESH_MS,
   LOG_LIMIT,
   SNAPSHOT_FRESH_MS,
+  SYMBOL_MIGRATION_KEY,
   applyDailyReset,
   buildOrderParams,
   checkDailyLoss,
@@ -25,6 +26,7 @@ import {
   fmtUsdt,
   markTraded,
   mergeArmedPlans,
+  migrateSymbolScopeOnce,
   normalizeConfig,
   normalizePosMode,
   planAutoOrder,
@@ -78,7 +80,15 @@ function recoveryText(recovery?: string[] | null): string {
 function readConfig(): AutoTradeConfig {
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
-    return normalizeConfig(raw ? (JSON.parse(raw) as Partial<AutoTradeConfig>) : DEFAULTS);
+    const stored = raw ? (JSON.parse(raw) as Partial<AutoTradeConfig>) : null;
+    // 허용 종목 기본값이 '메이저 4종' → '전체 코인'으로 바뀌었다. 이미 저장된 'majors'는 한 번만 옮긴다.
+    // (한 번 옮긴 뒤 사용자가 직접 고른 '메이저 4종'은 유지 — 마이그레이션 키가 남아 있다)
+    const migrated = migrateSymbolScopeOnce(stored, localStorage.getItem(SYMBOL_MIGRATION_KEY) === '1');
+    if (migrated.changed && migrated.config) {
+      localStorage.setItem(CONFIG_KEY, JSON.stringify(migrated.config));
+    }
+    localStorage.setItem(SYMBOL_MIGRATION_KEY, '1');
+    return normalizeConfig(migrated.config ?? DEFAULTS);
   } catch {
     return normalizeConfig(DEFAULTS);
   }

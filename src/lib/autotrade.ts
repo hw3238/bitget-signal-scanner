@@ -12,6 +12,7 @@
  *  4) 화면에 보이는 모든 판단 문구는 이 파일의 순수 함수가 만든다(`scripts/autotrade-check.ts`).
  */
 import type { Signal, Side } from '../engine/types';
+import { isFxSymbol, isStockSymbol } from '../engine/universe';
 import { copyQtyText, planOrder, type ContractSpec, type OrderPlan } from './orderCockpit';
 
 /* ------------------------------------------------------------------ *
@@ -19,7 +20,13 @@ import { copyQtyText, planOrder, type ContractSpec, type OrderPlan } from './ord
  * ------------------------------------------------------------------ */
 
 export type AutoMode = 'demo' | 'live';
-export type SymbolScope = 'majors' | 'all';
+/**
+ * 허용 종목 범위
+ *  · 'crypto' — 주식선물·FX(금·지수)를 뺀 **모든 비트겟 코인 USDT-M 선물** (기본값)
+ *  · 'majors' — 메이저 4종(BTC·ETH·SOL·XRP)만
+ *  · 'all'    — 주식선물까지 포함한 비트겟 USDT-M 전 종목
+ */
+export type SymbolScope = 'crypto' | 'majors' | 'all';
 
 export interface AutoTradeConfig {
   /** 자동매매 스위치 (기본 OFF) */
@@ -34,7 +41,7 @@ export interface AutoTradeConfig {
   maxPositions: number;
   /** 1일 최대 손실 한도(% of 계좌) */
   dailyLossPct: number;
-  /** 허용 종목 — 메이저 4종 / 전체 */
+  /** 허용 종목 — 전체 코인(기본) / 메이저 4종 / 주식선물 포함 */
   symbols: SymbolScope;
   /** 진입에 필요한 최근 승률(%) */
   minWinRate: number;
@@ -50,7 +57,7 @@ export interface AutoTradeConfig {
   earlyStop: boolean;
 }
 
-/** 메이저 4종 — 기본 허용 종목 */
+/** 메이저 4종 — 'majors' 범위에서 허용하는 종목 */
 export const MAJOR_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT'] as const;
 
 export const DEFAULTS: AutoTradeConfig = {
@@ -60,7 +67,7 @@ export const DEFAULTS: AutoTradeConfig = {
   riskPct: 1.5,
   maxPositions: 2,
   dailyLossPct: 4.5,
-  symbols: 'majors',
+  symbols: 'crypto',
   minWinRate: 55,
   minRR: 1.5,
   maxLeverage: 10,
@@ -103,7 +110,8 @@ export function normalizeConfig(raw: Partial<AutoTradeConfig> | null | undefined
     riskPct: num(src.riskPct, DEFAULTS.riskPct),
     maxPositions: num(src.maxPositions, DEFAULTS.maxPositions),
     dailyLossPct: num(src.dailyLossPct, DEFAULTS.dailyLossPct),
-    symbols: src.symbols === 'all' ? 'all' : 'majors',
+    // 미지정·구버전 저장본은 새 기본값 'crypto'(주식선물 제외 전체 코인)로 읽는다.
+    symbols: src.symbols === 'majors' ? 'majors' : src.symbols === 'all' ? 'all' : 'crypto',
     minWinRate: num(src.minWinRate, DEFAULTS.minWinRate),
     minRR: num(src.minRR, DEFAULTS.minRR),
     maxLeverage: num(src.maxLeverage, DEFAULTS.maxLeverage),
@@ -168,9 +176,49 @@ export function isMajorSymbol(symbol: string): boolean {
   return (MAJOR_SYMBOLS as readonly string[]).includes(s);
 }
 
+/**
+ * 코인 USDT-M 선물인가 — 주식선물(TSLA·MSTR…)과 FX/RWA(금·은·지수·환율)를 뺀 나머지.
+ * 판정은 스캐너가 계약을 분류할 때 쓰는 것과 같은 규칙(`engine/universe`)이다.
+ */
+export function isCryptoSymbol(symbol: string): boolean {
+  const s = (symbol ?? '').toUpperCase();
+  if (!s) return false;
+  return !isStockSymbol(s) && !isFxSymbol(s);
+}
+
+/** 이 종목을 자동매매가 건드려도 되는가 — 설정 범위에 따라 */
 export function symbolAllowed(config: AutoTradeConfig, symbol: string): boolean {
+  const s = (symbol ?? '').toUpperCase();
   if (config.symbols === 'all') return true;
-  return isMajorSymbol(symbol);
+  if (!isCryptoSymbol(s)) return false;
+  if (config.symbols === 'majors') return isMajorSymbol(s);
+  return true; // 'crypto'
+}
+
+/** 허용 종목 1회 마이그레이션 키 — 앱(localStorage)에 남긴다. */
+export const SYMBOL_MIGRATION_KEY = 'cota.autotrade.migrated.cryptoDefault.v1';
+
+export interface SymbolScopeMigration {
+  /** 마이그레이션 후 설정 (바꿀 것이 없으면 입력 그대로) */
+  config: Partial<AutoTradeConfig> | null;
+  /** 'majors' → 'crypto' 로 바꿨는가 */
+  changed: boolean;
+}
+
+/**
+ * 허용 종목 기본값 1회 마이그레이션.
+ *  · 예전 기본값 `'majors'`(메이저 4종)가 저장된 사용자는 알트 코인 시그널이 전부 걸러져
+ *    자동매매가 사실상 돌지 않았다 → 새 기본값 `'crypto'`(주식선물 제외 전체 코인)로 **한 번만** 옮긴다.
+ *  · 한 번 옮긴 뒤 사용자가 직접 '메이저 4종'을 고르면 그 선택은 그대로 둔다(`alreadyMigrated`).
+ */
+export function migrateSymbolScopeOnce(
+  raw: Partial<AutoTradeConfig> | null | undefined,
+  alreadyMigrated: boolean,
+): SymbolScopeMigration {
+  const src = raw ?? null;
+  if (alreadyMigrated || !src) return { config: src, changed: false };
+  if (src.symbols !== 'majors') return { config: src, changed: false };
+  return { config: { ...src, symbols: 'crypto' }, changed: true };
 }
 
 /* ------------------------------------------------------------------ *
@@ -298,7 +346,13 @@ export function evaluateEntry(ctx: EntryContext): EntryDecision {
     return { allowed: false, code: 'not-open', reason: `${base} 시그널이 이미 종료되어 진입하지 않습니다.` };
   }
   if (!symbolAllowed(config, signal.symbol)) {
-    return { allowed: false, code: 'symbol', reason: `${base}는 허용 종목(메이저 4종)이 아닙니다.` };
+    const reason =
+      config.symbols === 'crypto'
+        ? `${base}는 코인 종목이 아니어서 제외합니다(주식선물 제외).`
+        : config.symbols === 'majors'
+          ? `${base}는 허용 종목(메이저 4종)이 아닙니다.`
+          : `${base}는 허용 종목이 아닙니다.`;
+    return { allowed: false, code: 'symbol', reason };
   }
   // 승률 기준 — 전수 검증 채택 신호는 표본 부족으로 승률이 낮게 표기되므로,
   // 기대값이 확실한 기법(전수 0.30R 이상)은 승률 기준을 우회해 진입한다.
