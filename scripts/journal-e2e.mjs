@@ -137,7 +137,7 @@ const run = async () => {
         }),
         autoTradeStatus: async () => ({ running: false, equity: 5000, available: 5000 }),
         autoTradeStop: async () => ({ running: false }),
-        appInfo: async () => ({ versionName: '1.5.5', versionCode: 11, packageName: 'com.hw3238.bitgetscanner' }),
+        appInfo: async () => ({ versionName: '1.5.6', versionCode: 12, packageName: 'com.hw3238.bitgetscanner' }),
       };
       window.Capacitor = {
         getPlatform: () => 'android',

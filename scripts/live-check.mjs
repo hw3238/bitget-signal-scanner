@@ -149,7 +149,7 @@ check(
   `${settings.seed} · ${settings.headings[0]}`,
 );
 check(settings.target === '주요 코인' && settings.ntfy === 'bgss-hw3238-9f4k2m', '라이브 알림 기본값', `${settings.target} · ${settings.ntfy}`);
-check(/앱 v1\.5\.5/.test(settings.version || ''), '라이브 앱 버전 v1.5.5', settings.version);
+check(/앱 v1\.5\.5/.test(settings.version || ''), '라이브 앱 버전 v1.5.6', settings.version);
 
 // 내 진입 원탭 → 기록 대시보드
 await page.locator('.bottom-nav button[data-tab="scanner"]').click();

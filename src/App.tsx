@@ -10,7 +10,7 @@ import { OnboardingModal } from './components/OnboardingModal';
 import { ShareModal } from './components/ShareModal';
 import logoUrl from './assets/cota-logo.png';
 import { RefreshIcon } from './components/Icons';
-import type { Signal } from './engine/types';
+import type { Contract, Signal } from './engine/types';
 import { useFavorites } from './hooks/useFavorites';
 import { useAutoTrade } from './hooks/useAutoTrade';
 import { useMyTrades } from './hooks/useMyTrades';
@@ -62,12 +62,20 @@ export default function App() {
       : settings.leverage;
 
   /** 🤖 비트겟 자동매매 — 시그널·프로필·계약 단위로 수량을 계산해 앱 네이티브에 주문을 맡긴다 */
+  /** 종목 계약 정보 — 추천 레버리지를 거래소 종목 최대 배율(maxLever) 안으로 제한한다(v1.5.6) */
+  const contractBySymbol = useMemo(() => {
+    const map = new Map<string, Contract>();
+    for (const c of state.contracts) map.set(c.symbol, c);
+    return map;
+  }, [state.contracts]);
+
   const autoTrade = useAutoTrade({
     signals: state.signals,
     contracts: state.contracts,
-    leverageFor: (signal) =>
+    // 잔고(equity)와 종목 최대 배율을 함께 넘겨 잔고 구간별 유동 레버리지를 쓴다(v1.5.6)
+    leverageFor: (signal, equity) =>
       settings.leverageMode === 'auto' && profile
-        ? recommendLeverage(signal, profile.style).leverage
+        ? recommendLeverage(signal, profile.style, equity, contractBySymbol.get(signal.symbol)?.maxLever).leverage
         : settings.leverage,
   });
 
@@ -152,13 +160,24 @@ export default function App() {
   const openCount = state.signals.filter((s) => s.state === 'open' && s.asset !== 'fx').length;
   const shareLeverage =
     shareSignal && settings.leverageMode === 'auto' && profile
-      ? recommendLeverage(shareSignal, profile.style).leverage
+      ? recommendLeverage(
+          shareSignal,
+          profile.style,
+          autoTrade.accountBase.equity,
+          contractBySymbol.get(shareSignal.symbol)?.maxLever,
+        ).leverage
       : settings.leverage;
 
+  /**
+   * 온보딩 저장 — 성향을 처음 고르거나 바꿀 때 자동매매 설정도 같은 프리셋으로 맞춘다(v1.5.6).
+   * 같은 성향으로 다시 저장했을 때는 사용자가 직접 조정한 값을 덮어쓰지 않는다.
+   */
   const saveOnboarding = (next: Profile) => {
+    const styleChanged = !profile || profile.style !== next.style;
     saveProfile(next);
     setProfile(next);
     setOnboarding(false);
+    if (styleChanged) autoTrade.applyTradeStyle(next.style);
   };
 
   /** 시그널 카드·설정의 '계좌 연결' 안내 → 메뉴의 비트겟 자동매매 화면 */
@@ -292,6 +311,7 @@ export default function App() {
             onClearLog={clearSwapLog}
             autoTrade={autoTrade}
             signals={state.signals}
+            profile={profile}
           />
         )}
         {tab === 'history' && (

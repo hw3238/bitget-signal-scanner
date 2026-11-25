@@ -59,6 +59,8 @@ public class AutoTradeService extends Service {
     private final java.util.Map<String, Double> peakR = new java.util.HashMap<>();
     /** 조기 손절 시도 시각 — 같은 종목을 5분에 한 번만 건드린다 */
     private final java.util.Map<String, Long> lastExitAt = new java.util.HashMap<>();
+    /** 반익절 보류 사유 로그 — 같은 사유를 매 주기 반복해 쌓지 않는다(v1.5.6) */
+    private final java.util.Set<String> partialSkipLogged = new java.util.HashSet<>();
 
     private final Runnable tick = new Runnable() {
         @Override
@@ -196,9 +198,11 @@ public class AutoTradeService extends Service {
         } catch (Exception ignored) {
             /* 포지션 모드를 못 읽으면 단방향으로 시도 */
         }
+        boolean positionsOk = false;
         try {
             heldPositions = BitgetApi.positions(keys);
             openPositions = heldPositions.length();
+            positionsOk = true;
         } catch (Exception e) {
             AutoTradeStore.addLog(this, "error", "포지션 조회 실패 — " + friendly(e));
         }
@@ -241,6 +245,13 @@ public class AutoTradeService extends Service {
         if (heldPositions.length() > 0) {
             earlyClosed = checkEarlyExit(keys, config, heldPositions, posMode);
             openPositions = Math.max(0, openPositions - earlyClosed.size());
+        }
+
+        /* --- 💰 50% 반익절: 목표가 50% 또는 +1.0R 도달 시 절반 익절 (v1.5.6) --- */
+        // 포지션 조회가 성공한 주기에만 돈다 — 조회 실패로 '포지션 없음'이 되면 완료 표시가 지워져
+        // 다음 주기에 반익절을 두 번 넣을 수 있다. (포지션이 0건이면 청산된 기록 정리만 한다)
+        if (positionsOk) {
+            checkPartialTp(keys, config, heldPositions, posMode, earlyClosed, System.currentTimeMillis());
         }
 
         /* --- 감시 목록 확인 --- */
@@ -341,8 +352,9 @@ public class AutoTradeService extends Service {
                     keep.put(plan);
                     continue;
                 }
-                JSONObject order = buildOrder(plan, posMode, config, equity, available);
-                String leverage = String.valueOf((int) Math.round(plan.optDouble("leverage", 1)));
+                int leverageValue = leverageFor(plan, symbol);
+                JSONObject order = buildOrder(plan, posMode, config, equity, available, leverageValue);
+                String leverage = String.valueOf(leverageValue);
                 BitgetApi.setLeverage(keys, symbol, leverage, hedge ? side : null);
                 JSONObject res;
                 try {
@@ -373,6 +385,8 @@ public class AutoTradeService extends Service {
                             + joinRecovery(res.optJSONArray("recovery")));
                 }
                 AutoTradeStore.markTraded(this, key);
+                // 💰 감시 목록이 사라져도 반익절 판단에 쓸 수 있게 이 포지션의 목표/손절을 남긴다(v1.5.6)
+                AutoTradeStore.savePositionTarget(this, upperSymbol + "|" + side, entry, target, stop);
                 openPositions += 1;
                 heldSymbols.add(upperSymbol);
                 heldSides.add(upperSymbol + "|" + side);
@@ -466,7 +480,8 @@ public class AutoTradeService extends Service {
             }
 
             EarlyStopRule.Decision decision = EarlyStopRule.decide(
-                    enabled, longSide, entry, stop, price, openedAt, now, peak, oppositeAt, candles);
+                    enabled, longSide, entry, stop, price, openedAt, now, peak, oppositeAt, candles,
+                    AutoTradeStore.isPartialTpDone(this, key));
             if (!decision.exit) continue;
 
             String size = trim(p.optDouble("total", 0));
@@ -501,13 +516,134 @@ public class AutoTradeService extends Service {
         return closed;
     }
 
+    /* ------------------------------------------------------------------ *
+     * 💰 50% 반익절 (v1.5.6)
+     * ------------------------------------------------------------------ */
+
+    /**
+     * 보유 포지션을 훑어 목표가 진행률 50% 또는 +1.0R 에 닿은 포지션의 절반을 시장가로 익절한다.
+     *  · 분할 수량·남은 수량이 거래소 최소 수량/최소 금액($5)을 못 채우면 건너뛴다(거절 방지).
+     *  · 성공하면 `AutoTradeStore.markPartialTpDone` 으로 중복 실행을 막고, 로그·푸시를 남긴다.
+     *  · 청산된 포지션의 목표 기록·완료 표시는 마지막에 정리한다(같은 종목 재진입 시 다시 반익절 가능).
+     */
+    private void checkPartialTp(
+            BitgetApi.Keys keys,
+            JSONObject config,
+            JSONArray held,
+            String posMode,
+            java.util.Set<String> skip,
+            long now) {
+        boolean enabled = config.optBoolean("partialTp", true);
+        java.util.Set<String> alive = new java.util.HashSet<>();
+
+        for (int i = 0; i < held.length(); i++) {
+            JSONObject p = held.optJSONObject(i);
+            if (p == null) continue;
+            String symbol = p.optString("symbol", "");
+            if (symbol.isEmpty()) continue;
+            String holdSide = p.optString("holdSide", "long").toLowerCase(Locale.ROOT);
+            String key = symbol + "|" + holdSide;
+            alive.add(key);
+
+            if (!enabled) continue;
+            // 방금 조기 청산한 포지션은 건드리지 않는다.
+            if (skip != null && skip.contains(key)) continue;
+            if (AutoTradeStore.isPartialTpDone(this, key)) continue;
+
+            boolean longSide = !"short".equals(holdSide);
+            // 거래소 포지션의 TP/SL 이 1순위, 비어 있으면 진입 때 저장한 기록을 쓴다.
+            JSONObject saved = AutoTradeStore.positionTarget(this, key);
+            double entry = p.optDouble("openPriceAvg", 0);
+            double stop = p.optDouble("presetStopLossPrice", 0);
+            double target = p.optDouble("presetStopSurplusPrice", 0);
+            if (saved != null) {
+                if (!(entry > 0)) entry = saved.optDouble("entry", 0);
+                if (!(stop > 0)) stop = saved.optDouble("stop", 0);
+                if (!(target > 0)) target = saved.optDouble("target", 0);
+            }
+            double mark = p.optDouble("markPrice", 0);
+            double price = mark > 0 ? mark : BitgetApi.lastPriceCached(symbol);
+            double total = p.optDouble("total", 0);
+            if (!(entry > 0) || !(price > 0) || !(total > 0)) continue;
+            if (!PartialTpRule.triggered(longSide, entry, stop, target, price)) continue;
+
+            String base = symbol.replace("USDT", "");
+            BitgetApi.ContractLimits lim = BitgetApi.contractLimits(symbol);
+            if (lim == null) {
+                logPartialOnce(key, base + " 계약 단위를 확인하지 못해 이번 주기 반익절을 건너뜁니다.");
+                continue;
+            }
+            PartialTpRule.Plan plan = PartialTpRule.plan(
+                    longSide, entry, stop, target, price, total,
+                    lim.minTradeNum, lim.minTradeUSDT, lim.volumePlace, lim.sizeMultiplier);
+            if (!plan.eligible) {
+                // 같은 사유를 매 주기 로그로 쌓지 않는다(포지션당 한 번).
+                logPartialOnce(key, base + " 반익절 보류 — " + plan.reason);
+                continue;
+            }
+
+            String oid = "pt" + Integer.toHexString(key.hashCode()) + Long.toHexString(now % 10_000_000L);
+            if (oid.length() > 36) oid = oid.substring(0, 36);
+            try {
+                BitgetApi.closePosition(keys, symbol, holdSide, plan.qty, posMode, null, oid);
+                AutoTradeStore.markPartialTpDone(this, key);
+                Double peak = peakR.get(key);
+                String text = String.format(Locale.US,
+                        "💰 반익절 50%% %s %s %s %s @ %s — %s · 최대 +%.2fR",
+                        AutoTradeStore.isDemo(this) ? "[모의]" : "[실거래]",
+                        base,
+                        longSide ? "롱" : "숏",
+                        plan.qty,
+                        trim(entry),
+                        plan.reason,
+                        Math.max(peak == null ? 0 : peak, plan.r));
+                AutoTradeStore.addLog(this, "partial", text);
+                notifySignal("💰 반익절 체결", text);
+            } catch (Exception e) {
+                AutoTradeStore.addLog(this, "error", base + " 반익절 실패 — " + friendly(e));
+            }
+        }
+
+        // 살아 있는 포지션 것만 남긴다 — 청산된 포지션의 기록을 같은 종목 재진입이 물려받지 않게.
+        AutoTradeStore.retainPositions(this, alive);
+    }
+
+    /** 반익절 보류 사유 — 포지션·문구당 한 번만 로그에 남긴다 */
+    private void logPartialOnce(String key, String text) {
+        if (!partialSkipLogged.add(key + "|" + text)) return;
+        AutoTradeStore.addLog(this, "info", text);
+    }
+
+    /* ------------------------------------------------------------------ *
+     * 레버리지 상한
+     * ------------------------------------------------------------------ */
+
+    /**
+     * 종목 최대 배율 — 계약 `maxLever`, 모르면 안전 상한 100x.
+     * 공격적 스타일은 레버리지 상한을 두지 않고 이 선안에서 유동적으로 쓴다(v1.5.6).
+     */
+    private static int exchangeLeverageCap(String symbol) {
+        BitgetApi.ContractLimits lim = BitgetApi.contractLimits(symbol);
+        if (lim != null && lim.maxLever > 0) return Math.min(lim.maxLever, 1000);
+        return 100;
+    }
+
+    /** 감시 항목의 레버리지 → 실제 주문 배율(계약 최대 배율·안전 상한 이내) */
+    private static int leverageFor(JSONObject plan, String symbol) {
+        int wanted = (int) Math.round(plan.optDouble("leverage", 1));
+        return Math.max(1, Math.min(exchangeLeverageCap(symbol), wanted));
+    }
+
+
     /**
      * 감시 항목 → 비트겟 place-order body.
      * v1.5.5 — 수량을 **이번 주기에 읽은 실계좌 잔고(equity·available)** 로 다시 계산한다.
      *  · 웹이 계산한 수량은 앱을 닫아 둔 사이 낡는다(잔고가 늘거나 줄면 리스크가 달라진다).
      *  · 가용 잔고의 95%를 넘지 않게 캡한다 — 이미 잡힌 증거금 때문에 주문이 거절되는 일을 막는다.
      */
-    private JSONObject buildOrder(JSONObject plan, String posMode, JSONObject config, double equity, double available) throws Exception {
+    private JSONObject buildOrder(
+            JSONObject plan, String posMode, JSONObject config, double equity, double available, int leverageValue)
+            throws Exception {
         String symbol = plan.optString("symbol");
         String side = plan.optString("side", "long");
         boolean longSide = "long".equals(side);
@@ -517,9 +653,9 @@ public class AutoTradeService extends Service {
         body.put("productType", BitgetApi.PRODUCT);
         body.put("marginMode", "isolated");
         body.put("marginCoin", BitgetApi.MARGIN_COIN);
-        body.put("size", sizeText(sizeForBalance(plan, equity, available, config)));
+        body.put("size", sizeText(sizeForBalance(plan, equity, available, config, leverageValue)));
         body.put("posMode", hedge ? "hedge_mode" : "one_way_mode");
-        body.put("leverageHint", Math.max(1, (int) Math.round(plan.optDouble("leverage", 1))));
+        body.put("leverageHint", Math.max(1, leverageValue));
         body.put("side", longSide ? "buy" : "sell");
         if (hedge) {
             // v2 는 tradeSide(open/close), v3(통합계정)는 posSide(long/short) — BitgetApi 가 골라 쓴다.
@@ -585,11 +721,12 @@ public class AutoTradeService extends Service {
      * 가용 잔고의 95% 를 넘으면 그만큼 줄인다. 계산할 수 없으면(잔고·가격 없음) 웹이 계산한 값을 쓴다.
      * 결과는 plan 사본에 `sizeStr`(거래소 단위로 내림한 문자열)로 넣는다.
      */
-    private JSONObject sizeForBalance(JSONObject plan, double equity, double available, JSONObject config) {
+    private JSONObject sizeForBalance(
+            JSONObject plan, double equity, double available, JSONObject config, int leverageValue) {
         try {
             double entry = plan.optDouble("entry", 0);
             double stop = plan.optDouble("stop", 0);
-            double leverage = Math.max(1, plan.optDouble("leverage", 1));
+            double leverage = Math.max(1, leverageValue);
             double riskPct = plan.optDouble("riskPct", config == null ? 0 : config.optDouble("riskPct", 0));
             double dist = Math.abs(entry - stop);
             if (!(equity > 0) || !(entry > 0) || !(dist > 0) || !(riskPct > 0)) return plan;

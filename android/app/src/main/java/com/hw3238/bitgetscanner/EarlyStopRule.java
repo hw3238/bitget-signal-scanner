@@ -12,6 +12,8 @@ import java.util.Locale;
  *   1) 반대 시그널 — 포지션을 연 뒤 같은 종목에 반대 방향 시그널이 새로 포착됨
  *   2) 구조 붕괴 — 마지막 **마감된** 캔들이 반대쪽 장대봉으로 EMA9·진입가를 함께 이탈
  *   3) 본절 보호 — +0.8R 이상 갔던 포지션이 본절 부근으로 되돌아옴
+ *      · v1.5.6 — 50% 반익절을 마친 포지션은 기준을 **+0.05R 이하**로 강화해 남은 절반의 수익이
+ *        손실로 뒤집히기 전에 본절 청산한다.
  *
  *  휩쏘 방지: 진입 2분 보호 · 마감 캔들만 사용 · 장대봉(평균 몸통 1.3배·가격 대비 0.15%) 요구 ·
  *  손절가 −0.95R 이내는 거래소 SL 에 맡김 · 같은 종목 5분 쿨다운(서비스 쪽).
@@ -74,12 +76,36 @@ final class EarlyStopRule {
             double peakR,
             long oppositeSignalAt,
             double[][] candles) {
+        return decide(enabled, longSide, entry, stop, price, openedAt, now, peakR, oppositeSignalAt, candles, false);
+    }
+
+    /**
+     * @param partialTpDone 50% 반익절을 이미 마쳤는가 — 본절 보호 기준을 +0.05R 로 강화한다(v1.5.6)
+     */
+    static Decision decide(
+            boolean enabled,
+            boolean longSide,
+            double entry,
+            double stop,
+            double price,
+            long openedAt,
+            long now,
+            double peakR,
+            long oppositeSignalAt,
+            double[][] candles,
+            boolean partialTpDone) {
         double r = rMultiple(longSide, entry, stop, price);
         if (!enabled) return Decision.no("off", "조기 손절 보호가 꺼져 있습니다.", r);
         if (!(entry > 0) || !(stop > 0) || !(price > 0)) return Decision.no("none", "진입가·손절가·현재가를 확인하지 못했습니다.", r);
         if (longSide ? price <= stop : price >= stop) return Decision.no("near-stop", "손절가에 이미 닿아 SL 처리에 맡깁니다.", r);
         if (r <= -0.95) return Decision.no("near-stop", "손절가 −0.95R 이내 — SL 처리에 맡깁니다.", r);
         if (now - openedAt < MIN_AGE_MS) return Decision.no("too-early", "진입 직후 2분 보호 구간입니다.", r);
+
+        // 50% 반익절을 마쳤다면 남은 절반의 수익이 손실로 뒤집히기 전에 본절에서 지킨다(v1.5.6).
+        if (partialTpDone && r <= 0.05 && r > -0.4) {
+            return new Decision(true, "partial-breakeven",
+                    String.format(Locale.US, "반익절 후 본절 보호 — 최대 +%.2fR → %.2fR", peakR, r), r);
+        }
 
         if (oppositeSignalAt > openedAt && now - oppositeSignalAt <= SIGNAL_MAX_AGE_MS && r < 0.3) {
             return new Decision(true, "opposite-signal", "반대 방향 시그널 감지", r);

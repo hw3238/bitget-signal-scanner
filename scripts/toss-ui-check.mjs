@@ -130,7 +130,7 @@ const run = async () => {
   });
   check('첫 실행: 온보딩 모달 표시', onb.visible, onb.title);
   check('온보딩 제목 = 매매 성향(시드 입력 없음)', /매매 성향/.test(onb.title) && onb.seedInputs === 0, `${onb.title} · 입력칸 ${onb.seedInputs}개`);
-  check('매매 성향 2택(보수적 2~5x · 공격적 10~25x)', onbstyles(onb) === '보수적 매매:추천 2x ~ 5x|공격적 매매:추천 10x ~ 25x', onb.styles.map((s) => `${s.label}:${s.range}`).join(' | '));
+  check('매매 성향 2택(보수적 2~5x · 공격적 상한 없음 유동)', onbstyles(onb) === '보수적 매매:추천 2x ~ 5x|공격적 매매:상한 없음 · 유동 (청산 안전마진까지)', onb.styles.map((s) => `${s.label}:${s.range}`).join(' | '));
   check('보수적 기본 선택 · 시작하기 버튼 · 로고', onb.styles[0]?.on && onb.startText === '시작하기' && onb.logoLoaded, `${onb.startText}`);
   check('첫 실행 온보딩은 닫기 버튼 없음', !onb.closeBtn);
   check('계좌 연결 안내(시드 대신 실계좌 잔고 기준)', /계좌를 연결하면/.test(onb.accountNote) && /자동매매/.test(onb.accountNote), onb.accountNote.slice(0, 60));
@@ -473,7 +473,7 @@ const run = async () => {
   );
   check('매매 성향 표시(보수적)', /보수적 매매/.test(settings.profileStyle), settings.profileStyle);
   check('🔔 핸드폰 알림 유지 · 코인 알림 3택', settings.heading === '🔔 핸드폰 알림' && settings.targets.join('|') === '비트·이더·솔|주요 코인|전체 종목' && settings.targetOn === '주요 코인', settings.targets.join(' / '));
-  check('ntfy 토픽 유지 · 앱 버전 v1.5.5', settings.ntfy === 'bgss-hw3238-9f4k2m' && /COTA · 앱 v1\.5\.5/.test(settings.version || ''), `${settings.ntfy} · ${settings.version}`);
+  check('ntfy 토픽 유지 · 앱 버전 v1.5.6', settings.ntfy === 'bgss-hw3238-9f4k2m' && /COTA · 앱 v1\.5\.6/.test(settings.version || ''), `${settings.ntfy} · ${settings.version}`);
   check('설정에 FX 랏·벤티지·트웰브 데이터 없음', !settings.lotSection);
   check(
     '실전 주문 리스크 설정 = 성향 추천 + 1/2/3/5/10/20/30/50% + 직접 입력',
@@ -533,7 +533,7 @@ const run = async () => {
     return { rec: clean(rec), risk, notice, stored };
   });
   const agLev = Number((aggressive.rec.match(/(\d+)x/) || [])[1]);
-  check('공격적 저장 · 추천 배율 10x~25x', aggressive.stored.style === 'aggressive' && agLev >= 10 && agLev <= 25, aggressive.rec);
+  check('공격적 저장 · 추천 배율 상한 없음(25x 초과 가능)', aggressive.stored.style === 'aggressive' && agLev >= 10, aggressive.rec);
   check('성향 변경 시 추천 배율 상승(보수적 < 공격적)', agLev > recLev, `${recLev}x → ${agLev}x`);
   check(
     '계좌 미연결이면 성향이 바뀌어도 실계좌 미연결 안내 유지',

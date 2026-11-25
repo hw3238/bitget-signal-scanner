@@ -17,6 +17,7 @@ import {
   SNAPSHOT_FRESH_MS,
   SYMBOL_MIGRATION_KEY,
   applyDailyReset,
+  applyStylePreset as applyStylePresetToConfig,
   buildOrderParams,
   checkDailyLoss,
   clientOidFor,
@@ -37,6 +38,8 @@ import {
   rollDay,
   signalKeyOf,
   symbolAllowed,
+  leverageCapLabel,
+  presetForStyle,
   toArmedPlan,
   type ArmedPlan,
   type AutoLogEntry,
@@ -46,6 +49,7 @@ import {
   type PlaceOrderParams,
 } from '../lib/autotrade';
 import { accountKindLabel } from '../lib/bitgetUta';
+import type { TradeStyle } from '../lib/profile';
 import {
   autoTradeResetDailyLimit,
   autoTradeStart,
@@ -114,8 +118,11 @@ function readRuntime(): AutoRuntime {
 interface UseAutoTradeInput {
   signals: Signal[];
   contracts: Contract[];
-  /** 시그널별 적용 배율 (COTA 추천 / 고정) */
-  leverageFor: (signal: Signal) => number;
+  /**
+   * 시그널별 적용 배율 (COTA 추천 / 고정).
+   * v1.5.6 — 연결된 계좌의 **실시간 잔고(equity)** 를 함께 받아 잔고 구간별로 유동 계산한다.
+   */
+  leverageFor: (signal: Signal, equity: number | null) => number;
 }
 
 export interface QuickOrderResult {
@@ -197,6 +204,7 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
         volumePlace: c.volumePlace,
         minTradeUsdt: c.minTradeUsdt,
         sizeMultiplier: c.sizeMultiplier,
+        maxLever: c.maxLever,
       };
     },
     [contractBySymbol],
@@ -385,7 +393,7 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
           signal,
           seed,
           config: cfg,
-          leverage: leverageFor(signal),
+          leverage: leverageFor(signal, seed),
           spec: specFor(signal.symbol),
           available: accountBase.available,
         });
@@ -509,7 +517,7 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
           const level = item.level as AutoLogEntry['level'];
           next = pushLog(next, {
             at,
-            level: ['fill', 'reject', 'block', 'exit', 'info', 'error'].includes(level) ? level : 'info',
+            level: ['fill', 'reject', 'block', 'exit', 'partial', 'info', 'error'].includes(level) ? level : 'info',
             text,
           });
         }
@@ -681,7 +689,7 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
         signal,
         seed,
         config,
-        leverage: leverageFor(signal),
+        leverage: leverageFor(signal, seed),
         spec: specFor(signal.symbol),
         available: accountBase.available,
       });
@@ -882,6 +890,24 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
     };
   }, [keys.hasKeys, liveRefresh, refreshAccount, refreshKeys, refreshPositions, supported]);
 
+  /**
+   * 🎯 매매 스타일 → 자동매매 프리셋 연동(v1.5.6).
+   * 온보딩에서 성향을 처음 고르거나 바꿀 때, 그리고 자동매매 화면의 `스타일 프리셋 맞추기`가 부른다.
+   * 켜짐·모의/실거래·감시 주기·허용 종목은 사용자가 고른 값을 그대로 둔다.
+   */
+  const applyTradeStyle = useCallback(
+    (style: TradeStyle) => {
+      const preset = presetForStyle(style);
+      setConfig((prev) => applyStylePresetToConfig(prev, style));
+      log({
+        at: Date.now(),
+        level: 'info',
+        text: `매매 스타일 프리셋 적용 — ${style === 'aggressive' ? '⚡ 공격적' : '🛡️ 보수적'} · 리스크 ${preset.riskPct}% · 레버리지 ${leverageCapLabel(preset.maxLeverage)} · 최대 ${preset.maxPositions}포지션 · 1일 손실 ${preset.dailyLossPct}% · 50% 반익절 ${preset.partialTp ? 'ON' : 'OFF'}`,
+      });
+    },
+    [log],
+  );
+
   /** 켜져 있는 동안 새 시그널을 감시 목록으로 계속 넘긴다(중복은 키로 병합). */
   const armedRef = useRef<ArmedPlan[]>([]);
   const lastSyncRef = useRef(0);
@@ -950,6 +976,8 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
     quickOrder,
     closePosition,
     simulate,
+    /** 매매 스타일 프리셋을 자동매매 설정에 적용 */
+    applyTradeStyle,
     setError,
     reloadKeys: refreshKeys,
   };

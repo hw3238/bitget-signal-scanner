@@ -13,17 +13,25 @@ import {
   fmtClock,
   fmtSince,
   fmtUsdt,
+  leverageCapLabel,
+  matchesStylePreset,
+  partialTpState,
+  presetForStyle,
   statusBadge,
+  stylePresetDiff,
   todayFillCount,
 } from '../lib/autotrade';
+import { STYLE_META, type Profile } from '../lib/profile';
 import { NumField } from './ui';
-import { APK_DOWNLOAD_URL } from '../lib/update';
+import { APP_VERSION, APK_DOWNLOAD_URL } from '../lib/update';
 import { accountKindLabel } from '../lib/bitgetUta';
 import { openExternalUrl } from '../lib/native';
 
 interface Props {
   api: AutoTradeApi;
   signals: Signal[];
+  /** 온보딩·설정에서 고른 매매 스타일 — 자동매매 프리셋이 이 값을 따라간다(v1.5.6) */
+  profile: Profile | null;
 }
 
 const SYMBOL_LABEL: Record<string, string> = {
@@ -38,9 +46,13 @@ const LEVEL_LABEL: Record<string, string> = {
   reject: '거부',
   block: '차단',
   exit: '조기 손절',
+  partial: '반익절',
   info: '안내',
   error: '오류',
 };
+
+/** 레버리지 상한 빠른 선택 — 0 = 상한 없음(유동) */
+const LEVERAGE_CAP_CHOICES = [0, 5, 10, 25, 50, 100] as const;
 
 /** 허용 종목 선택별 하단 설명 */
 const SYMBOL_SCOPE_HINT = {
@@ -53,7 +65,7 @@ const SYMBOL_SCOPE_HINT = {
  * 🤖 비트겟 자동매매 — 키 연결 · 안전장치 · 자동/수동 주문 · 로그.
  * 실제 주문은 앱(안드로이드) 네이티브가 넣고, 이 화면은 명령과 결과만 다룬다.
  */
-export function AutoTradeTab({ api, signals }: Props) {
+export function AutoTradeTab({ api, signals, profile }: Props) {
   const {
     config,
     keys,
@@ -99,6 +111,13 @@ export function AutoTradeTab({ api, signals }: Props) {
   const badge = statusBadge({ ...config, mode: tradeMode.mode }, running);
   const fillsToday = todayFillCount(runtime.logs, Date.now());
   const modeLabel = tradeMode.mode === 'live' ? '실거래' : '모의투자';
+  /** 지금 설정이 고른 매매 스타일 프리셋 그대로인가 — 다르면 무엇이 다른지 보여준다 */
+  const styleMeta = profile ? STYLE_META[profile.style] : null;
+  const stylePreset = profile ? presetForStyle(profile.style) : null;
+  const styleDiff = profile ? stylePresetDiff(config, profile.style) : [];
+  const styleLinked = profile ? matchesStylePreset(config, profile.style) : false;
+  /** 50% 반익절을 이미 마친 포지션 키 — 네이티브가 기록한 값 */
+  const partialDone = useMemo(() => new Set(native?.partialTpDone ?? []), [native?.partialTpDone]);
 
   const notify = (text: string) => {
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
@@ -147,7 +166,7 @@ export function AutoTradeTab({ api, signals }: Props) {
             <h2 data-auto-badge>{badge.label}</h2>
             <p>
               {config.enabled
-                ? `${modeLabel} · ${config.intervalSec}초마다 감시 · 리스크 ${config.riskPct}% · 최대 ${config.maxPositions}포지션`
+                ? `${modeLabel} · ${config.intervalSec}초마다 감시 · 리스크 ${config.riskPct}% · 레버리지 ${leverageCapLabel(config.maxLeverage)} · 최대 ${config.maxPositions}포지션 · 반익절 ${config.partialTp ? 'ON' : 'OFF'}`
                 : '기본은 꺼짐 + 모의투자입니다. 켜기 전에 아래 안전장치를 확인하세요.'}
             </p>
           </div>
@@ -263,7 +282,7 @@ export function AutoTradeTab({ api, signals }: Props) {
             키 연결과 24시간 감시가 동작합니다. (설치 후 기존 설정·기록은 그대로 유지됩니다)
           </p>
           <button type="button" className="auto-primary" onClick={() => void openExternalUrl(APK_DOWNLOAD_URL)}>
-            ⬇︎ COTA v1.5.5 APK 받기
+            ⬇︎ COTA v{APP_VERSION} APK 받기
           </button>
         </div>
       )}
@@ -278,6 +297,67 @@ export function AutoTradeTab({ api, signals }: Props) {
           </p>
         </div>
       )}
+
+      {/* ---------- 0. 매매 스타일 연동 (v1.5.6) ---------- */}
+      <section className="auto-card auto-style" data-auto-style>
+        <header className="auto-card-head">
+          <h3>🎯 매매 스타일 → 자동매매</h3>
+          <span className={`auto-tag ${styleLinked ? 'ok' : ''}`} data-style-linked>
+            {!profile ? '성향 미설정' : styleLinked ? '프리셋 연동됨' : '프리셋과 다름'}
+          </span>
+        </header>
+        {profile && stylePreset && styleMeta ? (
+          <div className="auto-style-body">
+            <div className="auto-style-head">
+              <b>
+                {styleMeta.emoji} {styleMeta.label}
+              </b>
+              <span>{styleMeta.range}</span>
+            </div>
+            <div className="auto-style-grid">
+              <span>
+                1회 리스크 <b>{stylePreset.riskPct}%</b>
+              </span>
+              <span>
+                레버리지 <b>{leverageCapLabel(stylePreset.maxLeverage)}</b>
+              </span>
+              <span>
+                최대 포지션 <b>{stylePreset.maxPositions}개</b>
+              </span>
+              <span>
+                1일 손실 <b>{stylePreset.dailyLossPct}%</b>
+              </span>
+              <span>
+                최소 승률 <b>{stylePreset.minWinRate}%</b>
+              </span>
+              <span>
+                최소 손익비 <b>{stylePreset.minRR}R</b>
+              </span>
+              <span>
+                50% 반익절 <b>{stylePreset.partialTp ? 'ON' : 'OFF'}</b>
+              </span>
+            </div>
+            {styleDiff.length > 0 && <em data-style-diff>스타일과 다른 값: {styleDiff.join(' · ')}</em>}
+            <button
+              type="button"
+              className="auto-primary"
+              data-style-preset
+              onClick={() => api.applyTradeStyle(profile.style)}
+            >
+              {styleLinked ? '✓ 프리셋과 같음 — 다시 맞추기' : '스타일 프리셋 맞추기'}
+            </button>
+            <p className="auto-style-note">
+              온보딩·설정에서 매매 스타일을 바꾸면 리스크·레버리지·포지션 수·진입 기준·50% 반익절이 그 스타일로
+              자동 변경됩니다. 켜짐·모의/실거래·허용 종목은 건드리지 않습니다.
+            </p>
+          </div>
+        ) : (
+          <p className="auto-empty">
+            설정 탭에서 매매 스타일(보수적/공격적)을 먼저 골라주세요. 고른 스타일이 리스크·레버리지·포지션 수에
+            그대로 적용됩니다.
+          </p>
+        )}
+      </section>
 
       {/* ---------- 1. API 키 ---------- */}
       <section className="auto-card" data-auto-keys>
@@ -519,13 +599,35 @@ export function AutoTradeTab({ api, signals }: Props) {
               {busy === 'reset' ? '초기화 중…' : '↺ 손실한도 초기화'}
             </button>
           </div>
-          <NumField
-            label="레버리지 상한"
-            value={config.maxLeverage}
-            suffix="x"
-            onChange={(v) => api.patchConfig({ maxLeverage: v })}
-            hint="시그널 추천 배율도 이 값을 넘지 않음"
-          />
+          <div className="auto-lev-cap">
+            <NumField
+              label="레버리지 상한"
+              value={config.maxLeverage}
+              suffix={config.maxLeverage > 0 ? 'x' : undefined}
+              onChange={(v) => api.patchConfig({ maxLeverage: v })}
+              hint={
+                config.maxLeverage > 0
+                  ? '시그널 추천 배율도 이 값을 넘지 않음'
+                  : '상한 없음 · 유동 — 청산 안전마진·거래소 최대 배율까지만'
+              }
+            />
+            <div className="risk-presets compact" role="group" aria-label="레버리지 상한 빠른 선택">
+              {LEVERAGE_CAP_CHOICES.map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`risk-chip ${config.maxLeverage === v ? 'on' : ''} ${v === 0 ? 'off' : ''}`}
+                  onClick={() => api.patchConfig({ maxLeverage: v })}
+                  data-lev-cap={v}
+                >
+                  {v === 0 ? '유동' : `${v}x`}
+                </button>
+              ))}
+            </div>
+            <em className="num-hint" data-lev-cap-label>
+              현재 {leverageCapLabel(config.maxLeverage)} · 공격적 스타일은 상한 없이 유동으로 계산합니다
+            </em>
+          </div>
           <NumField
             label="최소 승률"
             value={config.minWinRate}
@@ -614,6 +716,32 @@ export function AutoTradeTab({ api, signals }: Props) {
             </em>
           </div>
           <div className="auto-option">
+            <span>50% 반익절</span>
+            <div className="segmented slim">
+              <button
+                type="button"
+                className={config.partialTp ? 'on' : ''}
+                onClick={() => api.patchConfig({ partialTp: true })}
+                data-auto-partialtp="on"
+              >
+                켜기
+              </button>
+              <button
+                type="button"
+                className={!config.partialTp ? 'on' : ''}
+                onClick={() => api.patchConfig({ partialTp: false })}
+                data-auto-partialtp="off"
+              >
+                끄기
+              </button>
+            </div>
+            <em>
+              {config.partialTp
+                ? '목표가 50% 또는 +1.0R 도달 시 보유의 50%를 시장가 분할 익절 · 남은 절반은 본절 보호 강화'
+                : '분할 익절 없이 목표가까지 전량을 들고 갑니다'}
+            </em>
+          </div>
+          <div className="auto-option">
             <span>새 시그널 자동 진입</span>
             <div className="segmented slim">
               <button type="button" className={config.autoEntry ? 'on' : ''} onClick={() => api.patchConfig({ autoEntry: true })}>
@@ -660,6 +788,20 @@ export function AutoTradeTab({ api, signals }: Props) {
                   <span>
                     TP {p.presetStopSurplusPrice || '—'} / SL {p.presetStopLossPrice || '—'}
                   </span>
+                  {(() => {
+                    const pt = partialTpState(p, {
+                      enabled: config.partialTp,
+                      done: partialDone.has(`${p.symbol}|${p.holdSide}`),
+                    });
+                    return (
+                      <span
+                        className={`auto-pos-partial ${pt.done ? 'done' : pt.reached ? 'ready' : ''}`}
+                        data-pos-partial={p.symbol}
+                      >
+                        💰 {pt.label}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div className="auto-pos-actions">
                   <button
@@ -719,7 +861,8 @@ export function AutoTradeTab({ api, signals }: Props) {
       </section>
 
       <div className="feed-note">
-        자동매매는 주문에 손절가(TP/SL)를 함께 걸고, 1일 손실 한도·중복 진입·동시 포지션을 스스로 막습니다.
+        자동매매는 주문에 손절가(TP/SL)를 함께 걸고, 목표가 50%·+1.0R 도달 시 50%를 먼저 익절한 뒤 남은 절반을
+        본절 근처에서 지킵니다. 1일 손실 한도·중복 진입·동시 포지션도 스스로 막습니다.
         그래도 급격한 변동에서는 손실이 계획보다 커질 수 있고, 최종 책임은 본인에게 있습니다. 투자 권유가
         아닙니다. {openSignals.length > 0 && `지금 자동 진입 후보 ${openSignals.length}건.`}
       </div>

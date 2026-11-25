@@ -286,7 +286,10 @@ export function SettingsTab({
         <div className="setting-row compact">
           <div>
             <div className="setting-name">매매 성향 다시 설정</div>
-            <div className="setting-desc">보수적/공격적 성향을 바꾸면 추천 배율과 1회 리스크가 다시 계산됩니다.</div>
+            <div className="setting-desc">
+              보수적/공격적 성향을 바꾸면 추천 배율과 1회 리스크가 다시 계산되고, 자동매매 설정(리스크·레버리지·
+              포지션·진입 기준·50% 반익절)도 그 프리셋으로 함께 맞춰집니다. 공격적은 레버리지 상한을 두지 않습니다.
+            </div>
           </div>
           <button className="ghost-btn" onClick={onEditProfile}>
             다시 설정

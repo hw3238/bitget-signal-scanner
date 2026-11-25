@@ -76,6 +76,14 @@ export function OnboardingModal({ initial, canClose = false, onSave, onClose }: 
           </p>
         </div>
 
+        <div className="onb-account-note" data-onb-style-link>
+          <b>고른 성향이 자동매매 설정도 정합니다</b>
+          <p>
+            보수적 — 리스크 1.5% · 레버리지 5x 상한 · 2포지션 · 1일 손실 4.5% / 공격적 — 리스크 4% ·
+            레버리지 상한 없음(유동) · 4포지션 · 1일 손실 10%. 50% 반익절은 둘 다 켜집니다.
+          </p>
+        </div>
+
         <div className="onb-summary">
           <span>
             {STYLE_META[style].emoji} <b>{STYLE_META[style].label}</b> · {STYLE_META[style].range}

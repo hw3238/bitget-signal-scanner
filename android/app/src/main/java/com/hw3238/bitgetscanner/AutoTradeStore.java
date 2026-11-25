@@ -48,9 +48,15 @@ public final class AutoTradeStore {
     private static final String K_ACCOUNT_MODE = "account_mode";
     /** 오늘 거래소가 거부한 종목(상장폐지·Demo 미지원·거래 제한) — 같은 실패를 반복하지 않는다(v1.5.5) */
     private static final String K_SKIP = "skip_symbols";
+    /** 진입 성공 시 저장하는 포지션 목표/손절 — 감시 목록이 아닌 포지션도 반익절 판단에 쓴다(v1.5.6) */
+    private static final String K_TARGETS = "position_targets";
+    /** 50% 반익절을 마친 포지션 키(`SYMBOL|side`) — 중복 실행 방지(v1.5.6) */
+    private static final String K_PARTIAL = "partial_tp_done";
 
     private static final int LOG_LIMIT = 40;
     private static final int TRADED_LIMIT = 200;
+    private static final int TARGET_LIMIT = 40;
+    private static final int PARTIAL_LIMIT = 60;
 
     private AutoTradeStore() {}
 
@@ -103,6 +109,8 @@ public final class AutoTradeStore {
             .remove(K_DEMO)
             .remove(K_SAVED_AT)
             .remove(K_ACCOUNT_MODE)
+            .remove(K_TARGETS)
+            .remove(K_PARTIAL)
             .putBoolean(K_RUNNING, false)
             .apply();
     }
@@ -172,6 +180,7 @@ public final class AutoTradeStore {
             fallback.put("intervalSec", 60);
             fallback.put("entryTtlMin", 120);
             fallback.put("earlyStop", true);
+            fallback.put("partialTp", true);
         } catch (Exception ignored) {}
         return fallback;
     }
@@ -327,6 +336,115 @@ public final class AutoTradeStore {
         prefs(context).edit().putBoolean(K_DAILY_LOCKED, locked).apply();
     }
 
+    /* ---------------- 포지션 목표 · 50% 반익절 (v1.5.6) ---------------- */
+
+    /**
+     * 진입 성공 시 그 포지션의 목표가·손절가를 저장한다.
+     *  · 감시 목록(plans)은 체결되면 사라지므로, 체결 뒤의 반익절 판단은 이 기록을 참고한다.
+     *  · 거래소 포지션에 TP/SL 이 남아 있으면 그 값을 우선 쓰고, 비어 있을 때 이 기록을 쓴다.
+     */
+    public static void savePositionTarget(Context context, String posKey, double entry, double target, double stop) {
+        if (posKey == null || posKey.isEmpty()) return;
+        try {
+            JSONObject box = new JSONObject(prefs(context).getString(K_TARGETS, "{}"));
+            JSONObject row = new JSONObject();
+            row.put("entry", entry);
+            row.put("target", target);
+            row.put("stop", stop);
+            row.put("at", System.currentTimeMillis());
+            box.put(posKey, row);
+            // 오래된 기록부터 버려 40개만 유지한다(청산된 포지션 기록이 쌓이지 않게).
+            while (box.length() > TARGET_LIMIT) {
+                String oldest = null;
+                long oldestAt = Long.MAX_VALUE;
+                java.util.Iterator<String> it = box.keys();
+                while (it.hasNext()) {
+                    String key = it.next();
+                    long at = box.optJSONObject(key) == null ? 0 : box.optJSONObject(key).optLong("at", 0);
+                    if (at < oldestAt) {
+                        oldestAt = at;
+                        oldest = key;
+                    }
+                }
+                if (oldest == null) break;
+                box.remove(oldest);
+            }
+            prefs(context).edit().putString(K_TARGETS, box.toString()).apply();
+        } catch (Exception ignored) {
+            /* 저장 실패 — 거래소 포지션의 TP/SL 값으로만 판단한다 */
+        }
+    }
+
+    /** 저장된 포지션 목표(없으면 null) */
+    public static JSONObject positionTarget(Context context, String posKey) {
+        if (posKey == null || posKey.isEmpty()) return null;
+        try {
+            JSONObject box = new JSONObject(prefs(context).getString(K_TARGETS, "{}"));
+            return box.optJSONObject(posKey);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /** 50% 반익절을 마친 포지션 키 — 중복 실행 방지 */
+    public static JSONArray partialTpDone(Context context) {
+        return array(prefs(context).getString(K_PARTIAL, ""));
+    }
+
+    public static boolean isPartialTpDone(Context context, String posKey) {
+        if (posKey == null || posKey.isEmpty()) return false;
+        JSONArray arr = partialTpDone(context);
+        for (int i = 0; i < arr.length(); i++) {
+            if (posKey.equals(arr.optString(i))) return true;
+        }
+        return false;
+    }
+
+    public static void markPartialTpDone(Context context, String posKey) {
+        if (posKey == null || posKey.isEmpty() || isPartialTpDone(context, posKey)) return;
+        JSONArray arr = partialTpDone(context);
+        JSONArray next = new JSONArray();
+        next.put(posKey);
+        for (int i = 0; i < arr.length() && next.length() < PARTIAL_LIMIT; i++) next.put(arr.opt(i));
+        prefs(context).edit().putString(K_PARTIAL, next.toString()).apply();
+    }
+
+    /**
+     * 지금 살아 있는 포지션 키만 남긴다 — 청산된 포지션의 목표 기록·반익절 완료 표시를 정리한다.
+     *  · 같은 종목에 다시 진입하면 새 포지션이므로 반익절을 처음부터 다시 할 수 있어야 한다.
+     */
+    public static void retainPositions(Context context, java.util.Set<String> alive) {
+        try {
+            JSONObject box = new JSONObject(prefs(context).getString(K_TARGETS, "{}"));
+            JSONObject nextBox = new JSONObject();
+            java.util.Iterator<String> it = box.keys();
+            boolean changed = false;
+            while (it.hasNext()) {
+                String key = it.next();
+                if (alive != null && alive.contains(key)) {
+                    nextBox.put(key, box.opt(key));
+                } else {
+                    changed = true;
+                }
+            }
+            JSONArray arr = partialTpDone(context);
+            JSONArray nextArr = new JSONArray();
+            for (int i = 0; i < arr.length(); i++) {
+                String key = arr.optString(i);
+                if (alive != null && alive.contains(key)) nextArr.put(key);
+                else changed = true;
+            }
+            if (!changed) return;
+            prefs(context)
+                .edit()
+                .putString(K_TARGETS, nextBox.toString())
+                .putString(K_PARTIAL, nextArr.toString())
+                .apply();
+        } catch (Exception ignored) {
+            /* 정리는 다음 주기에 다시 시도한다 */
+        }
+    }
+
     /* ---------------- 서비스 상태 ---------------- */
 
     public static boolean running(Context context) {
@@ -444,6 +562,8 @@ public final class AutoTradeStore {
             out.put("accountMode", accountMode(context));
             out.put("riskPct", config.optDouble("riskPct", 1.5));
             out.put("maxPositions", config.optInt("maxPositions", 2));
+            out.put("partialTp", config.optBoolean("partialTp", true));
+            out.put("partialTpDone", partialTpDone(context));
             out.put("log", logs(context));
         } catch (Exception ignored) {}
         return out;

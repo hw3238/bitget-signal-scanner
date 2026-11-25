@@ -37,6 +37,8 @@ export interface Contract {
   sizeMultiplier?: number;
   /** 최소 주문 금액(USDT · minTradeUSDT) */
   minTradeUsdt?: number;
+  /** 거래소 종목 최대 레버리지(계약 maxLever) — 공격적 유동 레버리지의 상한 */
+  maxLever?: number;
 }
 
 export interface Ticker {

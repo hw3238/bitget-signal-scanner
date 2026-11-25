@@ -38,9 +38,11 @@ function autorec(
   auto: boolean,
   profile: Profile | null,
   signal: Signal,
+  /** 연결된 계좌 잔고 — 잔고 구간별 유동 추천(v1.5.6) */
+  equity = 0,
 ): ReturnType<typeof recommendLeverage> | null {
   if (!auto || !profile) return null;
-  return recommendLeverage(signal, profile.style);
+  return recommendLeverage(signal, profile.style, equity > 0 ? equity : null);
 }
 
 function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -189,7 +191,7 @@ export async function drawShareCard(
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   const dir = signal.side === 'long' ? 1 : -1;
-  const rec = autorec(auto, profile, signal);
+  const rec = autorec(auto, profile, signal, seed);
   const lev = rec ? rec.leverage : leverage;
   const pnl = auto && profile && seed > 0 ? seedPnl(signal, lev, seed) : null;
   const roi = signal.changePct * lev;
@@ -486,7 +488,7 @@ export async function drawShareCard(
   const seedNote =
     auto && profile
       ? seed > 0
-        ? ` · 계좌 $${fmtSeed(seed)} 기준 · ${STYLE_META[profile.style].label}`
+        ? ` · 계좌 $${fmtSeed(seed)} 기준${rec?.tierLabel ? ` · ${rec.tierLabel}` : ''} · ${STYLE_META[profile.style].label}`
         : ` · ${STYLE_META[profile.style].label}`
       : '';
   const detail = `${signal.symbol} · 비트겟 USDT-M · ${tfLabel(signal.tf)}봉 200개 실데이터 · 레버리지 ${lev}x${seedNote}`;

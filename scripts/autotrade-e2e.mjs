@@ -185,6 +185,7 @@ const NATIVE_MOCK = () => {
     available: window.__auto.available ?? 1000.5,
     unrealizedPL: 12.34,
     dayStartEquity: window.__auto.dayStartEquity ?? 1234.56,
+    partialTpDone: window.__auto.partialTpDone ?? [],
     dayKey: new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10),
     dailyPnl: window.__auto.dailyPnl,
     dailyLocked: window.__auto.dailyLocked,
@@ -302,6 +303,8 @@ const NATIVE_MOCK = () => {
         riskPct: config.riskPct,
         maxPositions: config.maxPositions,
         earlyStop: config.earlyStop,
+        partialTp: config.partialTp,
+        maxLeverage: config.maxLeverage,
         exitSignals: exitSignals.length,
       });
       window.__auto.config = config;
@@ -543,6 +546,8 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
 
   // v1.5.4 — 조기 손절 보호 토글 (기본 ON) · 반대 시그널 전달
   check(started[0]?.earlyStop === true, '자동매매 시작 설정에 조기 손절 ON 포함', String(started[0]?.earlyStop));
+  check(started[0]?.partialTp === true, '자동매매 시작 설정에 50% 반익절 ON 포함', String(started[0]?.partialTp));
+  check(started[0]?.maxLeverage === 10, '자동매매 시작 설정에 레버리지 상한 포함', `${started[0]?.maxLeverage}x`);
   check(
     started[0]?.exitSignals === 1,
     '감시 시작 시 진행 중 시그널을 네이티브로 전달(반대 시그널 판단용)',
@@ -1140,6 +1145,103 @@ const readSymbolUi = (page) =>
     majorsStart.join(' / '),
   );
   check(errors.length === 0, '감시 목록 범위 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+/* ================================================================== *
+ * 10) v1.5.6 — 매매 스타일 프리셋 연동 · 50% 반익절 · 유동 레버리지
+ * ================================================================== */
+{
+  const { ctx, page, errors } = await open();
+  await page.evaluate(() => document.querySelector('[data-tab="menu"]')?.click());
+  await page.waitForTimeout(300);
+  await page.locator('[data-menu="auto"]').click();
+  await page.waitForTimeout(600);
+
+  // 보수적 프로필 vs 기본 설정(10x·55%) — 프리셋과 다르다
+  const styleCard = await text(page, '[data-auto-style]');
+  check(/매매 스타일/.test(styleCard), '자동매매 화면에 매매 스타일 연동 카드', styleCard.slice(0, 60));
+  check((await text(page, '[data-style-linked]')) === '프리셋과 다름', '기본 설정은 보수적 프리셋과 다르다', await text(page, '[data-style-linked]'));
+  check(
+    /1회 리스크/.test(styleCard) && /5x/.test(styleCard) && /50% 반익절/.test(styleCard),
+    '프리셋 값 표시(리스크·레버리지·반익절)',
+    styleCard.slice(0, 160),
+  );
+  check(/레버리지 상한 · 최소 승률/.test(await text(page, '[data-style-diff]')), '프리셋과 다른 항목을 알려준다', await text(page, '[data-style-diff]'));
+  await page.locator('[data-style-preset]').click();
+  await page.waitForTimeout(500);
+  const afterPreset = await page.evaluate(() => JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}'));
+  check(
+    afterPreset.riskPct === 1.5 && afterPreset.maxLeverage === 5 && afterPreset.minWinRate === 52 && afterPreset.partialTp === true,
+    '스타일 프리셋 맞추기 → 보수적 값 적용',
+    JSON.stringify(afterPreset),
+  );
+  check((await text(page, '[data-style-linked]')) === '프리셋 연동됨', '적용 후 프리셋 연동됨 표시');
+  await page.locator('[data-auto-style]').screenshot({ path: `${OUT}/77-auto-style-preset.png` }).catch(() => {});
+
+  // 50% 반익절 토글
+  check(await page.locator('[data-auto-partialtp="on"].on').count() === 1, '50% 반익절 기본 ON');
+  check(/목표가 50% 또는 \+1\.0R/.test(await text(page, '[data-auto-guards]')), '반익절 규칙(50% · +1.0R) 안내');
+  await page.locator('[data-auto-partialtp="off"]').click();
+  await page.waitForTimeout(300);
+  check(
+    (await page.evaluate(() => JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}').partialTp)) === false,
+    '반익절 끄기 → 설정 저장',
+  );
+  await page.locator('[data-auto-partialtp="on"]').click();
+  await page.waitForTimeout(250);
+  // 화면(뷰포트) 캡처 — 고정 헤더·하단 탭이 카드 위에 겹치지 않게 스크롤해서 찍는다.
+  await page.locator('[data-auto-partialtp="on"]').scrollIntoViewIfNeeded();
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: `${OUT}/78-auto-partial-tp.png` });
+
+  // 레버리지 상한 — 유동(0 = 상한 없음)
+  check(/현재 5x/.test(await text(page, '[data-lev-cap-label]')), '레버리지 상한 표시(5x)', await text(page, '[data-lev-cap-label]'));
+  await page.locator('[data-lev-cap="0"]').click();
+  await page.waitForTimeout(350);
+  const levCfg = await page.evaluate(() => JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}'));
+  check(levCfg.maxLeverage === 0, '유동 선택 → maxLeverage 0 저장', String(levCfg.maxLeverage));
+  check(/상한 없음 · 유동/.test(await text(page, '[data-lev-cap-label]')), '유동이면 상한 없음 표시', await text(page, '[data-lev-cap-label]'));
+  await page.locator('[data-lev-cap-label]').scrollIntoViewIfNeeded();
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: `${OUT}/79-auto-unlimited-leverage.png` });
+
+  // 포지션 카드의 반익절 진행 상태 — 키를 연결해야 포지션 조회가 열린다
+  await page.locator('[data-auto-input="key"]').fill('bg_live_key_1234562c7d');
+  await page.locator('[data-auto-input="secret"]').fill('secretsecretsecretsecret12');
+  await page.locator('[data-auto-input="passphrase"]').fill('passphrase123');
+  await page.locator('[data-auto-save]').click();
+  await page.waitForTimeout(800);
+  await page.evaluate(() => {
+    window.__auto.positions = [
+      {
+        symbol: 'BTCUSDT',
+        holdSide: 'long',
+        total: 0.01,
+        openPriceAvg: 61000,
+        markPrice: 64000,
+        unrealizedPL: 30,
+        leverage: 10,
+        marginSize: 100,
+        liquidationPrice: 55000,
+        presetStopSurplusPrice: 67000,
+        presetStopLossPrice: 57950,
+        ctime: Date.now() - 600000,
+      },
+    ];
+    window.__emitAuto({});
+  });
+  await page.waitForTimeout(300);
+  await page.locator('[data-auto-positions] .auto-mini').click();
+  await page.waitForTimeout(600);
+  check(/반익절 조건 도달/.test(await text(page, '[data-pos-partial="BTCUSDT"]')), '포지션 카드: 반익절 조건 도달', await text(page, '[data-pos-partial="BTCUSDT"]'));
+
+  await page.evaluate(() => window.__emitAuto({ partialTpDone: ['BTCUSDT|long'] }));
+  await page.waitForTimeout(400);
+  check(/반익절 50% 완료/.test(await text(page, '[data-pos-partial="BTCUSDT"]')), '포지션 카드: 반익절 완료 표시', await text(page, '[data-pos-partial="BTCUSDT"]'));
+  await page.locator('[data-auto-positions]').screenshot({ path: `${OUT}/80-auto-partial-position.png` }).catch(() => {});
+
+  check(errors.length === 0, 'v1.5.6 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
   await ctx.close();
 }
 

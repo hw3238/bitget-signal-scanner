@@ -20,6 +20,7 @@ import {
   RISK_PRESET_CHOICES,
   SNAPSHOT_FRESH_MS,
   applyDailyReset,
+  applyStylePreset,
   buildOrderParams,
   checkDailyLoss,
   clientOidFor,
@@ -30,6 +31,9 @@ import {
   fmtUsdt,
   isCryptoSymbol,
   isMajorSymbol,
+  leverageCapLabel,
+  leverageCapOf,
+  matchesStylePreset,
   markTraded,
   mergeArmedPlans,
   migrateSymbolScopeOnce,
@@ -37,7 +41,9 @@ import {
   normalizePosMode,
   orderSideFor,
   orderPriceText,
+  partialTpState,
   planDailyReset,
+  presetForStyle,
   qtyToStep,
   resolveTradeMode,
   planAutoOrder,
@@ -49,12 +55,15 @@ import {
   roundToTick,
   signalKeyOf,
   statusBadge,
+  stylePresetDiff,
   symbolAllowed,
   todayFillCount,
   tickSizeOf,
   toArmedPlan,
+  UNLIMITED_LEVERAGE,
   type AutoTradeConfig,
 } from '../src/lib/autotrade';
+import { balanceTierOf, recommendLeverage } from '../src/lib/profile';
 import {
   RECOVERY_LABEL,
   explainBitgetError,
@@ -1135,6 +1144,153 @@ check('자동 복구: 기록 문구는 한글', RECOVERY_LABEL.tick === '호가 
 /* 13-4) 감시 항목에 리스크% 를 실어 보낸다 — 네이티브가 잔고로 수량을 다시 계산한다 */
 const armedWithRisk = toArmedPlan({ signal: sig(), plan: capBase, now, ttlMin: 120 });
 check('감시 항목: riskPct 포함(네이티브 잔고 재계산용)', armedWithRisk.riskPct === cfg.riskPct, String(armedWithRisk.riskPct));
+
+/* ------------------------------------------------------------------ *
+ * 14) v1.5.6 — 50% 반익절 · 잔고별 유동 레버리지 · 매매 스타일 프리셋
+ * ------------------------------------------------------------------ */
+
+/* 14-1) 설정 — 반익절 기본 ON · 레버리지 상한 0(무제한) */
+check('기본값: 50% 반익절 ON', DEFAULTS.partialTp === true && normalizeConfig(null).partialTp === true);
+check('반익절 끄기 저장', normalizeConfig({ partialTp: false }).partialTp === false);
+check('구버전 저장본(미지정)은 반익절 ON', normalizeConfig({ riskPct: 2 }).partialTp === true);
+check('레버리지 상한 0 = 상한 없음 저장', normalizeConfig({ maxLeverage: 0 }).maxLeverage === UNLIMITED_LEVERAGE);
+check('레버리지 상한 100 저장 · 100 초과는 100', normalizeConfig({ maxLeverage: 100 }).maxLeverage === 100 && normalizeConfig({ maxLeverage: 500 }).maxLeverage === 100);
+
+/* 14-2) 매매 스타일 프리셋 */
+const consPreset = presetForStyle('conservative');
+const aggPreset = presetForStyle('aggressive');
+check(
+  '보수적 프리셋 값',
+  consPreset.riskPct === 1.5 &&
+    consPreset.maxLeverage === 5 &&
+    consPreset.maxPositions === 2 &&
+    consPreset.dailyLossPct === 4.5 &&
+    consPreset.minWinRate === 52 &&
+    consPreset.minRR === 1.5 &&
+    consPreset.earlyStop &&
+    consPreset.partialTp,
+  JSON.stringify(consPreset),
+);
+check(
+  '공격적 프리셋: 레버리지 상한 없음(0 = 유동)',
+  aggPreset.maxLeverage === UNLIMITED_LEVERAGE &&
+    aggPreset.riskPct === 4 &&
+    aggPreset.maxPositions === 4 &&
+    aggPreset.dailyLossPct === 10 &&
+    aggPreset.minWinRate === 45 &&
+    aggPreset.minRR === 1.2,
+  JSON.stringify(aggPreset),
+);
+const customCfg = normalizeConfig({
+  ...DEFAULTS,
+  enabled: true,
+  mode: 'demo',
+  intervalSec: 90,
+  symbols: 'majors',
+  riskPct: 9,
+  maxLeverage: 25,
+});
+const applied = applyStylePreset(customCfg, 'aggressive');
+check(
+  '프리셋 적용: 리스크·포지션·손실한도·레버리지',
+  applied.riskPct === 4 && applied.maxPositions === 4 && applied.dailyLossPct === 10 && applied.maxLeverage === 0,
+  `${applied.riskPct}% · ${applied.maxPositions} · ${applied.dailyLossPct}% · ${applied.maxLeverage}x`,
+);
+check(
+  '프리셋 적용: 켜짐·모드·주기·허용 종목은 유지',
+  applied.enabled && applied.mode === 'demo' && applied.intervalSec === 90 && applied.symbols === 'majors',
+);
+check('프리셋 적용 후 = 프리셋과 같음', matchesStylePreset(applied, 'aggressive') && stylePresetDiff(applied, 'aggressive').length === 0);
+check('프리셋과 다른 값 목록', stylePresetDiff({ ...applied, riskPct: 9 }, 'aggressive').join() === '1회 리스크');
+check('프리셋과 다른 값: 반익절을 끄면 표시', stylePresetDiff({ ...applied, partialTp: false }, 'aggressive').includes('50% 반익절'));
+
+/* 14-3) 유동 레버리지 상한 */
+check('레버리지 상한 0 = 안전 상한 100x', leverageCapOf({ maxLeverage: 0 }) === 100 && leverageCapLabel(0) === '상한 없음 · 유동');
+check('계약 maxLever 가 더 낮으면 그 값', leverageCapOf({ maxLeverage: 0 }, 20) === 20);
+check('직접 설정한 상한은 그 값', leverageCapOf({ maxLeverage: 5 }, 50) === 5 && leverageCapLabel(25) === '25x');
+const aggPlan = planAutoOrder({
+  signal: sig(),
+  seed: 1000,
+  config: normalizeConfig({ ...DEFAULTS, maxLeverage: 0 }),
+  leverage: 40,
+});
+check('무제한 상한: 40x 를 그대로 계획', aggPlan.leverage === 40, `${aggPlan.leverage}x`);
+const aggPlanCapped = planAutoOrder({
+  signal: sig(),
+  seed: 1000,
+  config: normalizeConfig({ ...DEFAULTS, maxLeverage: 0 }),
+  leverage: 40,
+  spec: { maxLever: 20, volumePlace: 2 },
+});
+check('무제한이라도 계약 maxLever 20 을 넘지 않음', aggPlanCapped.leverage === 20, `${aggPlanCapped.leverage}x`);
+check('게이트: 무제한 상한에서 40x 를 막지 않는다', genie({ config: { ...on, maxLeverage: 0 }, plan: { ...plan, leverage: 40 } }).allowed);
+check('게이트: 직접 상한 5x 는 40x 를 막는다', genie({ config: { ...on, maxLeverage: 5 }, plan: { ...plan, leverage: 40 } }).code === 'leverage');
+
+/* 14-4) 반익절 진행 상태(웹 표시) */
+const ptPos = {
+  symbol: 'BTCUSDT',
+  holdSide: 'long',
+  total: 1,
+  openPriceAvg: 100,
+  markPrice: 105,
+  presetStopSurplusPrice: 110,
+  presetStopLossPrice: 95,
+};
+const ptState = partialTpState(ptPos, { enabled: true, done: false });
+check(
+  '반익절 상태: 목표 50% 도달',
+  ptState.reached && Math.abs(ptState.progress - 0.5) < 1e-9 && ptState.label === '반익절 조건 도달',
+  ptState.label,
+);
+check(
+  '반익절 상태: +1.0R 이면 목표가 멀어도 도달',
+  partialTpState({ ...ptPos, presetStopSurplusPrice: 130 }, { enabled: true, done: false }).reached,
+);
+check('반익절 상태: 완료 표시', partialTpState(ptPos, { enabled: true, done: true }).label === '반익절 50% 완료');
+check(
+  '반익절 상태: 끄면 도달하지 않음',
+  partialTpState(ptPos, { enabled: false, done: false }).label === '반익절 끔' &&
+    !partialTpState(ptPos, { enabled: false, done: false }).reached,
+);
+check('반익절 상태: 진행률 표기', partialTpState({ ...ptPos, markPrice: 102 }, { enabled: true, done: false }).label === '반익절 20%');
+check('반익절 상태: 숏 방향', partialTpState({ ...ptPos, holdSide: 'short', markPrice: 95 }, { enabled: true, done: false }).reached);
+
+/* 14-5) 실시간 잔고 구간별 추천 레버리지 */
+const levSig = { entry: 100, stop: 97, target: 110, winRate: 60, rr: 2 };
+check(
+  '잔고 구간 경계: $100 / $1,000 / $5,000',
+  balanceTierOf(50) === 'small' &&
+    balanceTierOf(100) === 'standard' &&
+    balanceTierOf(999) === 'standard' &&
+    balanceTierOf(1000) === 'mid' &&
+    balanceTierOf(5000) === 'large' &&
+    balanceTierOf(0) === null,
+);
+const consBase = recommendLeverage(levSig, 'conservative');
+const consSmall = recommendLeverage(levSig, 'conservative', 50);
+const consMid = recommendLeverage(levSig, 'conservative', 2000);
+const consLarge = recommendLeverage(levSig, 'conservative', 10000);
+check('보수적: 소액은 스타일 상단(5x) 유지', consSmall.leverage === 5 && consSmall.tier === 'small', `${consSmall.leverage}x`);
+check(
+  '보수적: 중형·대형은 단계적으로 낮춤',
+  consMid.leverage < consBase.leverage && consLarge.leverage <= consMid.leverage,
+  `${consBase.leverage}/${consMid.leverage}/${consLarge.leverage}`,
+);
+check('보수적: 어느 구간에서도 5x 를 넘지 않음', [consBase, consSmall, consMid, consLarge].every((r) => r.leverage <= 5));
+check('추천 객체에 잔고 구간 반영', consMid.tierLabel?.includes('중형 시드') === true && consMid.balanceApplied === true && consBase.tier === null);
+const aggLev = recommendLeverage(levSig, 'aggressive', null, 100);
+check('공격적: 25x 고정 상한 없음(30x 이상)', aggLev.leverage > 25, `${aggLev.leverage}x`);
+check('공격적: 청산 안전마진을 넘지 않음', aggLev.leverage <= aggLev.safeMax, `lev=${aggLev.leverage} safeMax=${aggLev.safeMax}`);
+check('공격적: 거래소 최대 배율 20x 로 제한', recommendLeverage(levSig, 'aggressive', null, 20).leverage === 20);
+check(
+  '공격적: 소액 시드는 중형보다 높게',
+  recommendLeverage(levSig, 'aggressive', 50).leverage >= recommendLeverage(levSig, 'aggressive', 2000).leverage,
+);
+check(
+  '청산 안전마진 = max(2, floor(80/손절폭))',
+  recommendLeverage({ entry: 100, stop: 95, target: 110, winRate: 55, rr: 2 }, 'aggressive').safeMax === 16,
+);
+check('레버리지 없이(2인자)도 기존과 같이 계산', consBase.leverage >= 2 && consBase.leverage <= 5);
 
 console.log('');
 console.log(`자동매매 단위 검증: ${pass}/${pass + fails.length} 통과`);

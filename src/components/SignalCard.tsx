@@ -72,7 +72,8 @@ export function SignalCard({
   const dir = signal.side === 'long' ? 1 : -1;
   const changePct = ((price - entry) / (entry || 1)) * 100 * dir;
   const auto = leverageMode === 'auto' && !!profile;
-  const rec = profile ? recommendLeverage(signal, profile.style) : null;
+  // v1.5.6 — 실시간 잔고 구간 + 거래소 종목 최대 배율까지 반영한 유동 추천
+  const rec = profile ? recommendLeverage(signal, profile.style, account?.equity ?? null, contract?.maxLever ?? null) : null;
   const lev = auto && rec ? rec.leverage : leverage;
   const roi = changePct * lev;
   /** 계좌 잔고 기준 실시간 평가손익 — 현재가가 진입가에서 얼마나 움직였는지 × 레버리지 */

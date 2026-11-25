@@ -14,6 +14,7 @@
 import type { Signal, Side } from '../engine/types';
 import { isFxSymbol, isStockSymbol } from '../engine/universe';
 import { copyQtyText, planOrder, type ContractSpec, type OrderPlan } from './orderCockpit';
+import { exchangeLeverageCap, type TradeStyle } from './profile';
 
 /* ------------------------------------------------------------------ *
  * 설정
@@ -47,7 +48,11 @@ export interface AutoTradeConfig {
   minWinRate: number;
   /** 진입에 필요한 손익비 */
   minRR: number;
-  /** 레버리지 상한 */
+  /**
+   * 레버리지 상한 — **0 = 상한 없음(유동)**.
+   *  · 0 이면 손절 폭·품질·실시간 잔고로 계산한 추천 배율을 청산 안전마진·거래소 최대 배율까지만 보고 쓴다.
+   *  · 공격적 스타일 프리셋은 0(무제한·유동), 보수적은 5다.
+   */
   maxLeverage: number;
   /** 백그라운드 감시 주기(초) */
   intervalSec: number;
@@ -55,6 +60,8 @@ export interface AutoTradeConfig {
   entryTtlMin: number;
   /** SL 도달 전 반대 신호·구조 붕괴 시 선제 청산 (v1.5.4 · 기본 ON) */
   earlyStop: boolean;
+  /** 목표가 50% 또는 +1.0R 도달 시 보유의 50% 분할 익제 (v1.5.6 · 기본 ON) */
+  partialTp: boolean;
 }
 
 /** 메이저 4종 — 'majors' 범위에서 허용하는 종목 */
@@ -74,7 +81,11 @@ export const DEFAULTS: AutoTradeConfig = {
   intervalSec: 60,
   entryTtlMin: 120,
   earlyStop: true,
+  partialTp: true,
 };
+
+/** 레버리지 상한 '0' = 상한 없음(유동) — 청산 안전마진·거래소 최대 배율만 지킨다 */
+export const UNLIMITED_LEVERAGE = 0;
 
 /** 설정 입력 허용 범위 — 오타 한 번으로 계좌를 걸지 않게 한다. */
 export const LIMITS = {
@@ -85,7 +96,8 @@ export const LIMITS = {
   dailyLossPct: [0, 100] as const,
   minWinRate: [0, 90] as const,
   minRR: [0.5, 5] as const,
-  maxLeverage: [1, 25] as const,
+  /** 레버리지 상한 — 1~100 · 0 = 상한 없음(유동) */
+  maxLeverage: [1, 100] as const,
   intervalSec: [30, 600] as const,
   entryTtlMin: [5, 1440] as const,
 };
@@ -118,6 +130,7 @@ export function normalizeConfig(raw: Partial<AutoTradeConfig> | null | undefined
     intervalSec: num(src.intervalSec, DEFAULTS.intervalSec),
     entryTtlMin: num(src.entryTtlMin, DEFAULTS.entryTtlMin),
     earlyStop: src.earlyStop !== false,
+    partialTp: src.partialTp !== false,
   };
   return {
     ...merged,
@@ -130,7 +143,11 @@ export function normalizeConfig(raw: Partial<AutoTradeConfig> | null | undefined
         : round(clamp(merged.dailyLossPct, 1, LIMITS.dailyLossPct[1]), 1),
     minWinRate: round(clamp(merged.minWinRate, LIMITS.minWinRate[0], LIMITS.minWinRate[1]), 0),
     minRR: round(clamp(merged.minRR, LIMITS.minRR[0], LIMITS.minRR[1]), 2),
-    maxLeverage: Math.round(clamp(merged.maxLeverage, LIMITS.maxLeverage[0], LIMITS.maxLeverage[1])),
+    // 0 = 상한 없음(유동). 1~100 은 그대로, 그 밖은 경계로 정리한다.
+    maxLeverage:
+      num(src.maxLeverage, DEFAULTS.maxLeverage) === 0
+        ? UNLIMITED_LEVERAGE
+        : Math.round(clamp(merged.maxLeverage, LIMITS.maxLeverage[0], LIMITS.maxLeverage[1])),
     intervalSec: Math.round(clamp(merged.intervalSec, LIMITS.intervalSec[0], LIMITS.intervalSec[1])),
     entryTtlMin: Math.round(clamp(merged.entryTtlMin, LIMITS.entryTtlMin[0], LIMITS.entryTtlMin[1])),
   };
@@ -139,6 +156,124 @@ export function normalizeConfig(raw: Partial<AutoTradeConfig> | null | undefined
 function round(v: number, digits: number) {
   const f = Math.pow(10, digits);
   return Math.round(v * f) / f;
+}
+
+/* ------------------------------------------------------------------ *
+ * 매매 스타일 프리셋 — 온보딩·설정의 '보수적 / 공격적'이 자동매매 설정을 직접 정한다(v1.5.6)
+ * ------------------------------------------------------------------ */
+
+export interface StylePreset {
+  style: TradeStyle;
+  /** 1회 허용 손실률(%) */
+  riskPct: number;
+  /** 레버리지 상한 — 0 = 상한 없음(유동) */
+  maxLeverage: number;
+  maxPositions: number;
+  dailyLossPct: number;
+  minWinRate: number;
+  minRR: number;
+  earlyStop: boolean;
+  partialTp: boolean;
+}
+
+/**
+ * 스타일별 자동매매 프리셋.
+ *  · 보수적: 작게·드물게(1.5% 리스크 · 5x 상한 · 2포지션 · 4.5% 손실한도)
+ *  · 공격적: **레버리지 상한 없음(0 = 유동)** · 4% 리스크 · 4포지션 · 10% 손실한도
+ */
+export const STYLE_PRESETS: Record<TradeStyle, StylePreset> = {
+  conservative: {
+    style: 'conservative',
+    riskPct: 1.5,
+    maxLeverage: 5,
+    maxPositions: 2,
+    dailyLossPct: 4.5,
+    minWinRate: 52,
+    minRR: 1.5,
+    earlyStop: true,
+    partialTp: true,
+  },
+  aggressive: {
+    style: 'aggressive',
+    riskPct: 4,
+    maxLeverage: UNLIMITED_LEVERAGE,
+    maxPositions: 4,
+    dailyLossPct: 10,
+    minWinRate: 45,
+    minRR: 1.2,
+    earlyStop: true,
+    partialTp: true,
+  },
+};
+
+/** 프리셋이 바꾸는 필드 — 켜짐/모드/주기/허용 종목 같은 사용자 선택은 건드리지 않는다. */
+export const STYLE_PRESET_FIELDS = [
+  'riskPct',
+  'maxLeverage',
+  'maxPositions',
+  'dailyLossPct',
+  'minWinRate',
+  'minRR',
+  'earlyStop',
+  'partialTp',
+] as const;
+
+export function presetForStyle(style: TradeStyle): StylePreset {
+  return STYLE_PRESETS[style] ?? STYLE_PRESETS.conservative;
+}
+
+/** 현재 설정을 해당 스타일 프리셋에 맞춘다 — enabled·mode·intervalSec·symbols 등은 유지 */
+export function applyStylePreset(config: AutoTradeConfig, style: TradeStyle): AutoTradeConfig {
+  const preset = presetForStyle(style);
+  const patch: Partial<AutoTradeConfig> = {};
+  for (const field of STYLE_PRESET_FIELDS) {
+    (patch as Record<string, unknown>)[field] = preset[field];
+  }
+  return normalizeConfig({ ...config, ...patch });
+}
+
+export const STYLE_FIELD_LABEL: Record<(typeof STYLE_PRESET_FIELDS)[number], string> = {
+  riskPct: '1회 리스크',
+  maxLeverage: '레버리지 상한',
+  maxPositions: '최대 포지션',
+  dailyLossPct: '1일 손실 한도',
+  minWinRate: '최소 승률',
+  minRR: '최소 손익비',
+  earlyStop: '조기 손절',
+  partialTp: '50% 반익절',
+};
+
+/** 프리셋과 다른 항목 — 빈 배열이면 프리셋 그대로다. */
+export function stylePresetDiff(config: AutoTradeConfig, style: TradeStyle): string[] {
+  const preset = presetForStyle(style);
+  const out: string[] = [];
+  for (const field of STYLE_PRESET_FIELDS) {
+    if (config[field] !== preset[field]) out.push(STYLE_FIELD_LABEL[field]);
+  }
+  return out;
+}
+
+export function matchesStylePreset(config: AutoTradeConfig, style: TradeStyle): boolean {
+  return stylePresetDiff(config, style).length === 0;
+}
+
+/** 레버리지 상한 문구 — `상한 없음 · 유동` / `12x` */
+export function leverageCapLabel(maxLeverage: number): string {
+  return maxLeverage > 0 ? `${maxLeverage}x` : '상한 없음 · 유동';
+}
+
+/**
+ * 실제 레버리지 상한 — 0(무제한)이면 거래소 종목 최대 배율, 그것도 모르면 안전 상한 100x.
+ * 주문 계획·진입 게이트가 **같은 상한**을 쓰도록 한 곳에 모았다.
+ */
+export function leverageCapOf(
+  config: Pick<AutoTradeConfig, 'maxLeverage'>,
+  maxLever?: number | null,
+): number {
+  const exchangeCap = exchangeLeverageCap(maxLever);
+  const configured = Number(config.maxLeverage ?? 0);
+  if (!Number.isFinite(configured) || configured <= 0) return exchangeCap;
+  return Math.min(configured, exchangeCap);
 }
 
 /**
@@ -399,11 +534,14 @@ export function evaluateEntry(ctx: EntryContext): EntryDecision {
       reason: `감지 후 ${config.entryTtlMin}분이 지나 진입을 취소했습니다.`,
     };
   }
-  if (plan && plan.leverage > config.maxLeverage) {
+  if (plan && plan.leverage > leverageCapOf(config)) {
     return {
       allowed: false,
       code: 'leverage',
-      reason: `${plan.leverage}x > 레버리지 상한 ${config.maxLeverage}x`,
+      reason:
+        config.maxLeverage > 0
+          ? `${plan.leverage}x > 레버리지 상한 ${config.maxLeverage}x`
+          : `${plan.leverage}x > 안전 상한 ${leverageCapOf(config)}x`,
     };
   }
   if (!plan || !plan.valid) {
@@ -448,9 +586,10 @@ export interface AutoPlanInput {
   available?: number | null;
 }
 
-/** 시그널 + 설정 → 실제 주문 계획. 레버리지는 상한으로 자른다. */
+/** 시그널 + 설정 → 실제 주문 계획. 레버리지는 상한(0=무제한 → 거래소 최대·안전 100x)까지 자른다. */
 export function planAutoOrder(input: AutoPlanInput): OrderPlan {
-  const leverage = Math.max(1, Math.min(input.config.maxLeverage, Math.round(input.leverage) || 1));
+  const cap = leverageCapOf(input.config, input.spec?.maxLever);
+  const leverage = Math.max(1, Math.min(cap, Math.round(input.leverage) || 1));
   return planOrder({
     seed: Math.max(1, input.seed),
     riskPct: input.config.riskPct,
@@ -756,11 +895,77 @@ export function mergeArmedPlans(prev: ArmedPlan[], next: ArmedPlan[], max = 12):
   return [...map.values()].sort((a, b) => b.detectedAt - a.detectedAt).slice(0, max);
 }
 
+/**
+ * 💰 50% 반익절 — v1.5.6
+ *  · 목표가 진행률 50% 이상 **또는** +1.0R 이상이면 보유 수량의 50%를 시장가로 분할 익절한다.
+ *  · 실제 주문은 네이티브(`AutoTradeService`)가 계약 단위로 내림해 넣고, 웹은 같은 규칙으로
+ *    포지션 카드에 진행 상태를 보여준다.
+ */
+export const PARTIAL_TP_PROGRESS = 0.5;
+export const PARTIAL_TP_R = 1.0;
+export const PARTIAL_TP_SPLIT = 0.5;
+
+export interface PartialTpPosition {
+  symbol: string;
+  holdSide?: string;
+  total: number;
+  openPriceAvg: number;
+  markPrice?: number;
+  presetStopSurplusPrice?: number;
+  presetStopLossPrice?: number;
+}
+
+export interface PartialTpState {
+  /** 반익절 설정이 켜져 있고 방향·가격이 계산 가능한가 */
+  applicable: boolean;
+  /** 이미 반익절을 마쳤는가(네이티브 기록) */
+  done: boolean;
+  /** 지금 목표가 50% 또는 +1.0R 에 도달했는가 */
+  reached: boolean;
+  /** 목표가 진행률(0~1) — 목표가를 모르면 -1 */
+  progress: number;
+  r: number;
+  /** 포지션 카드 배지 문구 */
+  label: string;
+}
+
+/** 보유 포지션의 반익절 진행 상태 — 웹·네이티브 같은 기준(50% / +1.0R) */
+export function partialTpState(
+  pos: PartialTpPosition,
+  opts: { enabled: boolean; done: boolean },
+): PartialTpState {
+  const longSide = (pos.holdSide ?? 'long').toLowerCase() !== 'short';
+  const entry = Number(pos.openPriceAvg ?? 0);
+  const price = Number(pos.markPrice ?? 0);
+  const target = Number(pos.presetStopSurplusPrice ?? 0);
+  const stop = Number(pos.presetStopLossPrice ?? 0);
+  const risk = Math.abs(entry - stop);
+  const span = Math.abs((target || 0) - entry);
+  const progress = entry > 0 && price > 0 && span > 0 && (longSide ? target > entry : target < entry)
+    ? Math.max(0, Math.min(1, (longSide ? price - entry : entry - price) / (longSide ? span : -span)))
+    : -1;
+  const r = entry > 0 && price > 0 && risk > 0 ? (longSide ? price - entry : entry - price) / risk : 0;
+  const applicable = !!opts.enabled && !opts.done && entry > 0 && price > 0 && (risk > 0 || span > 0);
+  const reached = applicable && (progress >= PARTIAL_TP_PROGRESS || r >= PARTIAL_TP_R);
+  const label = !opts.enabled
+    ? '반익절 끔'
+    : opts.done
+      ? '반익절 50% 완료'
+      : !applicable
+        ? '반익절 대기'
+        : reached
+          ? '반익절 조건 도달'
+          : progress >= 0
+            ? `반익절 ${Math.round(progress * 100)}%`
+            : `반익절 ${r.toFixed(2)}R`;
+  return { applicable, done: opts.done, reached, progress, r, label };
+}
+
 /* ------------------------------------------------------------------ *
  * 상태·로그
  * ------------------------------------------------------------------ */
 
-export type AutoLogLevel = 'fill' | 'reject' | 'block' | 'info' | 'error';
+export type AutoLogLevel = 'fill' | 'reject' | 'block' | 'info' | 'error' | 'exit' | 'partial';
 
 export interface AutoLogEntry {
   at: number;

@@ -93,6 +93,7 @@ export async function fetchContracts(): Promise<Contract[]> {
       const minTradeNum = Number(c.minTradeNum);
       const volumePlace = Number(c.volumePlace);
       const minTradeUsdt = Number(c.minTradeUSDT);
+      const maxLever = Number(c.maxLever);
       return {
         symbol,
         base: String(c.baseCoin ?? symbol.replace(/USDT$/, '')),
@@ -108,6 +109,8 @@ export async function fetchContracts(): Promise<Contract[]> {
             ? Number(c.sizeMultiplier)
             : undefined,
         minTradeUsdt: Number.isFinite(minTradeUsdt) && minTradeUsdt > 0 ? minTradeUsdt : undefined,
+        // 거래소 종목 최대 배율 — 공격적 스타일의 유동 레버리지 상한(계약 스펙)
+        maxLever: Number.isFinite(maxLever) && maxLever > 0 ? Math.round(maxLever) : undefined,
       } satisfies Contract;
     });
 }

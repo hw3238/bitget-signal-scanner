@@ -67,6 +67,8 @@ export interface ContractSpec {
   sizeMultiplier?: number;
   /** 최소 주문 금액(USDT) */
   minTradeUsdt?: number;
+  /** 거래소 종목 최대 레버리지 — 0 = 상한 없음(유동)일 때 실제 상한이 된다 */
+  maxLever?: number;
 }
 
 export interface OrderPlanInput {

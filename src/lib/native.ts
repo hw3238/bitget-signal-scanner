@@ -163,6 +163,8 @@ export interface AutoTradeNativeStatus {
   dayKey?: string;
   dailyLocked?: boolean;
   lastTickAt?: number;
+  /** 50% 반익절을 이미 마친 포지션 키(`SYMBOL|side`) — v1.5.6 */
+  partialTpDone?: string[];
   /** 1일 손실 한도로 서비스가 스스로 꺼졌는지 — 웹 설정도 같이 꺼야 배지가 맞는다 */
   enabled?: boolean;
   log?: { at: number; level: string; text: string }[];

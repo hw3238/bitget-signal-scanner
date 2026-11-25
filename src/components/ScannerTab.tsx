@@ -176,7 +176,12 @@ export function ScannerTab({
 
   const leverageFor = (signal: Signal): number =>
     settings.leverageMode === 'auto' && profile
-      ? recommendLeverage(signal, profile.style).leverage
+      ? recommendLeverage(
+          signal,
+          profile.style,
+          account.equity,
+          contractBySymbol.get(signal.symbol)?.maxLever,
+        ).leverage
       : settings.leverage;
   const avgRoi = filtered.length
     ? filtered.reduce((acc, f) => acc + f.signal.changePct * leverageFor(f.signal), 0) / filtered.length
