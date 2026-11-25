@@ -26,7 +26,9 @@
     보수적 = 리스크 1.5% · 5x 상한 · 2포지션 · 1일 손실 4.5% · 승률 52% · 1.5R / 공격적 = 리스크 4% · **상한 없음** · 4포지션 ·
     1일 손실 10% · 승률 45% · 1.2R. 둘 다 조기 손절·50% 반익절 ON. 자동매매 화면에 현재 스타일 배지, 스타일과 다른 값 목록,
     `스타일 프리셋 맞추기` 버튼이 있습니다.
-  - 검증: `check:autotrade` 305건 · `autotrade-e2e` 152건 · `check:native` 22건(반익절·수량 단위·본절 보호) ·
+  - **업그레이드 1회 정렬**: 이전 버전에서 **아직 손대지 않은 기본 설정**(리스크 1.5% · 10x · 2포지션 · 4.5% · 승률 55%)은
+    저장된 성향 프리셋으로 한 번 맞춥니다 — 공격적 사용자는 10x 상한 없이 바로 시작합니다. 직접 조정한 설정은 그대로 둡니다.
+  - 검증: `check:autotrade` 310건 · `autotrade-e2e` 159건 · `check:native` 22건(반익절·수량 단위·본절 보호) ·
     `toss-ui-check` 60건 · `features-check` 59건 · `journal-e2e` 44건 전수 통과.
   - 스크린샷: `docs/screens/77-auto-style-preset.png` · `78-auto-partial-tp.png` ·
     `79-auto-unlimited-leverage.png` · `80-auto-partial-position.png`.
