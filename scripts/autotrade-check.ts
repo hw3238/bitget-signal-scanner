@@ -34,6 +34,7 @@ import {
   leverageCapLabel,
   leverageCapOf,
   matchesStylePreset,
+  migrateStylePresetOnce,
   markTraded,
   mergeArmedPlans,
   migrateSymbolScopeOnce,
@@ -1291,6 +1292,23 @@ check(
   recommendLeverage({ entry: 100, stop: 95, target: 110, winRate: 55, rr: 2 }, 'aggressive').safeMax === 16,
 );
 check('레버리지 없이(2인자)도 기존과 같이 계산', consBase.leverage >= 2 && consBase.leverage <= 5);
+
+/* 14-6) v1.5.6 업그레이드 1회 — 손대지 않은 기본 설정만 스타일 프리셋으로 */
+const untouchedAgg = migrateStylePresetOnce({}, 'aggressive', false);
+check(
+  '업그레이드 1회: 기본 설정 → 공격적 프리셋(상한 없음)',
+  untouchedAgg.changed && untouchedAgg.config.maxLeverage === 0 && untouchedAgg.config.riskPct === 4,
+  `changed=${untouchedAgg.changed} maxLeverage=${untouchedAgg.config.maxLeverage}`,
+);
+const customAgg = migrateStylePresetOnce({ riskPct: 3 }, 'aggressive', false);
+check(
+  '업그레이드 1회: 직접 조정한 설정은 유지',
+  !customAgg.changed && customAgg.config.riskPct === 3 && customAgg.config.maxLeverage === 10,
+  `${customAgg.config.riskPct}% · ${customAgg.config.maxLeverage}x`,
+);
+check('업그레이드 1회: 이미 마이그레이션됐으면 건너뜀', !migrateStylePresetOnce({}, 'aggressive', true).changed);
+check('업그레이드 1회: 성향이 없으면 건너뜀', !migrateStylePresetOnce({}, null, false).changed);
+check('업그레이드 1회: 보수적은 5x 프리셋', migrateStylePresetOnce({}, 'conservative', false).config.maxLeverage === 5);
 
 console.log('');
 console.log(`자동매매 단위 검증: ${pass}/${pass + fails.length} 통과`);

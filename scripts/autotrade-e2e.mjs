@@ -387,7 +387,7 @@ const NATIVE_MOCK = () => {
 
 const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 
-async function open({ native = true, blockMarket = true, oldApk = false, seedConfig = null, altSignal = false } = {}) {
+async function open({ native = true, blockMarket = true, oldApk = false, seedConfig = null, altSignal = false, profileStyle = null } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   await ctx.addInitScript(`(${snapshotScript.toString()})();`);
   // 알트 코인(DOGE) 시그널을 하나 더 심어 '전체 코인' 기본값이 실제 감시 목록에 들어가는지 본다.
@@ -425,6 +425,12 @@ async function open({ native = true, blockMarket = true, oldApk = false, seedCon
       `if (!localStorage.getItem('cota.autotrade.config.v1')) localStorage.setItem('cota.autotrade.config.v1', JSON.stringify(${JSON.stringify(
         seedConfig,
       )}));`,
+    );
+  }
+  // 성향을 바꿔서 시작하고 싶을 때(업그레이드 마이그레이션 검증) — 스냅숏 스크립트 뒤에 덮어쓴다.
+  if (profileStyle) {
+    await ctx.addInitScript(
+      `localStorage.setItem('cota.profile.v1', JSON.stringify({ style: ${JSON.stringify(profileStyle)}, updatedAt: Date.now() }));`,
     );
   }
   if (native) await ctx.addInitScript(`window.__oldApk = ${oldApk ? 'true' : 'false'}; (${NATIVE_MOCK.toString()})();`);
@@ -530,10 +536,10 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   check(started.length === 1, '자동매매 켜기 → 네이티브 서비스 start');
   check(started[0]?.enabled === true && started[0]?.mode === 'demo', 'start 설정: enabled=true · mode=demo', JSON.stringify(started[0] ?? {}));
   check(started[0]?.riskPct === 50 && started[0]?.maxPositions === 2, 'start 설정: 리스크 50% · 최대 2포지션');
-  // 수량 = 1,234.56 × 50% ÷ 3,050 = 0.2024 → 가용 $1,000.50 의 95% 캡(0.1557)으로 0.155
+  // 수량 = 1,234.56 × 50% ÷ 3,050 = 0.2024 → 가용 $1,000.50·5x 증거금 캡(0.0779)으로 0.077
   check(
-    typeof started[0]?.planQty === 'number' && Math.abs(started[0].planQty - 0.155) < 0.002,
-    '50% 리스크 수량 = 계좌×50%÷손절거리, 가용 95% 캡 적용 → 0.155 BTC (감시 목록에 전달)',
+    typeof started[0]?.planQty === 'number' && Math.abs(started[0].planQty - 0.077) < 0.002,
+    '50% 리스크 수량 = 계좌×50%÷손절거리, 가용 95%·5x 캡 적용 → 0.077 BTC (감시 목록에 전달)',
     `planQty=${started[0]?.planQty}`,
   );
   check(
@@ -547,7 +553,7 @@ const count = (page, sel) => page.evaluate((s) => document.querySelectorAll(s).l
   // v1.5.4 — 조기 손절 보호 토글 (기본 ON) · 반대 시그널 전달
   check(started[0]?.earlyStop === true, '자동매매 시작 설정에 조기 손절 ON 포함', String(started[0]?.earlyStop));
   check(started[0]?.partialTp === true, '자동매매 시작 설정에 50% 반익절 ON 포함', String(started[0]?.partialTp));
-  check(started[0]?.maxLeverage === 10, '자동매매 시작 설정에 레버리지 상한 포함', `${started[0]?.maxLeverage}x`);
+  check(started[0]?.maxLeverage === 5, '자동매매 시작 설정에 레버리지 상한 포함(보수적 5x)', `${started[0]?.maxLeverage}x`);
   check(
     started[0]?.exitSignals === 1,
     '감시 시작 시 진행 중 시그널을 네이티브로 전달(반대 시그널 판단용)',
@@ -1161,13 +1167,17 @@ const readSymbolUi = (page) =>
   // 보수적 프로필 vs 기본 설정(10x·55%) — 프리셋과 다르다
   const styleCard = await text(page, '[data-auto-style]');
   check(/매매 스타일/.test(styleCard), '자동매매 화면에 매매 스타일 연동 카드', styleCard.slice(0, 60));
-  check((await text(page, '[data-style-linked]')) === '프리셋과 다름', '기본 설정은 보수적 프리셋과 다르다', await text(page, '[data-style-linked]'));
+  check((await text(page, '[data-style-linked]')) === '프리셋 연동됨', '보수적 성향은 자동매매 프리셋과 연동됨', await text(page, '[data-style-linked]'));
   check(
     /1회 리스크/.test(styleCard) && /5x/.test(styleCard) && /50% 반익절/.test(styleCard),
     '프리셋 값 표시(리스크·레버리지·반익절)',
     styleCard.slice(0, 160),
   );
-  check(/레버리지 상한 · 최소 승률/.test(await text(page, '[data-style-diff]')), '프리셋과 다른 항목을 알려준다', await text(page, '[data-style-diff]'));
+  // 사용자가 상한을 10x 로 바꾸면 프리셋과 다른 항목을 알려준다
+  await page.locator('[data-lev-cap="10"]').click();
+  await page.waitForTimeout(400);
+  check((await text(page, '[data-style-linked]')) === '프리셋과 다름', '직접 바꾸면 프리셋과 다름 표시', await text(page, '[data-style-linked]'));
+  check(/레버리지 상한/.test(await text(page, '[data-style-diff]')), '프리셋과 다른 항목을 알려준다', await text(page, '[data-style-diff]'));
   await page.locator('[data-style-preset]').click();
   await page.waitForTimeout(500);
   const afterPreset = await page.evaluate(() => JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}'));
@@ -1242,6 +1252,36 @@ const readSymbolUi = (page) =>
   await page.locator('[data-auto-positions]').screenshot({ path: `${OUT}/80-auto-partial-position.png` }).catch(() => {});
 
   check(errors.length === 0, 'v1.5.6 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
+  await ctx.close();
+}
+
+/* ================================================================== *
+ * 11) v1.5.6 업그레이드 — 손대지 않은 기본 설정은 성향 프리셋으로 1회 정렬
+ * ================================================================== */
+{
+  const { ctx, page, errors } = await open({ profileStyle: 'aggressive' });
+  await page.waitForTimeout(400);
+  const upgraded = await page.evaluate(() => ({
+    config: JSON.parse(localStorage.getItem('cota.autotrade.config.v1') || '{}'),
+    migrated: localStorage.getItem('cota.autotrade.migrated.stylePreset.v1'),
+  }));
+  check(
+    upgraded.config.maxLeverage === 0 && upgraded.config.riskPct === 4 && upgraded.config.maxPositions === 4,
+    '업그레이드: 공격적 성향 + 기본 설정 → 상한 없음 프리셋 자동 적용',
+    JSON.stringify(upgraded.config),
+  );
+  check(upgraded.migrated === '1', '업그레이드: 1회 마이그레이션 표시 저장', String(upgraded.migrated));
+
+  await page.evaluate(() => document.querySelector('[data-tab="menu"]')?.click());
+  await page.waitForTimeout(300);
+  await page.locator('[data-menu="auto"]').click();
+  await page.waitForTimeout(600);
+  check((await text(page, '[data-style-linked]')) === '프리셋 연동됨', '업그레이드 후 자동매매 화면 = 프리셋 연동됨');
+  const styleText = await text(page, '[data-auto-style]');
+  check(/공격적 매매/.test(styleText) && /상한 없음 · 유동/.test(styleText), '공격적 프리셋 값 표시(상한 없음 · 유동)', styleText.slice(0, 140));
+  check(/현재 상한 없음 · 유동/.test(await text(page, '[data-lev-cap-label]')), '레버리지 상한 = 상한 없음 · 유동', await text(page, '[data-lev-cap-label]'));
+  await page.screenshot({ path: `${OUT}/81-auto-aggressive-unlimited.png` });
+  check(errors.length === 0, '업그레이드 시나리오 콘솔 에러 0건', errors.slice(0, 2).join(' | '));
   await ctx.close();
 }
 

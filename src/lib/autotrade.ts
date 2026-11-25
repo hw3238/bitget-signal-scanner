@@ -257,6 +257,27 @@ export function matchesStylePreset(config: AutoTradeConfig, style: TradeStyle): 
   return stylePresetDiff(config, style).length === 0;
 }
 
+/** 스타일 프리셋 1회 마이그레이션 키 — 앱(localStorage)에 남긴다. */
+export const STYLE_MIGRATION_KEY = 'cota.autotrade.migrated.stylePreset.v1';
+
+/**
+ * v1.5.6 이전에 저장된 **아직 손대지 않은 기본 설정**을 저장된 매매 스타일 프리셋으로 한 번 맞춘다.
+ *  · 예전 기본값(리스크 1.5% · 10x · 2포지션 · 4.5% · 승률 55%)은 스타일과 따로 놀았고,
+ *    공격적 사용자도 10x 상한에 묶여 있었다.
+ *  · 사용자가 직접 조정한 설정(하나라도 기본값과 다름)은 **건드리지 않는다**.
+ */
+export function migrateStylePresetOnce(
+  raw: Partial<AutoTradeConfig> | null | undefined,
+  style: TradeStyle | null | undefined,
+  alreadyMigrated: boolean,
+): { config: AutoTradeConfig; changed: boolean } {
+  const normalized = normalizeConfig(raw ?? DEFAULTS);
+  if (alreadyMigrated || !style) return { config: normalized, changed: false };
+  const untouched = STYLE_PRESET_FIELDS.every((field) => normalized[field] === DEFAULTS[field]);
+  if (!untouched) return { config: normalized, changed: false };
+  return { config: applyStylePreset(normalized, style), changed: true };
+}
+
 /** 레버리지 상한 문구 — `상한 없음 · 유동` / `12x` */
 export function leverageCapLabel(maxLeverage: number): string {
   return maxLeverage > 0 ? `${maxLeverage}x` : '상한 없음 · 유동';

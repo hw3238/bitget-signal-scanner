@@ -15,6 +15,7 @@ import {
   LIVE_REFRESH_MS,
   LOG_LIMIT,
   SNAPSHOT_FRESH_MS,
+  STYLE_MIGRATION_KEY,
   SYMBOL_MIGRATION_KEY,
   applyDailyReset,
   applyStylePreset as applyStylePresetToConfig,
@@ -27,6 +28,7 @@ import {
   fmtUsdt,
   markTraded,
   mergeArmedPlans,
+  migrateStylePresetOnce,
   migrateSymbolScopeOnce,
   normalizeConfig,
   normalizePosMode,
@@ -92,7 +94,23 @@ function readConfig(): AutoTradeConfig {
       localStorage.setItem(CONFIG_KEY, JSON.stringify(migrated.config));
     }
     localStorage.setItem(SYMBOL_MIGRATION_KEY, '1');
-    return normalizeConfig(migrated.config ?? DEFAULTS);
+    // v1.5.6 — 아직 손대지 않은 기본 설정은 저장된 매매 스타일 프리셋으로 한 번 맞춘다.
+    const profileRaw = localStorage.getItem('cota.profile.v1');
+    let profileStyle: TradeStyle | null = null;
+    try {
+      const parsed = profileRaw ? (JSON.parse(profileRaw) as { style?: string }) : null;
+      if (parsed?.style === 'aggressive' || parsed?.style === 'conservative') profileStyle = parsed.style;
+    } catch {
+      profileStyle = null;
+    }
+    const presetMigrated = migrateStylePresetOnce(
+      migrated.config ?? DEFAULTS,
+      profileStyle,
+      localStorage.getItem(STYLE_MIGRATION_KEY) === '1',
+    );
+    localStorage.setItem(STYLE_MIGRATION_KEY, '1');
+    if (presetMigrated.changed) localStorage.setItem(CONFIG_KEY, JSON.stringify(presetMigrated.config));
+    return presetMigrated.config;
   } catch {
     return normalizeConfig(DEFAULTS);
   }
