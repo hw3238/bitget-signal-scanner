@@ -238,6 +238,11 @@ async function handleSupabase(route, request, state) {
     if (method === 'POST') {
       const row = Array.isArray(body) ? body[0] : body;
       if (!row?.user_id) return json(route, 400, { message: 'user_id required' });
+      // 실제 DB 처럼 profiles FK 를 강제한다 — 가입 직후 첫 동기화가 프로필 INSERT 보다 먼저 오면 409.
+      const owner = state.users.find((u) => u.id === row.user_id);
+      if (!owner || owner.hasProfile === false) {
+        return json(route, 409, { code: '23503', message: 'insert or update on table "cota_connections" violates foreign key constraint' });
+      }
       const idx = state.connections.findIndex((c) => c.user_id === row.user_id);
       if (idx >= 0) state.connections[idx] = { ...state.connections[idx], ...row };
       else state.connections.push({ ...row });
@@ -471,8 +476,16 @@ const run = async () => {
     JSON.stringify(insertRow),
   );
 
-  const synced = await waitState(() => state.requests.some((r) => r.path === '/rest/v1/cota_connections' && r.method === 'POST'), 6000);
-  check('회원가입 직후: 연결 초기 행 UPSERT', synced);
+  // FK(프로필 INSERT) 경합: 첫 요청은 409 로 막혀도 재시도로 초기 행이 만들어진다.
+  const synced = await waitState(
+    () => state.connections.some((c) => c.user_id === 'u-1'),
+    8000,
+  );
+  check('회원가입 직후: 연결 초기 행 UPSERT(프로필 FK 재시도 포함)', synced);
+  const fkBlocked = state.requests.filter(
+    (r) => r.path === '/rest/v1/cota_connections' && r.method === 'POST' && r.body?.[0]?.user_id === 'u-1',
+  ).length;
+  check('첫 동기화가 FK 로 막혀도 재시도로 성공', fkBlocked >= 1, `${fkBlocked}회 시도`);
   const firstConn = state.requests.find((r) => r.path === '/rest/v1/cota_connections' && r.method === 'POST');
   const connKeys1 = Object.keys(firstConn?.body?.[0] ?? {}).sort();
   check(
@@ -530,7 +543,7 @@ const run = async () => {
   await page.locator('[data-auth-close]').click();
   await page.waitForSelector('[data-auth-sheet]', { state: 'detached', timeout: 8000 });
 
-  const ignorable = (t) => /api\.github\.com|api\.bitget\.com|api\.binance\.com|fapi\.binance\.com|rate limit|Failed to fetch|net::ERR|400|401|403/i.test(t);
+  const ignorable = (t) => /api\.github\.com|api\.bitget\.com|api\.binance\.com|fapi\.binance\.com|rate limit|Failed to fetch|net::ERR|400|401|403|409/i.test(t);
   const realErrors = consoleErrors.filter((t) => !ignorable(t));
   check('콘솔 오류 0건(거래소 API 차단 로그 제외)', realErrors.length === 0, realErrors.slice(0, 2).join(' | '));
   check('페이지 예외 0건', pageErrors.length === 0, pageErrors.slice(0, 2).join(' | '));

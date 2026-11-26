@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-11-26T09:46:01.772Z",
- "count": 205,
+ "generatedAt": "2026-11-26T10:34:26.311Z",
+ "count": 206,
  "sources": {
-  "okx": 0,
+  "okx": 1,
   "binance": 0,
   "coincap": 0
  },
@@ -210,6 +210,7 @@
   "YB": "YB.png",
   "ZAMA": "ZAMA.png",
   "ZEC": "ZEC.png",
+  "ZETA": "ZETA.png",
   "ZK": "ZK.png",
   "ZRO": "ZRO.png"
  }

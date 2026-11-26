@@ -10,6 +10,9 @@
  *
  *  · 값이 실제로 바뀔 때만 보낸다(`connectionChanged`) — 같은 상태를 주기적으로 다시 쓰지 않는다.
  *  · 1.2초 디바운스로 잔고·모드가 연달아 바뀌어도 요청은 한 번만 나간다.
+ *  · **회원가입 직후 재시도**: `cota_connections.user_id` 는 `cota_profiles.id` 를 참조한다.
+ *    세션이 프로필 INSERT 보다 먼저 서므로 첫 upsert 가 FK 오류(23503)로 실패할 수 있다 →
+ *    실패하면 1.5·3·4.5초 간격으로 최대 3회 다시 보낸다(프로필이 생긴 뒤 성공).
  *  · 로그인하지 않았으면 아무것도 보내지 않는다(비회원 둘러보기).
  *  · API Key/Secret/Passphrase 는 `connectionPayload` 의 화이트리스트 밖이라 절대 나가지 않는다.
  */
@@ -20,6 +23,8 @@ import { connectionChanged, connectionPayload, type ConnectionPayload } from '..
 import { saveConnection } from '../lib/supabaseAuth';
 
 const DEBOUNCE_MS = 1200;
+/** FK(프로필 생성) 경합 등 일시 실패 재시도 간격 — 최대 3회 */
+const RETRY_MS = 1500;
 
 export interface ConnectionSyncInput {
   auth: AccountAuthApi;
@@ -43,7 +48,6 @@ export function useConnectionSync({
 }: ConnectionSyncInput): void {
   const last = useRef<ConnectionPayload | null>(null);
   const lastUser = useRef<string | null>(null);
-  const timer = useRef<number | null>(null);
   const session = auth.session;
 
   useEffect(() => {
@@ -58,21 +62,29 @@ export function useConnectionSync({
       new Date().toISOString(),
     );
     if (!connectionChanged(last.current, payload)) return;
-    if (timer.current) window.clearTimeout(timer.current);
-    // 첫 저장(로그인 직후 초기 행)은 바로, 이후 변화는 디바운스
-    const delay = last.current ? DEBOUNCE_MS : 0;
-    timer.current = window.setTimeout(() => {
-      timer.current = null;
+
+    let cancelled = false;
+    let attempt = 0;
+    let handle = 0;
+
+    const send = () => {
       void saveConnection(session, payload)
         .then(() => {
-          last.current = payload;
+          if (!cancelled) last.current = payload;
         })
         .catch(() => {
-          /* 네트워크·권한 오류는 조용히 넘긴다 — 다음 변화에서 다시 시도 */
+          if (cancelled || attempt >= 3) return;
+          attempt += 1;
+          handle = window.setTimeout(send, RETRY_MS * attempt);
         });
-    }, delay);
+    };
+
+    // 첫 저장(로그인·가입 직후 초기 행)은 바로, 이후 변화는 디바운스
+    handle = window.setTimeout(send, last.current ? DEBOUNCE_MS : 0);
+
     return () => {
-      if (timer.current) window.clearTimeout(timer.current);
+      cancelled = true;
+      if (handle) window.clearTimeout(handle);
     };
   }, [session, exchange, mode, apiConnected, autotradeEnabled, equity]);
 }
