@@ -15,6 +15,9 @@ import {
 import { isNativeApp, nativeAppInfo, openExternalUrl } from '../lib/native';
 import { useApkUpdate } from '../lib/useApkUpdate';
 import { isDirty } from '../lib/settingsSync';
+import type { AccountAuthApi } from '../hooks/useAccountAuth';
+import { AccountCard } from './AccountCard';
+import type { AuthMode } from './AuthSheet';
 import { ACCOUNT_UNLINKED_HINT, fmtUsdtBalance, type AccountBase } from '../lib/account';
 import { RISK_PRESETS, RISK_HIGH_WARN, clampRiskInput, isHighRisk, resolveRiskPct } from '../lib/orderCockpit';
 import { EXCHANGE_ORDER, EXCHANGES, marketSourceLabel, type Exchange } from '../lib/exchange';
@@ -113,6 +116,9 @@ interface Props {
   autoTrade: AutoTradeApi;
   /** 1회 리스크 저장 → 설정 + 자동매매 리스크 동기화 */
   onSaveRisk: (riskPct: number | null) => void;
+  /** 🔐 계정 카드 — 설정에서도 바로 가입·로그아웃 */
+  auth: AccountAuthApi;
+  onOpenAuth: (mode: AuthMode) => void;
 }
 
 export function SettingsTab({
@@ -130,6 +136,8 @@ export function SettingsTab({
   onTestNotification,
   autoTrade,
   onSaveRisk,
+  auth,
+  onOpenAuth,
 }: Props) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<UpdateCheckResult | null>(null);
@@ -230,6 +238,7 @@ export function SettingsTab({
 
   return (
     <div className="tab settings-tab">
+      <AccountCard auth={auth} onOpenAuth={onOpenAuth} variant="settings" />
       <section className="panel profile-card" id="settings-profile">
         <header className="panel-head">
           <h3>💼 내 매매 기준</h3>

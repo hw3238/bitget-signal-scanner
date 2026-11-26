@@ -4,6 +4,10 @@ import type { Signal } from '../engine/types';
 import type { AccountBase } from '../lib/account';
 import type { SwapLogEntry } from '../lib/storage';
 import { AutoTradeTab } from './AutoTradeTab';
+import { AccountCard } from './AccountCard';
+import { AdminDashboard } from './AdminDashboard';
+import type { AccountAuthApi } from '../hooks/useAccountAuth';
+import type { AuthMode } from './AuthSheet';
 import { SurgeExplorer } from './SurgeExplorer';
 import { statusBadge } from '../lib/autotrade';
 import { EXCHANGES, type Exchange } from '../lib/exchange';
@@ -15,7 +19,18 @@ import { PositionSurvival } from './PositionSurvival';
 import { SizingCalc } from './SizingCalc';
 import { FeeCalc } from './FeeCalc';
 
-export type MenuView = 'auto' | 'surge' | 'kimchi' | 'lag' | 'doppel' | 'survival' | 'sizing' | 'fee' | 'engine';
+export type MenuView =
+  | 'auto'
+  | 'surge'
+  | 'kimchi'
+  | 'lag'
+  | 'doppel'
+  | 'survival'
+  | 'sizing'
+  | 'fee'
+  | 'engine'
+  /** 관리자 전용 — role === 'admin' 일 때만 메뉴에 나타난다 */
+  | 'admin';
 
 interface MenuItem {
   key: MenuView;
@@ -121,6 +136,9 @@ interface Props {
   /** 🤖 자동매매 상태·화면 */
   autoTrade: AutoTradeApi;
   signals: Signal[];
+  /** 🔐 계정 — 로그인 카드·관리자 메뉴 */
+  auth: AccountAuthApi;
+  onOpenAuth: (mode: AuthMode) => void;
 }
 
 const TITLES: Record<MenuView, string> = {
@@ -133,6 +151,7 @@ const TITLES: Record<MenuView, string> = {
   sizing: '포지션 사이징',
   fee: '수수료 & 페이백',
   engine: '전략 엔진',
+  admin: '관리자 대시보드',
 };
 
 export function MenuTab({
@@ -148,6 +167,8 @@ export function MenuTab({
   onClearLog,
   autoTrade,
   signals,
+  auth,
+  onOpenAuth,
 }: Props) {
 
   if (view) {
@@ -179,6 +200,7 @@ export function MenuTab({
         {view === 'engine' && (
           <EngineTab state={state} swapLog={swapLog} leverage={leverage} onRescan={onRescan} onClearLog={onClearLog} />
         )}
+        {view === 'admin' && <AdminDashboard auth={auth} />}
       </div>
     );
   }
@@ -198,6 +220,27 @@ export function MenuTab({
           </div>
         </div>
       </section>
+
+      <AccountCard auth={auth} onOpenAuth={onOpenAuth} variant="menu" />
+
+      {auth.isAdmin && (
+        <section className="menu-group" data-admin-group>
+          <h3 className="menu-group-title">관리자</h3>
+          <div className="menu-list">
+            <button className="menu-row admin" onClick={() => onViewChange('admin')} data-menu="admin">
+              <span className="menu-emoji">🛡️</span>
+              <span className="menu-copy">
+                <b>
+                  관리자 대시보드 <i className="menu-hot admin">ADMIN</i>
+                </b>
+                <span>가입 유저 · 거래소/API 연결 · 자동매매 현황을 한눈에</span>
+              </span>
+              <span className="menu-tag">전체 유저</span>
+              <span className="menu-arrow">›</span>
+            </button>
+          </div>
+        </section>
+      )}
 
       <button
         type="button"

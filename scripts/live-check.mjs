@@ -148,7 +148,7 @@ check(
   `${settings.seed} · ${settings.headings[0]}`,
 );
 check(settings.target === '주요 코인' && settings.ntfy === 'bgss-hw3238-9f4k2m', '라이브 알림 기본값', `${settings.target} · ${settings.ntfy}`);
-check(/앱 v1\.5\.7/.test(settings.version || ''), '라이브 앱 버전 v1.5.7', settings.version);
+check(/앱 v1\.5\.8/.test(settings.version || ''), '라이브 앱 버전 v1.5.8', settings.version);
 
 // v1.5.7 — 설정 항목별 저장 버튼 · 매매 스타일 제거
 const saveUi = await page.evaluate(() => ({

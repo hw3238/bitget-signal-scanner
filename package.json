@@ -1,7 +1,7 @@
 {
   "name": "bitget-signal-scanner",
   "private": true,
-  "version": "1.5.7",
+  "version": "1.5.8",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
@@ -21,6 +21,8 @@
     "check:surge-e2e": "node scripts/surge-e2e.mjs",
     "check:autotrade": "esbuild scripts/autotrade-check.ts --bundle --platform=node --format=esm --outfile=.tmp/autotrade-check.mjs --log-level=error && node .tmp/autotrade-check.mjs",
     "check:settings": "esbuild scripts/settings-check.ts --bundle --platform=node --format=esm --outfile=.tmp/settings-check.mjs --log-level=error && node .tmp/settings-check.mjs",
+    "check:auth": "esbuild scripts/auth-check.ts --bundle --platform=node --format=esm --outfile=.tmp/auth-check.mjs --log-level=error && node .tmp/auth-check.mjs",
+    "auth-e2e": "node scripts/auth-e2e.mjs",
     "check:autotrade-e2e": "node scripts/autotrade-e2e.mjs",
     "settings-e2e": "node scripts/settings-e2e.mjs",
     "bench:strategies": "esbuild scripts/strategy-tournament.ts --bundle --platform=node --format=esm --outfile=.tmp/strategy-tournament.mjs --log-level=error && node .tmp/strategy-tournament.mjs",

@@ -8,11 +8,14 @@ import { ScannerTab } from './components/ScannerTab';
 import { SettingsTab } from './components/SettingsTab';
 import type { MenuView } from './components/MenuTab';
 import { ShareModal } from './components/ShareModal';
+import { AuthSheet, type AuthMode } from './components/AuthSheet';
 import logoUrl from './assets/cota-logo.png';
 import { RefreshIcon, SwapIcon } from './components/Icons';
 import type { Contract, Signal } from './engine/types';
 import { useFavorites } from './hooks/useFavorites';
 import { useAutoTrade } from './hooks/useAutoTrade';
+import { useAccountAuth } from './hooks/useAccountAuth';
+import { useConnectionSync } from './hooks/useConnectionSync';
 import { useMyTrades } from './hooks/useMyTrades';
 import { useScanner } from './hooks/useScanner';
 import { fmtTime } from './lib/format';
@@ -38,6 +41,17 @@ export default function App() {
     null,
   );
   const [updateDismissed, setUpdateDismissed] = useState(false);
+  /** 🔐 로그인/회원가입 시트 — null 이면 닫힘 */
+  const [authSheet, setAuthSheet] = useState<AuthMode | null>(null);
+  const [authBannerClosed, setAuthBannerClosed] = useState(() => {
+    try {
+      return localStorage.getItem('cota.auth.banner.v1') === '0';
+    } catch {
+      return false;
+    }
+  });
+  /** 🔐 COTA 계정 — 저장된 세션 복원 · 로그인/가입 · 관리자 판별 */
+  const auth = useAccountAuth(exchange);
   // 상단 배너에서도 앱을 나가지 않고 APK 다운로드 → 설치 화면으로 이어진다.
   const apkUpdate = useApkUpdate();
   /** 메뉴 탭의 하위 화면 — 시그널 카드의 '계좌 연결' 버튼이 자동매매 화면을 바로 연다. */
@@ -81,6 +95,20 @@ export default function App() {
       settings.leverageMode === 'auto'
         ? recommendLeverage(signal, equity, contractBySymbol.get(signal.symbol)?.maxLever).leverage
         : settings.leverage,
+  });
+
+  /**
+   * 🔗 로그인한 유저의 거래소·API 연결 내역을 Supabase(`cota_connections`)에 실시간 동기화.
+   *    잔고는 자주 흔들리므로 2자리 반올림·1.2초 디바운스로 요청을 줄인다(useConnectionSync).
+   *    API Key/Secret/Passphrase 는 payload 화이트리스트 밖이라 전송되지 않는다.
+   */
+  useConnectionSync({
+    auth,
+    exchange,
+    mode: autoTrade.tradeMode.mode,
+    apiConnected: autoTrade.keys.hasKeys,
+    autotradeEnabled: autoTrade.config.enabled,
+    equity: autoTrade.accountBase.equity,
   });
 
   // 🔔 새 시그널 → 핸드폰 알림 (첫 스캔 결과는 기준선으로만 기록)
@@ -256,6 +284,22 @@ export default function App() {
           </nav>
 
           <div className="app-status">
+            <button
+              type="button"
+              className={`auth-chip ${auth.session ? 'on' : ''} ${auth.isAdmin ? 'admin' : ''}`}
+              data-auth-chip
+              data-auth-state={auth.session ? 'member' : 'guest'}
+              onClick={() => {
+                if (auth.session) goTab('menu');
+                else setAuthSheet('login');
+              }}
+              aria-label={auth.session ? `${auth.profile?.nickname ?? '내'} 계정 — 메뉴로` : '로그인 · 회원가입'}
+            >
+              <span className="auth-chip-avatar" aria-hidden>
+                {auth.session ? (auth.profile?.nickname ?? auth.session.user.email).slice(0, 1).toUpperCase() : '👤'}
+              </span>
+              <b>{auth.session ? auth.profile?.nickname ?? '내 계정' : '로그인'}</b>
+            </button>
             <span className={`live-dot ${state.status}`} />
             <span className="status-text">{statusText}</span>
             <button
@@ -271,6 +315,41 @@ export default function App() {
       </header>
 
       <main className="app-main">
+        {tab === 'scanner' && auth.ready && !auth.session && !authBannerClosed && (
+          <div className="account-banner" data-auth-banner>
+            <span className="account-banner-icon" aria-hidden>
+              🔐
+            </span>
+            <div className="account-banner-text">
+              <b>회원가입하고 내 기록을 저장하세요</b>
+              <span>기기를 바꿔도 거래소 연결 내역이 남아요</span>
+            </div>
+            <button
+              type="button"
+              className="account-banner-cta"
+              onClick={() => setAuthSheet('signup')}
+              data-auth-banner-cta
+            >
+              가입
+            </button>
+            <button
+              type="button"
+              className="account-banner-x"
+              aria-label="배너 닫기"
+              data-auth-banner-close
+              onClick={() => {
+                setAuthBannerClosed(true);
+                try {
+                  localStorage.setItem('cota.auth.banner.v1', '0');
+                } catch {
+                  /* 저장소를 쓸 수 없는 환경 */
+                }
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
         {update && !updateDismissed && (
           <div className="update-banner app-wide">
             <div className="update-banner-text">
@@ -355,6 +434,8 @@ export default function App() {
             onClearLog={clearSwapLog}
             autoTrade={autoTrade}
             signals={state.signals}
+            auth={auth}
+            onOpenAuth={setAuthSheet}
           />
         )}
         {tab === 'history' && (
@@ -386,6 +467,8 @@ export default function App() {
             onConnectAccount={openAutoTrade}
             autoTrade={autoTrade}
             onSaveRisk={saveSettingsRisk}
+            auth={auth}
+            onOpenAuth={setAuthSheet}
           />
         )}
       </main>
@@ -407,6 +490,8 @@ export default function App() {
       {exchangeSheet && (
         <ExchangeSheet current={exchange} onPick={chooseExchange} onClose={() => setExchangeSheet(false)} />
       )}
+
+      {authSheet && <AuthSheet mode={authSheet} auth={auth} onClose={() => setAuthSheet(null)} />}
     </div>
   );
 }

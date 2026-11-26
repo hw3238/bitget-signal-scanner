@@ -436,7 +436,7 @@ const run = async () => {
   );
   check('매매 성향 표시 대신 추천 레버리지 안내', settings.risk.levRec === 'COTA 유동 추천' && settings.risk.styleRows === 0, `${settings.risk.levRec} · 스타일 행 ${settings.risk.styleRows}`);
   check('🔔 핸드폰 알림 유지 · 코인 알림 3택', settings.heading === '🔔 핸드폰 알림' && settings.targets.join('|') === '비트·이더·솔|주요 코인|전체 종목' && settings.targetOn === '주요 코인', settings.targets.join(' / '));
-  check('ntfy 토픽 유지 · 앱 버전 v1.5.7', settings.ntfy === 'bgss-hw3238-9f4k2m' && /COTA · 앱 v1\.5\.7/.test(settings.version || ''), `${settings.ntfy} · ${settings.version}`);
+  check('ntfy 토픽 유지 · 앱 버전 v1.5.8', settings.ntfy === 'bgss-hw3238-9f4k2m' && /COTA · 앱 v1\.5\.8/.test(settings.version || ''), `${settings.ntfy} · ${settings.version}`);
   check('설정에 FX 랏·벤티지·트웰브 데이터 없음', !settings.lotSection);
   check(
     '실전 주문 리스크 = 숫자 칩 1/2/3/5/10/20/30/50% + 직접 입력 · 기본 1.5%',

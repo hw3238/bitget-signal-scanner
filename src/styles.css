@@ -7229,3 +7229,937 @@ textarea {
     width: 100%;
   }
 }
+
+/* =========================================================================
+   🔐 COTA 계정 (v1.5.8) — 로그인·회원가입 · 연결 동기화 · 관리자 대시보드
+   토스 스타일: 흰 카드 · 여백 · 토스 블루 한 가지 강조색
+   ========================================================================= */
+
+/* ---------- 상단 계정 칩 (데스크톱에서만 — 모바일은 하단 메뉴의 계정 카드) ---------- */
+.auth-chip {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #fff;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  max-width: 160px;
+}
+
+.auth-chip b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auth-chip.on {
+  border-color: #cfe3ff;
+  background: var(--blue-soft);
+  color: var(--blue-2);
+}
+
+.auth-chip.admin {
+  border-color: #d8d2ff;
+  background: #f1efff;
+  color: #5b46d9;
+}
+
+.auth-chip-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  background: #eef1f4;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.auth-chip.admin .auth-chip-avatar {
+  background: #e3ddff;
+}
+
+@media (min-width: 1024px) {
+  .auth-chip {
+    display: inline-flex;
+  }
+}
+
+/* ---------- 미로그인 안내 배너 ---------- */
+.account-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #d7e7ff;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #f5faff 0%, #fff 100%);
+}
+
+.account-banner-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  background: var(--blue-soft);
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  flex: 0 0 auto;
+}
+
+.account-banner-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+}
+
+.account-banner-text b {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-banner-text span {
+  font-size: 11px;
+  color: var(--sub);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-banner-cta {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+}
+
+.account-banner-x {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sub);
+  font-size: 11px;
+}
+
+/* ---------- 계정 카드 (메뉴 · 설정 공통) ---------- */
+.account-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.account-card.menu {
+  margin-bottom: 12px;
+}
+
+.account-card.settings {
+  margin-bottom: 12px;
+}
+
+.account-card.member {
+  border-color: #d9e8ff;
+  background: linear-gradient(180deg, #f7fbff 0%, #fff 70%);
+}
+
+.account-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.account-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: #eef1f4;
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--ink-2);
+  flex: 0 0 auto;
+}
+
+.account-avatar.admin {
+  background: #ece8ff;
+  color: #5b46d9;
+}
+
+.account-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.account-copy b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  color: var(--ink);
+  min-width: 0;
+}
+
+.account-copy span {
+  font-size: 11.5px;
+  color: var(--sub);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-role {
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #eef1f4;
+  color: var(--ink-2);
+  flex: 0 0 auto;
+}
+
+.account-role.admin {
+  background: #ece8ff;
+  color: #5b46d9;
+}
+
+.account-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.account-btn {
+  flex: 1 1 0;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
+
+.account-btn.primary {
+  border-color: transparent;
+  background: var(--blue);
+  color: #fff;
+}
+
+.account-btn.primary:active {
+  background: var(--blue-2);
+}
+
+.account-logout {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--sub);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.account-note {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--sub);
+  font-weight: 500;
+  word-break: keep-all;
+}
+
+.account-note b {
+  color: var(--blue-2);
+  font-weight: 700;
+}
+
+/* ---------- 로그인 · 회원가입 시트 ---------- */
+.auth-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(17, 24, 39, 0.38);
+  backdrop-filter: blur(2px);
+}
+
+.auth-sheet {
+  width: 100%;
+  max-width: 460px;
+  max-height: 92vh;
+  overflow-y: auto;
+  padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
+  border-radius: 26px 26px 0 0;
+  background: var(--card);
+  box-shadow: 0 -12px 44px rgba(17, 24, 39, 0.22);
+  animation: exchangeSheetUp 0.18s ease-out;
+}
+
+.auth-sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.auth-sheet-head b {
+  display: block;
+  margin-top: 2px;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -0.7px;
+  color: var(--ink);
+}
+
+.auth-eyebrow {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  color: var(--blue);
+  text-transform: uppercase;
+}
+
+.auth-close {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--line-soft);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 16px 0 14px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--line-soft);
+}
+
+.auth-tabs button {
+  height: 38px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--sub);
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
+
+.auth-tabs button.on {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.auth-field span {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.auth-field input {
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: #fbfcfd;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+
+.auth-field input:focus {
+  outline: none;
+  border-color: var(--blue);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(49, 130, 246, 0.12);
+}
+
+.auth-field input::placeholder {
+  color: #b0b8c1;
+  font-weight: 500;
+}
+
+.auth-error {
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: var(--up-soft);
+  color: #c92a3a;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  word-break: keep-all;
+}
+
+.auth-submit {
+  height: 50px;
+  margin-top: 4px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 15.5px;
+  font-weight: 900;
+  letter-spacing: -0.4px;
+}
+
+.auth-submit:disabled {
+  opacity: 0.6;
+}
+
+.auth-guest {
+  width: 100%;
+  height: 44px;
+  margin-top: 8px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.auth-note {
+  margin: 10px 0 0;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--sub);
+  font-weight: 500;
+  text-align: center;
+  word-break: keep-all;
+}
+
+.auth-note b {
+  color: var(--ink-2);
+}
+
+@media (min-width: 700px) {
+  .auth-backdrop {
+    align-items: center;
+  }
+
+  .auth-sheet {
+    border-radius: 26px;
+  }
+}
+
+/* ---------- 관리자 메뉴 행 ---------- */
+.menu-row.admin {
+  border-color: #ddd7ff;
+  background: linear-gradient(180deg, #f8f6ff 0%, #fff 100%);
+}
+
+.menu-row.admin .menu-emoji {
+  background: #ece8ff;
+}
+
+.menu-hot.admin {
+  background: #ece8ff;
+  color: #5b46d9;
+}
+
+/* ---------- 관리자 대시보드 ---------- */
+.admin-dash {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-locked {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.admin-locked b {
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: -0.4px;
+}
+
+.admin-locked p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--sub);
+  word-break: keep-all;
+}
+
+.admin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.admin-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.admin-head b {
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  color: var(--ink);
+}
+
+.admin-head span {
+  font-size: 11px;
+  color: var(--sub);
+  font-weight: 500;
+}
+
+.admin-refresh {
+  flex: 0 0 auto;
+  height: 34px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #fff;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.admin-refresh:disabled {
+  opacity: 0.55;
+}
+
+.admin-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.admin-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-stat > span {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sub);
+}
+
+.admin-stat > b {
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -1px;
+  color: var(--ink);
+  line-height: 1.15;
+}
+
+.admin-stat > b i {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sub);
+  margin-left: 2px;
+}
+
+.admin-stat > em {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--sub);
+}
+
+.admin-stat.wide {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-stat.wide > span {
+  font-size: 11.5px;
+}
+
+.admin-split {
+  display: flex;
+  gap: 18px;
+}
+
+.admin-split div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.admin-split b {
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: -0.6px;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.admin-split em {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--sub);
+}
+
+.admin-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: #fff;
+}
+
+.admin-search span {
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.admin-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.2px;
+}
+
+.admin-search input:focus {
+  outline: none;
+}
+
+.admin-search input::placeholder {
+  color: #aab2bd;
+  font-weight: 500;
+}
+
+.admin-search button {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--line-soft);
+  color: var(--sub);
+  font-size: 10px;
+}
+
+.admin-filters {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.admin-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.admin-filters button {
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+
+.admin-filters button.on {
+  border-color: transparent;
+  background: var(--blue);
+  color: #fff;
+}
+
+.admin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-user {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-user-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.admin-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: #eef1f4;
+  color: var(--ink-2);
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+
+.admin-avatar.admin {
+  background: #ece8ff;
+  color: #5b46d9;
+}
+
+.admin-user-id {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.admin-user-id b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  color: var(--ink);
+  min-width: 0;
+}
+
+.admin-user-id span {
+  font-size: 11px;
+  color: var(--sub);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-auto {
+  flex: 0 0 auto;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 7px;
+  border-radius: 7px;
+  background: var(--line-soft);
+  color: var(--sub);
+  letter-spacing: -0.1px;
+}
+
+.admin-auto.on {
+  background: var(--green-soft);
+  color: #0e8a52;
+}
+
+.admin-user-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.admin-chip {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: var(--line-soft);
+  color: var(--ink-2);
+}
+
+.admin-chip.bitget {
+  background: #e9fbfd;
+  color: #0b7f8c;
+}
+
+.admin-chip.binance {
+  background: var(--amber-soft);
+  color: #9a6600;
+}
+
+.admin-chip.connected {
+  background: var(--blue-soft);
+  color: var(--blue-2);
+}
+
+.admin-chip.equity {
+  background: #f4f1ff;
+  color: #5b46d9;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-user-foot {
+  display: flex;
+  gap: 12px;
+  font-size: 10.5px;
+  color: var(--sub);
+  font-weight: 500;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+}
+
+.admin-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 32px 18px;
+  border: 1px dashed var(--line);
+  border-radius: 18px;
+  background: #fff;
+  text-align: center;
+}
+
+.admin-empty b {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.3px;
+}
+
+.admin-empty p {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--sub);
+  line-height: 1.5;
+}
+
+.admin-empty .account-btn {
+  margin-top: 6px;
+  flex: 0 0 auto;
+  padding: 0 18px;
+}
+
+.admin-empty.error {
+  border-style: solid;
+  border-color: #ffd9dd;
+  background: #fffafb;
+}
+
+.admin-note {
+  margin: 4px 0 0;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--sub);
+  font-weight: 500;
+  word-break: keep-all;
+}
+
+@media (min-width: 700px) {
+  .admin-summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .admin-stat.wide {
+    grid-column: auto;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+
+  .admin-split {
+    margin-top: auto;
+  }
+
+  .admin-split div {
+    align-items: flex-start;
+  }
+}

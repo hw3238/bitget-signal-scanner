@@ -7,9 +7,46 @@
 | --- | --- |
 | 웹 (GitHub Pages) | <https://hw3238.github.io/bitget-signal-scanner/> |
 | APK 다운로드 | <https://github.com/hw3238/bitget-signal-scanner/releases/latest/download/bitget-crt-scanner.apk> |
-| 현재 버전 | **v1.5.7** (versionCode 13) |
+| 현재 버전 | **v1.5.8** (versionCode 13 · 웹 업데이트) |
 
 ## 주요 기능
+
+- **🔐 회원가입 · 로그인(Supabase) + 🛡️ 관리자 대시보드 (v1.5.8 웹 기능, APK 재설치 불필요)**
+  - **가입·로그인 입구**: ① 미로그인 상단 배너 `가입` ② 메뉴 탭·설정 탭의 **COTA 계정 카드**(회원가입·로그인) ③ 데스크톱 헤더 계정 칩.
+    **로그인 없이도 스캐너·자동매매·모든 도구를 그대로** 쓸 수 있습니다(게스트 둘러보기 — 로그인은 '있으면 좋은' 기능).
+  - **회원가입**: 이메일·비밀번호·닉네임 → Supabase Auth(Confirm email OFF, 가입 즉시 로그인) →
+    `cota_profiles` 에 `{ id, email, nickname, role:'user', preferred_exchange }` **INSERT**, `cota_connections` 에 초기 행 **UPSERT**.
+    로그인할 때마다 `last_seen_at`·선호 거래소만 갱신하며 **role 은 절대 건드리지 않습니다**(권한 승격 방지).
+  - **연결 내역 실시간 동기화**(`src/hooks/useConnectionSync.ts`): 거래소 선택·전환, 모의/실거래, API 키 연결·해제,
+    자동매매 ON/OFF, 계좌 잔고가 바뀔 때마다 `cota_connections` 를 upsert. 잔고는 소수 2자리·1.2초 디바운스로 요청을 줄이고,
+    **값이 실제로 바뀔 때만** 보냅니다.
+  - **보안 절대 원칙**: DB 로 나가는 필드는 `user_id · exchange · mode · api_connected · autotrade_enabled · account_equity · updated_at` **7개 화이트리스트**뿐입니다.
+    API Key / Secret / Passphrase 원문은 앱 → DB 어디로도 가지 않습니다(`src/lib/accountSync.ts` 의 `connectionPayload`).
+  - **관리자 전용 계정**: `cota_profiles.role = 'admin'` 인 계정에만 메뉴 탭에 **`🛡️ 관리자 대시보드`** 가 나타납니다(일반 유저에게는 DOM 자체가 없음).
+    대시보드는 ① 요약 카드(총 가입 유저·관리자 수, API 연결·실거래 수, 자동매매 ON 수, 거래소별 비트겟/바이낸스 분포)
+    ② 유저 목록(닉네임·이메일·권한·가입일·최근 접속·선택 거래소·`연결됨/미연결`·`모의/실거래`·자동매매 ON/OFF·잔고)
+    ③ 닉네임/이메일 검색 + 전체·API 연결·자동매매 ON·관리자 필터 ④ 새로고침을 제공합니다. 값은 Supabase 에서 **실시간**으로 읽습니다.
+  - **관리자 승격은 DB 에서만**: 앱 가입은 항상 `role:'user'` 이고 RLS 가 이를 강제합니다(일반 유저가 role=admin INSERT/PATCH 시도 → 403 확인).
+    운영자가 Supabase SQL Editor 에서 한 줄로 승격합니다.
+    ```sql
+    update public.cota_profiles set role = 'admin' where email = '내이메일@example.com';
+    ```
+  - **필수 DB 설정**(프로젝트 `cota-app` · `https://tqizfektekneuuoyxobp.supabase.co`, Publishable 키만 프론트에 사용):
+    RLS 정책 6개(`profiles_select/insert/update`, `connections_select/insert/update`)와 함께 **테이블 GRANT** 가 있어야 동작합니다.
+    ```sql
+    grant select on public.cota_profiles to authenticated;
+    grant insert (id, email, nickname, role, preferred_exchange, created_at, last_seen_at) on public.cota_profiles to authenticated;
+    grant update (email, nickname, preferred_exchange, last_seen_at) on public.cota_profiles to authenticated;  -- role 은 권한 밖(승격 불가)
+    grant select, insert on public.cota_connections to authenticated;
+    grant update on public.cota_connections to authenticated;  -- upsert(ON CONFLICT DO UPDATE)에 필요
+    revoke all on public.cota_profiles, public.cota_connections from anon;
+    ```
+  - 검증: `npm run check:auth` **59건**(입력 검증·오류 문구·payload 화이트리스트·동기화 판단·요약/검색/필터/날짜) ·
+    `npm run auth-e2e` **40건**(가짜 Supabase 로 가입→프로필 INSERT→연결 UPSERT→자동매매/거래소 전환 동기화→로그아웃→오류 문구→
+    관리자 메뉴·대시보드 요약/목록/검색/필터/새로고침→새로고침 후 세션 유지, 요청 본문에 키 원문 없음까지 검사).
+    실제 Supabase 로그인·관리자 조회도 별도로 확인했습니다(`docs/screens/126-live-admin-dashboard.png`).
+  - 스크린샷: `docs/screens/118-auth-banner-guest.png` · `119-auth-signup.png` · `120-account-menu.png` · `121-auth-login-error.png` ·
+    `122-admin-menu.png` · `123-admin-dashboard.png` · `124-admin-dashboard-full.png` · `125-admin-filter-search.png` · `126-live-admin-dashboard.png`.
 
 - **🏦 거래소 선택(바이낸스·비트겟) · 거래소별 독립 탐지 (v1.5.7 웹 기능, APK 재설치 불필요)**
   - **첫 화면 = 거래소 선택**: 아직 고르지 않았으면(첫 방문) 스캐너 대신 **Binance (바이낸스)** / **Bitget (비트겟)** 카드를 보여 줍니다.
@@ -285,6 +322,8 @@ npm run check:exchange              # 거래소 선택·바이낸스 어댑터 �
 npm run check:exchange-e2e          # 거래소 선택·전환 E2E — 첫 방문 → Binance 스캔 → Bitget 전환 → 급등/자동매매 거래소 일치 (스크린샷 105~113)
 npm run check:surge                 # 급등 탐색기 6요건 경계·점수·플랜·유니버스·필터 + 실제 API 교차검증(79건)
 npm run check:surge-e2e             # 급등 탐색기 E2E — 진행률·카드 정합성·티커/캔들 교차검증·필터·복사 (스크린샷 82~86)
+npm run check:auth                  # 계정·관리자 단위 — 입력 검증·오류 문구·연결 payload 화이트리스트(키 원문 금지)·요약/검색/필터 (59건)
+npm run auth-e2e                    # 회원가입·로그인·연결 동기화·관리자 대시보드 E2E — 가짜 Supabase 로 요청 본문까지 검사 (스크린샷 118~125)
 node scripts/features-check.mjs     # 메뉴 8도구·김프·생존·사이징·수수료·도플갱어·키맞추기·시황 카드 E2E (스크린샷 25~36)
 node scripts/toss-ui-check.mjs      # 5탭·코인 집중·한글화·가격·온보딩·COTA 추천·실전 주문 콕핏·공유카드 (스크린샷 45)
 node scripts/coin-logo-check.mjs    # 코인 로고·글자 아바타 폴백·비트겟 바로가기 URL (스크린샷 23)
