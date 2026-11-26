@@ -170,7 +170,7 @@ export function MenuTab({
         {view === 'surge' && (
           <SurgeExplorer exchange={exchange} state={state} account={account} autoTrade={autoTrade} />
         )}
-        {view === 'kimchi' && <KimchiRadar state={state} />}
+        {view === 'kimchi' && <KimchiRadar state={state} exchange={exchange} />}
         {view === 'lag' && <KeyMatchRadar exchange={exchange} state={state} />}
         {view === 'doppel' && <Doppelganger exchange={exchange} state={state} />}
         {view === 'survival' && <PositionSurvival state={state} account={account} />}

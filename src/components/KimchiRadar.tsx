@@ -9,6 +9,8 @@ import {
 } from '../api/publicMarket';
 import { bestTransferRoutes, buildKimchiRows, usdtPremium, type KimchiRow } from '../lib/calc';
 import { fmtPct, fmtTime } from '../lib/format';
+import { binanceTradeUrl } from '../lib/coinLogo';
+import { EXCHANGES, type Exchange } from '../lib/exchange';
 import { ArrowUpRightIcon, RefreshIcon } from './Icons';
 
 /** 국내 거래소에서 원화로 거래되는 주요 코인 (업비트 KRW 마켓 기준) */
@@ -40,7 +42,7 @@ const KIMCHI_COINS = [
 
 const krw = (v: number) => (Number.isFinite(v) ? `₩${Math.round(v).toLocaleString('en-US')}` : '-');
 
-export function KimchiRadar({ state }: { state: ScanState }) {
+export function KimchiRadar({ state, exchange }: { state: ScanState; exchange: Exchange }) {
   const [fx, setFx] = useState<FxRate | null>(null);
   const [domestic, setDomestic] = useState<Map<string, KrwQuote>>(new Map());
   const [source, setSource] = useState<'업비트' | '빗썸' | '-'>('-');
@@ -81,7 +83,7 @@ export function KimchiRadar({ state }: { state: ScanState }) {
     return () => clearInterval(timer);
   }, [load]);
 
-  /** 비트겟 가격 — 스캐너 티커에서 바로 쓴다 */
+  /** 해외 가격 — 스캐너 티커(현재 거래소)에서 바로 쓴다 */
   const bitgetPrice = useMemo(() => {
     const map = new Map<string, number>();
     for (const t of state.tickers) {
@@ -169,7 +171,9 @@ export function KimchiRadar({ state }: { state: ScanState }) {
       <section className="panel">
         <header className="panel-head">
           <h3>김프 전체 표</h3>
-          <span className="panel-note">{source} ↔ 비트겟</span>
+          <span className="panel-note">
+            {source} ↔ {EXCHANGES[exchange].koName}
+          </span>
         </header>
         <div className="kimchi-table">
           <div className="kimchi-head">
@@ -191,13 +195,18 @@ export function KimchiRadar({ state }: { state: ScanState }) {
       </section>
 
       <div className="feed-note">
-        빗썸(또는 업비트) 원화 시세 + 비트겟 USDT-M 실시간 가격 + open.er-api 환율로 계산합니다. 출금 수수료는 코인별
-        대표 네트워크 기준 예상치입니다.
+        빗썸(또는 업비트) 원화 시세 + {EXCHANGES[exchange].marketLine} 실시간 가격 + open.er-api 환율로 계산합니다.
+        출금 수수료는 코인별 대표 네트워크 기준 예상치입니다.
         <button className="link-btn" onClick={() => void load()}>
           다시 계산
         </button>
-        <a className="link-btn" href="https://www.bitget.com/futures/usdt/BTCUSDT" target="_blank" rel="noreferrer">
-          비트겟 열기 <ArrowUpRightIcon size={11} />
+        <a
+          className="link-btn"
+          href={exchange === 'bitget' ? 'https://www.bitget.com/futures/usdt/BTCUSDT' : binanceTradeUrl('BTCUSDT')}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {EXCHANGES[exchange].koName} 열기 <ArrowUpRightIcon size={11} />
         </a>
       </div>
     </div>

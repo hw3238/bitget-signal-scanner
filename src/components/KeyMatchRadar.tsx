@@ -5,9 +5,9 @@ import { fetchBigCandles, mapLimit } from '../api/publicMarket';
 import { analyzeLag, lagCandidates, type LagRow } from '../lib/calc';
 import { fmtPct, fmtPrice, fmtTime } from '../lib/format';
 import { ArrowUpRightIcon, RefreshIcon } from './Icons';
-import { bitgetFuturesUrl } from '../lib/coinLogo';
-import { openBitgetFutures } from '../lib/native';
-import type { Exchange } from '../lib/exchange';
+import { bitgetFuturesUrl, binanceTradeUrl } from '../lib/coinLogo';
+import { openBitgetFutures, openExternalUrl } from '../lib/native';
+import { EXCHANGES, type Exchange } from '../lib/exchange';
 
 const TOP_N = 30;
 const CANDLE_COUNT = 60;
@@ -28,7 +28,7 @@ export function KeyMatchRadar({ exchange, state }: { exchange: Exchange; state: 
     setBtcCloses([]);
   }, [exchange]);
 
-  /** 비트겟 24h 거래대금 상위 코인 + BTC */
+  /** 현재 거래소 24h 거래대금 상위 코인 + BTC */
   const universe = useMemo(() => {
     const crypto = state.contracts.filter((c) => c.asset === 'crypto');
     const bases = new Map(crypto.map((c) => [c.symbol, c.base]));
@@ -123,8 +123,12 @@ export function KeyMatchRadar({ exchange, state }: { exchange: Exchange; state: 
             <div className="lag-price">{fmtPrice(r.last)}</div>
             <button
               className="lag-link"
-              aria-label={`${r.base} 비트겟 열기`}
-              onClick={() => void openBitgetFutures(r.symbol, bitgetFuturesUrl(r.symbol))}
+              aria-label={`${r.base} ${EXCHANGES[exchange].koName} 열기`}
+              onClick={() =>
+                void (exchange === 'bitget'
+                  ? openBitgetFutures(r.symbol, bitgetFuturesUrl(r.symbol))
+                  : openExternalUrl(binanceTradeUrl(r.symbol)))
+              }
             >
               <ArrowUpRightIcon size={14} />
             </button>
@@ -198,7 +202,7 @@ export function KeyMatchRadar({ exchange, state }: { exchange: Exchange; state: 
       </section>
 
       <div className="feed-note">
-        비트겟 USDT-M 24h 거래대금 상위 {TOP_N}종목 + BTC의 1시간봉 {CANDLE_COUNT}개를 직접 불러와 계산합니다.
+        {EXCHANGES[exchange].marketLine} 24h 거래대금 상위 {TOP_N}종목 + BTC의 1시간봉 {CANDLE_COUNT}개를 직접 불러와 계산합니다.
         괴리는 “BTC가 움직인 만큼 알트가 아직 따라오지 않은 정도”이며, 늦게 따라오는 성질이 항상 보장되지는
         않습니다.
       </div>
