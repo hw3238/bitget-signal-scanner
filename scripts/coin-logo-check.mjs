@@ -130,7 +130,22 @@ const run = async () => {
   page.on('pageerror', (e) => pageErrors.push(String(e)));
 
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 180000 });
+  await page.waitForFunction(
+    () => {
+      const b = document.querySelector('.rescan');
+      return !!b && !b.classList.contains('busy');
+    },
+    { timeout: 180000 },
+  );
+  // 진행중 시그널이 0건인 시간대에도 카드 검증이 되도록 '종료 포함'으로 넓힌다(스캐너 회귀 아님).
+  if ((await page.locator('.signal-card:not(.skeleton)').count()) === 0) {
+    const toggle = page.locator('.ghost-toggle').first();
+    if (((await toggle.textContent()) ?? '').includes('진행중만')) {
+      await toggle.click();
+      await page.waitForTimeout(800);
+    }
+  }
+  await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 60000 });
   await page.waitForFunction(
     () => {
       const b = document.querySelector('.rescan');

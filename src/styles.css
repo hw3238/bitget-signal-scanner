@@ -8257,3 +8257,690 @@ textarea {
     align-items: flex-start;
   }
 }
+
+/* =========================================================================
+   🏆 Propr 5K 터보 전용 시그널 (프랍 테스트 계좌) — 계좌 트래커 · 주문 가이드
+   ========================================================================= */
+
+.menu-badge-count {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: var(--blue-2);
+  background: var(--blue-soft);
+  border-radius: 6px;
+  padding: 2px 5px;
+  margin-left: 3px;
+  white-space: nowrap;
+}
+
+.propr-rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.propr-rules span {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+  background: var(--card-2);
+  border-radius: 8px;
+  padding: 4px 7px;
+  white-space: nowrap;
+}
+
+.propr-rules b {
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.propr-universe {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.propr-universe-note {
+  font-size: 10px;
+  color: var(--sub);
+  line-height: 1.4;
+  flex: 1 1 180px;
+}
+
+/* ---------- 5K 터보 계좌 트래커 ---------- */
+.propr-account {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.propr-account.passed {
+  border-color: rgba(18, 183, 106, 0.35);
+  background: linear-gradient(180deg, #f4fbf7 0%, #ffffff 60%);
+}
+
+.propr-account.breached {
+  border-color: rgba(240, 68, 82, 0.35);
+}
+
+.propr-account-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.propr-account-head > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.propr-account-head b {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+}
+
+.propr-account-head span {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--sub);
+}
+
+.propr-balance {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--card-2);
+  border-radius: 12px;
+  padding: 4px 6px 4px 9px;
+  flex: 0 0 auto;
+}
+
+.propr-balance span {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--sub);
+}
+
+.propr-balance input {
+  width: 76px;
+  border: 0;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  outline: none;
+  padding: 2px 0;
+}
+
+.propr-reset {
+  border: 0;
+  background: #fff;
+  color: var(--sub);
+  font-size: 9.5px;
+  font-weight: 800;
+  border-radius: 8px;
+  padding: 4px 6px;
+  box-shadow: var(--shadow-sm);
+}
+
+.propr-goal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.propr-goal-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+.propr-goal-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--blue) 0%, #00b8d9 100%);
+  transition: width 0.3s ease;
+}
+
+.propr-goal-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--sub);
+}
+
+.propr-goal-label b {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.propr-goal-label em {
+  font-style: normal;
+  color: var(--up);
+}
+
+.propr-goal-pct {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--blue-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.propr-cells {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.propr-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 9px 9px 8px;
+  border-radius: 13px;
+  background: var(--card-2);
+  min-width: 0;
+}
+
+.propr-cell span {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--sub);
+  letter-spacing: -0.2px;
+}
+
+.propr-cell b {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.propr-cell em {
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.propr-cell em.down {
+  color: var(--up);
+  font-weight: 700;
+}
+
+.propr-daystart {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 10px;
+  color: var(--sub);
+  font-weight: 700;
+}
+
+.propr-daystart input {
+  width: 70px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--ink);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  background: #fff;
+}
+
+.propr-daystart em {
+  font-style: normal;
+  flex: 1 1 100%;
+  font-size: 9.5px;
+  color: var(--sub);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.propr-risk {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.propr-risk-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--sub);
+}
+
+.segmented.propr-risk-chips {
+  width: 100%;
+}
+
+.segmented.propr-risk-chips button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.segmented.propr-risk-chips button i {
+  font-style: normal;
+  font-weight: 800;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.segmented.propr-risk-chips button.on i {
+  color: var(--blue-2);
+}
+
+.segmented.propr-risk-chips button em {
+  font-style: normal;
+  font-size: 8.5px;
+  font-weight: 800;
+  color: #fff;
+  background: var(--blue);
+  border-radius: 4px;
+  padding: 1px 3px;
+}
+
+/* ---------- 필터 ---------- */
+.segmented.propr-filters {
+  width: 100%;
+}
+
+.segmented.propr-filters button {
+  flex: 1;
+  font-size: 10.5px;
+  white-space: nowrap;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.segmented.propr-filters button i {
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 800;
+  color: var(--sub);
+  margin-left: 2px;
+}
+
+.segmented.propr-filters button.on i {
+  color: var(--blue-2);
+}
+
+.propr-subfilters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.propr-count {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--sub);
+}
+
+.propr-count b {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+/* ---------- 시그널 카드 ---------- */
+.propr-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.propr-card.top {
+  border-color: rgba(49, 130, 246, 0.18);
+}
+
+/* 차트는 카드 폭이 넓어도 캔들 비율이 흐트러지지 않게 최대 폭을 둔다(데스크톱). */
+.propr-card .mini-chart {
+  max-width: 560px;
+}
+
+.propr-card.closed {
+  opacity: 0.78;
+}
+
+.propr-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.propr-rank {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: var(--card-2);
+  color: var(--sub);
+  font-size: 10px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 3px;
+}
+
+.propr-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.propr-name b {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  min-width: 0;
+}
+
+.propr-sym {
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--sub);
+  background: var(--card-2);
+  border-radius: 6px;
+  padding: 1px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.propr-side {
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 800;
+  border-radius: 6px;
+  padding: 1px 5px;
+}
+
+.propr-side.long {
+  color: var(--long);
+  background: var(--long-soft);
+}
+
+.propr-side.short {
+  color: var(--short);
+  background: var(--short-soft);
+}
+
+.propr-name span {
+  font-size: 10px;
+  color: var(--sub);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.propr-name span i.up {
+  font-style: normal;
+  color: var(--up);
+  font-weight: 800;
+}
+
+.propr-name span i.down {
+  font-style: normal;
+  color: var(--down);
+  font-weight: 800;
+}
+
+.propr-badge {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  text-align: right;
+}
+
+.propr-badge b {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--blue-2);
+  background: var(--blue-soft);
+  border-radius: 7px;
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+
+.propr-badge span {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.propr-plan {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.propr-plan-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 8px 7px;
+  border-radius: 12px;
+  background: var(--card-2);
+  min-width: 0;
+}
+
+.propr-plan-cell span {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--sub);
+  white-space: nowrap;
+}
+
+.propr-plan-cell b {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.propr-plan-cell em {
+  font-style: normal;
+  font-size: 9px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.propr-plan-cell.up b {
+  color: var(--up);
+}
+
+.propr-plan-cell.down b {
+  color: var(--down);
+}
+
+/* ---------- 주문 가이드 ---------- */
+.propr-guide {
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fcfdff;
+}
+
+.propr-guide-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.propr-guide-head b {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.propr-guide-head span {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--sub);
+}
+
+.propr-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.propr-guide-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 9px;
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+
+.propr-guide-cell span {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--sub);
+}
+
+.propr-guide-cell b {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.propr-guide-cell em {
+  font-style: normal;
+  font-size: 9px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.propr-guide-cell.up b {
+  color: var(--up);
+}
+
+.propr-guide-cell.down b {
+  color: var(--down);
+}
+
+.propr-warn {
+  font-size: 10px;
+  font-weight: 700;
+  color: #7a5000;
+  background: var(--amber-soft);
+  border-radius: 9px;
+  padding: 6px 8px;
+  line-height: 1.45;
+}
+
+.propr-warn.muted {
+  color: var(--sub);
+  background: var(--card-2);
+  font-weight: 600;
+}
+
+.propr-detail {
+  font-size: 9.5px;
+  color: var(--sub);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+.propr-detail b {
+  color: var(--ink-2);
+  font-weight: 800;
+}
+
+.propr-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 380px) {
+  .propr-plan {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .propr-cells {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 700px) {
+  .propr-guide-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .propr-plan {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

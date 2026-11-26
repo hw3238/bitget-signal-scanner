@@ -251,7 +251,7 @@ const run = async () => {
     groups: [...document.querySelectorAll('.menu-group-title')].map((g) => g.textContent?.trim()),
     overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
   }));
-  check('메뉴 허브: 8개 도구(급등 탐색기 포함)', hub.rows.length === 8 && hub.rows.includes('surge'), hub.rows.join(', '));
+  check('메뉴 허브: 9개 도구(급등 탐색기·Propr 포함)', hub.rows.length === 9 && hub.rows.includes('surge') && hub.rows.includes('propr'), hub.rows.join(', '));
   check('메뉴 허브: 3개 그룹', hub.groups.length === 3 && hub.groups.join('|') === '실전 레이더|리스크 관리|분석', hub.groups.join(' / '));
   check('메뉴 허브 390px 오버플로 0건', !hub.overflow, hub.title);
   await top('25-menu-hub');
@@ -674,8 +674,8 @@ const run = async () => {
   }));
   await dpage.screenshot({ path: `${OUT}/36-menu-desktop.png` });
   check(
-    '데스크톱: 메뉴 허브 9도구(자동매매 포함) · 오버플로 0건',
-    desk.rows === 8 && desk.auto === 1 && desk.autoBadge === '꺼짐' && !desk.overflow && desk.bottomHidden,
+    '데스크톱: 메뉴 허브 10도구(자동매매 포함) · 오버플로 0건',
+    desk.rows === 9 && desk.auto === 1 && desk.autoBadge === '꺼짐' && !desk.overflow && desk.bottomHidden,
     JSON.stringify(desk),
   );
   await desktop.close();

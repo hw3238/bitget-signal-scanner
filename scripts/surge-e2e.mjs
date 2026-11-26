@@ -1,7 +1,7 @@
 /**
  * 🚀 급등 탐색기 E2E 검증 (실행: npm run build && npm run check:surge-e2e)
  *
- *  1) 메뉴 허브에 `🚀 급등 탐색기` 카드(도구 9개) · 390px 오버플로 0건
+ *  1) 메뉴 허브에 `🚀 급등 탐색기` 카드(도구 10개) · 390px 오버플로 0건
  *  2) 진입 → 진행률 표시 → 1H/4H 실시간 탐색 → 카드 렌더
  *  3) 카드 내용 = 실데이터: 진입가 = 비트겟 티커 현재가, 24h 등락 = 티커,
  *     6요건 배지 = Pass 개수, 점수 0~100, 목표/손절/손익비 수식 일치
@@ -145,9 +145,9 @@ const run = async () => {
     heroNote: document.querySelector('.menu-hero p')?.textContent?.trim(),
     overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
   }));
-  check('메뉴 허브: 도구 8개 + 자동매매 = 9개', hub.rows.length === 8, hub.rows.join(','));
+  check('메뉴 허브: 도구 9개 + 자동매매 = 10개', hub.rows.length === 9, hub.rows.join(','));
   check('메뉴 허브: 🚀 급등 탐색기 카드', hub.surgeEmoji === '🚀' && /급등 탐색기/.test(hub.surgeTitle ?? ''), `${hub.surgeEmoji} ${hub.surgeTitle}`);
-  check('메뉴 허브: 설명·도구 수 9', /6가지 급등 요건/.test(hub.surgeDesc ?? '') && hub.hero === '9' && /9가지 도구/.test(hub.heroNote ?? ''), `${hub.hero} · ${hub.heroNote}`);
+  check('메뉴 허브: 설명·도구 수 10', /6가지 급등 요건/.test(hub.surgeDesc ?? '') && hub.hero === '10' && /10가지 도구/.test(hub.heroNote ?? ''), `${hub.hero} · ${hub.heroNote}`);
   check('메뉴 허브 390px 오버플로 0건', !hub.overflow);
   await shot('82-menu-hub-surge');
 

@@ -233,7 +233,6 @@ async function browserChecks() {
     page.on('pageerror', (e) => pageErrors.push(String(e)));
 
     await page.goto(URL, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 150000 });
     await page.waitForFunction(
       () => {
         const btn = document.querySelector('.rescan');
@@ -241,6 +240,15 @@ async function browserChecks() {
       },
       { timeout: 150000 },
     );
+    // 진행중 시그널이 0건인 시간대에도 알림 설정 화면 검증이 가능하도록 '종료 포함'으로 넓힌다.
+    if ((await page.locator('.signal-card:not(.skeleton)').count()) === 0) {
+      const toggle = page.locator('.ghost-toggle').first();
+      if (((await toggle.textContent()) ?? '').includes('진행중만')) {
+        await toggle.click();
+        await page.waitForTimeout(800);
+      }
+    }
+    await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 60000 });
     await page.waitForTimeout(1500);
 
     const baseline = await page.evaluate(() => ({

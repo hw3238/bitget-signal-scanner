@@ -8,6 +8,9 @@ import { AccountCard } from './AccountCard';
 import { AdminDashboard } from './AdminDashboard';
 import type { AccountAuthApi } from '../hooks/useAccountAuth';
 import { SurgeExplorer } from './SurgeExplorer';
+import { ProprTab } from './ProprTab';
+import type { ProprState } from '../hooks/usePropr';
+import type { TF } from '../engine/types';
 import { statusBadge } from '../lib/autotrade';
 import { EXCHANGES, type Exchange } from '../lib/exchange';
 import { EngineTab } from './EngineTab';
@@ -20,6 +23,7 @@ import { FeeCalc } from './FeeCalc';
 
 export type MenuView =
   | 'auto'
+  | 'propr'
   | 'surge'
   | 'kimchi'
   | 'lag'
@@ -44,6 +48,14 @@ const GROUPS: Array<{ title: string; items: MenuItem[] }> = [
   {
     title: '실전 레이더',
     items: [
+      {
+        key: 'propr',
+        emoji: '🏆',
+        title: 'Propr 5K 터보 시그널',
+        desc: '프랍 테스트 계좌용 시그널 — 5K 터보 규정(목표 9%·일일 3%)에 맞춘 레버리지·포지션·손익 가이드',
+        tag: '프랍 · 5K',
+        hot: true,
+      },
       {
         key: 'surge',
         emoji: '🚀',
@@ -137,10 +149,17 @@ interface Props {
   signals: Signal[];
   /** 🔐 계정 — 로그인 카드·관리자 메뉴 */
   auth: AccountAuthApi;
+  /** 🏆 Propr 5K 터보 전용 탐지 — 메인 스캐너·자동매매와 완전히 분리된 상태 */
+  propr: {
+    state: ProprState;
+    scan: (opts?: { force?: boolean; all?: boolean; tf?: TF }) => void;
+    setTf: (tf: TF) => void;
+  };
 }
 
 const TITLES: Record<MenuView, string> = {
   auto: '비트겟 자동매매',
+  propr: 'Propr 5K 터보 시그널',
   surge: '급등 탐색기',
   kimchi: '김프 & 송금 레이더',
   lag: '키맞추기 레이더',
@@ -166,7 +185,14 @@ export function MenuTab({
   autoTrade,
   signals,
   auth,
+  propr,
 }: Props) {
+  /** 메뉴 배지 — 이번 세션 탐지가 있으면 그 값, 없으면 지난 탐 요약(재진입 직후) */
+  const proprOpen = propr.state.hits.length
+    ? propr.state.hits.filter((h) => h.signal.state === 'open').length
+    : (propr.state.lastRun?.openCount ?? 0);
+  /** 아직 한 번도 탐지하지 않았으면 배지를 달지 않는다(0건을 실적으로 오해하지 않게) */
+  const proprBadge = propr.state.at || propr.state.lastRun || proprOpen > 0 ? `${proprOpen}건 진행` : '';
 
   if (view) {
     return (
@@ -185,6 +211,7 @@ export function MenuTab({
             onSwitchExchange={onExchangeChange}
           />
         )}
+        {view === 'propr' && <ProprTab state={propr.state} scan={propr.scan} setTf={propr.setTf} />}
         {view === 'surge' && (
           <SurgeExplorer exchange={exchange} state={state} account={account} autoTrade={autoTrade} />
         )}
@@ -209,10 +236,10 @@ export function MenuTab({
           <div>
             <div className="menu-hero-eyebrow">COTA 트레이더 올인원</div>
             <h2>시장 · 리스크 · 분석</h2>
-            <p>코인 트레이더가 매일 쓰는 9가지 도구를 한 곳에 모았습니다.</p>
+            <p>코인 트레이더가 매일 쓰는 10가지 도구를 한 곳에 모았습니다.</p>
           </div>
           <div className="menu-hero-count">
-            <b>9</b>
+            <b>10</b>
             <span>tools</span>
           </div>
         </div>
@@ -274,6 +301,11 @@ export function MenuTab({
                   <b>
                     {item.title}
                     {item.hot && <i className="menu-hot">NEW</i>}
+                    {item.key === 'propr' && proprBadge && (
+                      <span className="menu-badge-count" data-propr-menu-badge>
+                        {proprBadge}
+                      </span>
+                    )}
                   </b>
                   <span>{item.desc}</span>
                 </span>

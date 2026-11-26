@@ -18,6 +18,7 @@ import { useAccountAuth } from './hooks/useAccountAuth';
 import { useConnectionSync } from './hooks/useConnectionSync';
 import { useMyTrades } from './hooks/useMyTrades';
 import { useScanner } from './hooks/useScanner';
+import { usePropr } from './hooks/usePropr';
 import { fmtTime } from './lib/format';
 import { isNativeApp, openExternalUrl } from './lib/native';
 import { useApkUpdate } from './lib/useApkUpdate';
@@ -72,6 +73,16 @@ export default function App() {
     exchange,
     enabled: authed,
   });
+
+  /**
+   * 🏆 Propr 5K 터보 전용 탐지 — 메인 거래소 스캐너·자동매매와 **상태·캐시가 완전히 분리**된다.
+   *  · 로그인 직후 바로 돌리지 않고, 사용자가 메뉴에서 Propr 화면을 처음 열 때 시작한다
+   *    (Hyperliquid 캔들 API 는 분당 weight 한도가 빡빡해 필요할 때만 쓴다).
+   *  · 한 번 열면 탭을 오가도 상태가 남아 메뉴 배지에 진행중 건수가 바로 뜬다.
+   */
+  const [proprSeen, setProprSeen] = useState(false);
+  const propr = usePropr({ enabled: authed && proprSeen });
+
 
   /**
    * 전략엔진·기록처럼 시그널별 계산이 아닌 화면에 쓰는 **대표 배율**.
@@ -234,6 +245,12 @@ export default function App() {
   const goTab = useCallback((next: TabKey) => {
     if (next === 'menu') setMenuView(null);
     setTab(next);
+  }, []);
+
+  /** 메뉴 하위 화면 전환 — Propr 화면을 처음 열면 그때 프랍 탐지를 시작한다. */
+  const openMenuView = useCallback((next: MenuView | null) => {
+    if (next === 'propr') setProprSeen(true);
+    setMenuView(next);
   }, []);
 
   /**
@@ -414,7 +431,7 @@ export default function App() {
             state={state}
             account={autoTrade.accountBase}
             view={menuView}
-            onViewChange={setMenuView}
+            onViewChange={openMenuView}
             leverage={repLeverage}
             swapLog={swapLog}
             onRescan={() => void scan(true)}
@@ -422,6 +439,7 @@ export default function App() {
             autoTrade={autoTrade}
             signals={state.signals}
             auth={auth}
+            propr={propr}
           />
         )}
         {tab === 'history' && (

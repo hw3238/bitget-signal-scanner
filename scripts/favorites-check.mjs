@@ -51,7 +51,8 @@ const check = (name, pass, detail = '') => {
 };
 
 async function waitReady(page) {
-  await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 180000 });
+  // 스캔이 끝난 뒤 카드가 0장이면 '종료 포함'으로 넓혀서 기다린다 — 진행중 시그널이 없는 시간대에도
+  // 카드 상호작용(즐겨찾기)을 검증할 수 있게 한다(스캐너 자체 회귀 아님).
   await page.waitForFunction(
     () => {
       const btn = document.querySelector('.rescan');
@@ -59,6 +60,13 @@ async function waitReady(page) {
     },
     { timeout: 180000 },
   );
+  if ((await page.locator('.signal-card:not(.skeleton)').count()) === 0) {
+    const toggle = page.locator('.ghost-toggle').first();
+    if (((await toggle.textContent()) ?? '').includes('진행중만')) {
+      await toggle.click();
+    }
+  }
+  await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 60000 });
   await page.waitForTimeout(600);
 }
 
