@@ -74,6 +74,7 @@ export default function App() {
     // 자동매매·원클릭 주문은 **비트겟 계좌 전용** — 바이낸스 모드에서는 시그널을 감시 대상에서 뺀다.
     // (바이낸스 시그널로 비트겟 주문이 나가는 사고를 원천 차단)
     signals: exchange === 'bitget' ? state.signals : [],
+    paused: exchange !== 'bitget',
     contracts: state.contracts,
     // 잔고(equity)와 종목 최대 배율을 함께 넘겨 잔고 구간별 유동 레버리지를 쓴다(v1.5.6)
     leverageFor: (signal, equity) =>

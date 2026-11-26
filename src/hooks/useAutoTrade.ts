@@ -130,6 +130,12 @@ interface UseAutoTradeInput {
    * v1.5.6 — 연결된 계좌의 **실시간 잔고(equity)** 를 함께 받아 잔고 구간별로 유동 계산한다.
    */
   leverageFor: (signal: Signal, equity: number | null) => number;
+  /**
+   * 주문 정지 — 거래소가 비트겟이 아닐 때(바이낸스 모드) true.
+   * 화면에 남아 있던 이전 감시 목록까지 네이티브에서 비워, 다른 거래소 시그널로
+   * 비트겟 계좌 주문이 나가는 일을 원천 차단한다.
+   */
+  paused?: boolean;
 }
 
 export interface QuickOrderResult {
@@ -138,7 +144,7 @@ export interface QuickOrderResult {
   simulated: boolean;
 }
 
-export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeInput) {
+export function useAutoTrade({ signals, contracts, leverageFor, paused = false }: UseAutoTradeInput) {
   const [config, setConfig] = useState<AutoTradeConfig>(readConfig);
   const [runtime, setRuntime] = useState<AutoRuntime>(readRuntime);
   const [keys, setKeysState] = useState<BitgetKeyState & { supported: boolean }>({
@@ -953,6 +959,12 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
       lastConfigSigRef.current = '';
       return;
     }
+    if (paused) {
+      // 바이낸스 모드 — 비트겟 계좌 주문이 나가지 않도록 감시 목록을 비워 네이티브에 넘긴다.
+      armedRef.current = [];
+      void autoTradeSync({ ...config, mode: tradeMode.mode }, [], exitSignals).then(applyNative);
+      return;
+    }
     const now = Date.now();
     const sig = JSON.stringify(config);
     const configChanged = sig !== lastConfigSigRef.current;
@@ -993,7 +1005,7 @@ export function useAutoTrade({ signals, contracts, leverageFor }: UseAutoTradeIn
     armedRef.current = mergeArmedPlans(alive, plans);
     void autoTradeSync({ ...config, mode: tradeMode.mode }, armedRef.current, exitSignals).then(applyNative);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signals, config, config.enabled, config.autoEntry, supported]);
+  }, [signals, config, config.enabled, config.autoEntry, supported, paused]);
 
   /** 하루 손실 한도에 닿으면 자동으로 잠근다. */
   useEffect(() => {
