@@ -19,7 +19,7 @@
     로그인할 때마다 `last_seen_at`·선호 거래소만 갱신하며 **role 은 절대 건드리지 않습니다**(권한 승격 방지).
   - **연결 내역 실시간 동기화**(`src/hooks/useConnectionSync.ts`): 거래소 선택·전환, 모의/실거래, API 키 연결·해제,
     자동매매 ON/OFF, 계좌 잔고가 바뀔 때마다 `cota_connections` 를 upsert. 잔고는 소수 2자리·1.2초 디바운스로 요청을 줄이고,
-    **값이 실제로 바뀔 때만** 보냅니다.
+    **값이 실제로 바뀔 때만** 보냅니다. 가입 직후에는 세션이 먼저 서서 프로필 FK 때문에 첫 저장이 거절될 수 있어 **1.5·3·4.5초 3회 재시도**합니다.
   - **보안 절대 원칙**: DB 로 나가는 필드는 `user_id · exchange · mode · api_connected · autotrade_enabled · account_equity · updated_at` **7개 화이트리스트**뿐입니다.
     API Key / Secret / Passphrase 원문은 앱 → DB 어디로도 가지 않습니다(`src/lib/accountSync.ts` 의 `connectionPayload`).
   - **관리자 전용 계정**: `cota_profiles.role = 'admin'` 인 계정에만 메뉴 탭에 **`🛡️ 관리자 대시보드`** 가 나타납니다(일반 유저에게는 DOM 자체가 없음).
@@ -42,11 +42,11 @@
     revoke all on public.cota_profiles, public.cota_connections from anon;
     ```
   - 검증: `npm run check:auth` **59건**(입력 검증·오류 문구·payload 화이트리스트·동기화 판단·요약/검색/필터/날짜) ·
-    `npm run auth-e2e` **40건**(가짜 Supabase 로 가입→프로필 INSERT→연결 UPSERT→자동매매/거래소 전환 동기화→로그아웃→오류 문구→
-    관리자 메뉴·대시보드 요약/목록/검색/필터/새로고침→새로고침 후 세션 유지, 요청 본문에 키 원문 없음까지 검사).
+    `npm run auth-e2e` **41건**(가짜 Supabase 로 가입→프로필 INSERT→연결 UPSERT→자동매매/거래소 전환 동기화→로그아웃→오류 문구→
+    관리자 메뉴·대시보드 요약/목록/검색/필터/새로고침→새로고침 후 세션 유지, 요청 본문에 키 원문 없음까지 검사 · **가입 직후 FK 경합(409) 재시도**).
     실제 Supabase 로그인·관리자 조회도 별도로 확인했습니다(`docs/screens/126-live-admin-dashboard.png`).
   - 스크린샷: `docs/screens/118-auth-banner-guest.png` · `119-auth-signup.png` · `120-account-menu.png` · `121-auth-login-error.png` ·
-    `122-admin-menu.png` · `123-admin-dashboard.png` · `124-admin-dashboard-full.png` · `125-admin-filter-search.png` · `126-live-admin-dashboard.png`.
+    `122-admin-menu.png` · `123-admin-dashboard.png` · `124-admin-dashboard-full.png` · `125-admin-filter-search.png` · `126-live-admin-dashboard.png` · `127-live-guest-banner.png` · `128-live-admin-dashboard.png`(배포본 라이브) · `129-live-signup-member.png`.
 
 - **🏦 거래소 선택(바이낸스·비트겟) · 거래소별 독립 탐지 (v1.5.7 웹 기능, APK 재설치 불필요)**
   - **첫 화면 = 거래소 선택**: 아직 고르지 않았으면(첫 방문) 스캐너 대신 **Binance (바이낸스)** / **Bitget (비트겟)** 카드를 보여 줍니다.
