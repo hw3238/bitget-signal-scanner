@@ -17,6 +17,7 @@ import { useApkUpdate } from '../lib/useApkUpdate';
 import { isDirty } from '../lib/settingsSync';
 import { ACCOUNT_UNLINKED_HINT, fmtUsdtBalance, type AccountBase } from '../lib/account';
 import { RISK_PRESETS, RISK_HIGH_WARN, clampRiskInput, isHighRisk, resolveRiskPct } from '../lib/orderCockpit';
+import { EXCHANGE_ORDER, EXCHANGES, marketSourceLabel, type Exchange } from '../lib/exchange';
 import {
   APP_VERSION,
   APK_DOWNLOAD_URL,
@@ -88,6 +89,9 @@ function SaveButton({
 }
 
 interface Props {
+  /** 현재 거래소 — 설정 탭에서도 전환할 수 있다 */
+  exchange: Exchange;
+  onExchangeChange: (exchange: Exchange) => void;
   settings: Settings;
   state: ScanState;
   onChange: (patch: Partial<Settings>) => void;
@@ -112,6 +116,8 @@ interface Props {
 }
 
 export function SettingsTab({
+  exchange,
+  onExchangeChange,
   settings,
   state,
   onChange,
@@ -342,6 +348,50 @@ export function SettingsTab({
             ⚠️ 고위험 설정: 연속 손실 시 계좌 잔고 감소가 커집니다
           </div>
         )}
+      </section>
+
+      <section className="panel exchange-panel" id="settings-exchange">
+        <header className="panel-head">
+          <h3>🏦 거래소</h3>
+          <span className="panel-note">{EXCHANGES[exchange].marketLine}</span>
+        </header>
+        <div className="exchange-options settings" data-settings-exchange>
+          {EXCHANGE_ORDER.map((ex) => {
+            const meta = EXCHANGES[ex];
+            const active = ex === exchange;
+            return (
+              <button
+                key={ex}
+                type="button"
+                className={`exchange-option ${ex} ${active ? 'on' : ''}`}
+                data-settings-exchange-option={ex}
+                aria-pressed={active}
+                onClick={() => onExchangeChange(ex)}
+              >
+                <span className="exchange-option-logo" style={{ background: `${meta.tint}1f` }}>
+                  <img src={meta.logo} alt={`${meta.name} 로고`} width={36} height={36} />
+                </span>
+                <span className="exchange-option-copy">
+                  <b>
+                    {meta.name} <em>({meta.koName})</em>
+                  </b>
+                  <span>{meta.desc}</span>
+                </span>
+                {active ? (
+                  <span className="exchange-option-badge" data-settings-exchange-current>
+                    사용 중
+                  </span>
+                ) : (
+                  <span className="exchange-option-arrow">전환</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <p className="setting-desc block">
+          거래소를 바꾸면 이전 거래소의 시그널·급등 목록을 지우고 새 거래소 마켓만 다시 스캔합니다.
+          지금 데이터 출처는 <b>{marketSourceLabel(state.source)}</b>입니다.
+        </p>
       </section>
 
       <section className="panel">

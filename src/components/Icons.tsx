@@ -132,3 +132,17 @@ export const BoltIcon = ({ size = 14, className }: IconProps) => (
     <path d="M13 2 5 13h5l-1 9 8-11h-5l1-9Z" />
   </svg>
 );
+
+/** 거래소 전환 — 오른쪽 화살표 */
+export const ChevronRightIcon = ({ size = 16, className }: IconProps) => (
+  <svg {...base(size)} className={className}>
+    <path d="m9 5 7 7-7 7" />
+  </svg>
+);
+
+/** 거래소 칩 좌우 전환 — ⇄ */
+export const SwapIcon = ({ size = 14, className }: IconProps) => (
+  <svg {...base(size)} className={className}>
+    <path d="M4 8h13l-3-3M20 16H7l3 3" />
+  </svg>
+);

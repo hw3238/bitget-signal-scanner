@@ -130,11 +130,12 @@ function snapshotScript() {
     candleAt: now,
   };
   // 첫 로딩에만 심는다 — 새로고침 뒤에는 사용자가 저장한 값이 그대로 남아야 한다.
+  localStorage.setItem('cota.exchange.v1', 'bitget');
   if (localStorage.getItem('cota.e2e.seeded.v1') === '1') return;
   localStorage.setItem('cota.e2e.seeded.v1', '1');
   localStorage.setItem(
-    'cota.scan.snapshot.v1',
-    JSON.stringify({ v: 1, at: now, contracts: [contract], markets: 1, analyses: [analysis], signals: [signal], tickers: [] }),
+    'cota.scan.snapshot.v2',
+    JSON.stringify({ v: 2, exchange: 'bitget', at: now, contracts: [contract], markets: 1, analyses: [analysis], signals: [signal], tickers: [] }),
   );
   localStorage.setItem(
     'bgss.settings.v1',

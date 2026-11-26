@@ -3,6 +3,7 @@ import type { ScanState } from '../hooks/useScanner';
 import type { AssetClass, Ticker } from '../engine/types';
 import { fetchFearGreed, fetchFundingRates, type FearGreed, type FundingInfo } from '../api/publicMarket';
 import { fmtPct, fmtPrice, fmtVolume } from '../lib/format';
+import { EXCHANGES, marketSourceLabel, type Exchange } from '../lib/exchange';
 import { recordOiSnapshot, oiChangePct, type OiBaseline } from '../lib/oiSnapshot';
 import { ImageCardModal } from './ImageCardModal';
 import { drawMarketBriefCard, type MarketBriefData } from './marketBriefCard';
@@ -10,6 +11,8 @@ import { DownloadIcon } from './Icons';
 
 interface Props {
   state: ScanState;
+  /** 현재 거래소 — 바이낸스 모드에는 주식선물 탭과 비트겟 펀딩 조회를 쓰지 않는다 */
+  exchange: Exchange;
   onRescan: () => void;
 }
 
@@ -28,8 +31,14 @@ interface Row extends Ticker {
 
 const SQUEEZE_RATE = 0.05; // 8시간 0.05% (연 54.75%) 이상을 과열로 본다
 
-export function MarketTab({ state, onRescan }: Props) {
+export function MarketTab({ state, exchange, onRescan }: Props) {
   const [tab, setTab] = useState<Tab>('crypto');
+  const bitget = exchange === 'bitget';
+
+  // 바이낸스 모드에는 주식선물이 없다 — 숨은 탭에 머무르지 않게 돌려놓는다.
+  useEffect(() => {
+    if (!bitget && tab === 'stock') setTab('crypto');
+  }, [bitget, tab]);
   const [fearGreed, setFearGreed] = useState<FearGreed | null>(null);
   const [funding, setFunding] = useState<Map<string, FundingInfo>>(new Map());
   const [baseline, setBaseline] = useState<OiBaseline | null>(null);
@@ -39,11 +48,15 @@ export function MarketTab({ state, onRescan }: Props) {
   /* 공포·탐욕 + 펀딩 정산 주기 — 실패해도 티커 데이터로 화면은 유지 */
   const loadExtra = useCallback(async () => {
     setLoadingExtra(true);
-    const [fg, fr] = await Promise.allSettled([fetchFearGreed(), fetchFundingRates()]);
+    // 펀딩 정산 주기·공포탐욕 — 바이낸스 모드에서는 비트겟 펀딩을 섞지 않는다.
+    const [fg, fr] = await Promise.allSettled([
+      fetchFearGreed(),
+      bitget ? fetchFundingRates() : Promise.resolve(new Map<string, FundingInfo>()),
+    ]);
     if (fg.status === 'fulfilled') setFearGreed(fg.value);
     if (fr.status === 'fulfilled') setFunding(fr.value);
     setLoadingExtra(false);
-  }, []);
+  }, [bitget]);
 
   useEffect(() => {
     void loadExtra();
@@ -198,10 +211,10 @@ export function MarketTab({ state, onRescan }: Props) {
       <section className="summary-card">
         <div className="summary-top">
           <div>
-            <div className="summary-title">시황 · 비트겟 USDT-M</div>
+            <div className="summary-title">시황 · {EXCHANGES[exchange].marketLine}</div>
             <div className="summary-sub">
               {tab === 'crypto' ? `코인 ${view.count}종목` : `주식·ETF 선물 ${view.count}종목`} · 티커 갱신 {refreshed}{' '}
-              KST
+              KST · {marketSourceLabel(state.source)}
             </div>
           </div>
           <div className="market-actions">
@@ -209,9 +222,11 @@ export function MarketTab({ state, onRescan }: Props) {
               <button className={tab === 'crypto' ? 'on' : ''} onClick={() => setTab('crypto')}>
                 코인
               </button>
-              <button className={tab === 'stock' ? 'on' : ''} onClick={() => setTab('stock')}>
-                주식선물
-              </button>
+              {bitget && (
+                <button className={tab === 'stock' ? 'on' : ''} onClick={() => setTab('stock')} data-market-stock>
+                  주식선물
+                </button>
+              )}
             </div>
             <button className="ghost-btn small" onClick={() => setBriefing(true)}>
               <DownloadIcon size={14} /> 속보 카드
@@ -315,7 +330,8 @@ export function MarketTab({ state, onRescan }: Props) {
       </div>
 
       <div className="feed-note">
-        비트겟 공개 API 티커·펀딩비·미결제약정 실데이터 · 24h 변동률 · 화면 진입 시 자동 갱신
+        {EXCHANGES[exchange].marketLine} 공개 API 실데이터({marketSourceLabel(state.source)}) · 티커·펀딩비·미결제약정 · 24h
+        변동률 · 화면 진입 시 자동 갱신
         {fearGreed ? ` · 공포·탐욕 ${fearGreed.value} (${fearGreed.label})` : ''}
         <button className="link-btn" onClick={onRescan}>
           새로고침

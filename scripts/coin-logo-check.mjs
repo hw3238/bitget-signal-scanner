@@ -97,6 +97,7 @@ const run = async () => {
     timezoneId: 'Asia/Seoul',
   });
   await context.addInitScript(() => {
+    localStorage.setItem('cota.exchange.v1', 'bitget');
     window.clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
     if (!localStorage.getItem('bgss.settings.v1')) {
       localStorage.setItem('bgss.settings.v1', JSON.stringify({ refreshSec: 0 }));

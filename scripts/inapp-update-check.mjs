@@ -130,6 +130,7 @@ const check = (ok, label, detail = '') => {
 async function scenario(allowInstall) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   await ctx.addInitScript(([allow]) => {
+    localStorage.setItem('cota.exchange.v1', 'bitget');
     localStorage.setItem('cota.profile.v1', JSON.stringify({ seed: 1000, style: 'conservative', updatedAt: Date.now() }));
   }, [allowInstall]);
   await ctx.addInitScript(`(${NATIVE_MOCK.toString()})(${allowInstall});`);

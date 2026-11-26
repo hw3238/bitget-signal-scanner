@@ -82,6 +82,7 @@ const run = async () => {
     permissions: ['clipboard-read', 'clipboard-write'],
   });
   await mobile.addInitScript(() => {
+    localStorage.setItem('cota.exchange.v1', 'bitget');
     localStorage.setItem('cota.profile.v1', JSON.stringify({ style: 'conservative', updatedAt: Date.now() }));
     if (!localStorage.getItem('bgss.settings.v1')) {
       localStorage.setItem('bgss.settings.v1', JSON.stringify({ refreshSec: 0 }));
@@ -227,6 +228,8 @@ const run = async () => {
     const entry = num(c.cells[0]?.value);
     const target = num(c.cells[1]?.value);
     const stop = num(c.cells[2]?.value);
+    // 표시 자리수 때문에 생기는 % 오차 허용폭 (0.000842 처럼 소수 6자리 코인은 0.12%까지 벌어진다)
+    const pctTol = (100 * unitOf(c.cells[0]?.value)) / Math.max(1e-12, entry);
     const lev = num(c.cells[3]?.value);
     const targetPct = num(c.cells[1]?.extra);
     const stopPct = num(c.cells[2]?.extra);
@@ -241,8 +244,8 @@ const run = async () => {
       stop < entry &&
       entry < target &&
       close((target - entry) / (entry - stop), rr, rr * 0.04 + (2 * unitOf(c.cells[0]?.value) * rr) / Math.max(1e-12, entry - stop)) &&
-      close((target / entry - 1) * 100, targetPct, 0.15) &&
-      close((1 - stop / entry) * 100, Math.abs(stopPct), 0.06) &&
+      close((target / entry - 1) * 100, targetPct, 0.15 + pctTol) &&
+      close((1 - stop / entry) * 100, Math.abs(stopPct), 0.06 + pctTol) &&
       lev >= 2 &&
       !!c.why &&
       c.why.length > 8 &&
@@ -391,6 +394,7 @@ const run = async () => {
   /* ---------- 8) 데스크톱 ---------- */
   const desktop = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'ko-KR', timezoneId: 'Asia/Seoul' });
   await desktop.addInitScript(() => {
+    localStorage.setItem('cota.exchange.v1', 'bitget');
     localStorage.setItem('cota.profile.v1', JSON.stringify({ style: 'aggressive', updatedAt: Date.now() }));
   });
   const dpage = await desktop.newPage();

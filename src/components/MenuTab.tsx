@@ -6,6 +6,7 @@ import type { SwapLogEntry } from '../lib/storage';
 import { AutoTradeTab } from './AutoTradeTab';
 import { SurgeExplorer } from './SurgeExplorer';
 import { statusBadge } from '../lib/autotrade';
+import { EXCHANGES, type Exchange } from '../lib/exchange';
 import { EngineTab } from './EngineTab';
 import { KimchiRadar } from './KimchiRadar';
 import { KeyMatchRadar } from './KeyMatchRadar';
@@ -104,6 +105,9 @@ const GROUPS: Array<{ title: string; items: MenuItem[] }> = [
 ];
 
 interface Props {
+  /** 현재 거래소 — 급등 탐색기·자동매매 화면이 거래소를 따른다 */
+  exchange: Exchange;
+  onExchangeChange: (exchange: Exchange) => void;
   state: ScanState;
   /** 연결된 계좌 잔고 — 사이징·생존 성적표의 기본 증거금(v1.5.5) */
   account: AccountBase;
@@ -132,6 +136,8 @@ const TITLES: Record<MenuView, string> = {
 };
 
 export function MenuTab({
+  exchange,
+  onExchangeChange,
   state,
   account,
   view,
@@ -151,13 +157,22 @@ export function MenuTab({
           <button className="menu-back" onClick={() => onViewChange(null)} aria-label="메뉴로 돌아가기">
             ← 메뉴
           </button>
-          <b>{TITLES[view]}</b>
+          <b>{view === 'auto' && exchange !== 'bitget' ? '자동매매 · 비트겟 전용' : TITLES[view]}</b>
         </div>
-        {view === 'auto' && <AutoTradeTab api={autoTrade} signals={signals} />}
-        {view === 'surge' && <SurgeExplorer state={state} account={account} autoTrade={autoTrade} />}
+        {view === 'auto' && (
+          <AutoTradeTab
+            api={autoTrade}
+            signals={signals}
+            exchange={exchange}
+            onSwitchExchange={onExchangeChange}
+          />
+        )}
+        {view === 'surge' && (
+          <SurgeExplorer exchange={exchange} state={state} account={account} autoTrade={autoTrade} />
+        )}
         {view === 'kimchi' && <KimchiRadar state={state} />}
-        {view === 'lag' && <KeyMatchRadar state={state} />}
-        {view === 'doppel' && <Doppelganger state={state} />}
+        {view === 'lag' && <KeyMatchRadar exchange={exchange} state={state} />}
+        {view === 'doppel' && <Doppelganger exchange={exchange} state={state} />}
         {view === 'survival' && <PositionSurvival state={state} account={account} />}
         {view === 'sizing' && <SizingCalc state={state} account={account} />}
         {view === 'fee' && <FeeCalc account={account} />}
@@ -195,7 +210,11 @@ export function MenuTab({
           <b>
             비트겟 자동매매 <i className="menu-hot">NEW</i>
           </b>
-          <span>시그널을 24시간 감시해 TP/SL 포함 자동 주문 · 1일 손실 한도</span>
+          <span>
+            {exchange === 'bitget'
+              ? '시그널을 24시간 감시해 TP/SL 포함 자동 주문 · 1일 손실 한도'
+              : `${EXCHANGES[exchange].koName} 모드 — 자동매매·원클릭 주문은 비트겟 계좌 전용`}
+          </span>
           <em className={`menu-auto-badge ${autoTrade.config.enabled ? (autoTrade.tradeMode.mode === 'live' ? 'live' : 'demo') : 'off'}`} data-auto-menu-badge>
             {/* 라벨은 저장된 키의 계좌(tradeMode)와 서비스 가동 여부를 함께 따른다 — 실거래 키를 모의로 착각하지 않게. */}
             {statusBadge({ ...autoTrade.config, mode: autoTrade.tradeMode.mode }, autoTrade.running).label}

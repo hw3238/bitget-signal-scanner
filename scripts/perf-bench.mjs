@@ -141,6 +141,7 @@ try {
   });
   if (!useStorage) {
     await context.addInitScript((profile) => {
+      localStorage.setItem('cota.exchange.v1', 'bitget');
       try {
         localStorage.setItem('cota.profile.v1', JSON.stringify(profile));
       } catch {

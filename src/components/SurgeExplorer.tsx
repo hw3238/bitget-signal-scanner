@@ -3,8 +3,10 @@ import type { ScanState } from '../hooks/useScanner';
 import type { AutoTradeApi } from '../hooks/useAutoTrade';
 import type { AccountBase } from '../lib/account';
 import type { Candle, Ticker } from '../engine/types';
-import { fetchBigCandles, mapLimit } from '../api/publicMarket';
+import { mapLimit } from '../api/publicMarket';
+import { fetchMarketCandles } from '../api/market';
 import { readCandles, writeCandles } from '../lib/scanCache';
+import { EXCHANGES, type Exchange } from '../lib/exchange';
 import {
   matchSurgeFilter,
   rankSurgePicks,
@@ -19,8 +21,8 @@ import {
 } from '../engine/surge';
 import { fmtPct, fmtPrice, fmtTime, fmtVolume } from '../lib/format';
 import { copyToClipboard } from '../lib/clipboard';
-import { bitgetFuturesUrl } from '../lib/coinLogo';
-import { openBitgetFutures } from '../lib/native';
+import { bitgetFuturesUrl, binanceTradeUrl } from '../lib/coinLogo';
+import { openBitgetFutures, openExternalUrl } from '../lib/native';
 import { CoinLogo } from './CoinLogo';
 import { ArrowUpRightIcon, CheckIcon, CopyIcon, RefreshIcon } from './Icons';
 
@@ -45,12 +47,14 @@ const REQ_MARK = ['①', '②', '③', '④', '⑤', '⑥'];
 const STATE_MARK: Record<string, string> = { pass: '✓', partial: '△', fail: '✕' };
 
 interface Props {
+  /** 현재 거래소 — 캔들·유니버스를 이 거래소 마켓으로만 탐색한다 */
+  exchange: Exchange;
   state: ScanState;
   account: AccountBase;
   autoTrade: AutoTradeApi;
 }
 
-export function SurgeExplorer({ state, account, autoTrade }: Props) {
+export function SurgeExplorer({ exchange, state, account, autoTrade }: Props) {
   const [picks, setPicks] = useState<SurgePick[]>([]);
   const [filter, setFilter] = useState<SurgeFilter>('all');
   const [loading, setLoading] = useState(false);
@@ -81,25 +85,27 @@ export function SurgeExplorer({ state, account, autoTrade }: Props) {
         decimals: entry.decimals,
         maxLever: entry.maxLever,
         equity: account.equity,
+        // 바이낸스 현물 데이터에는 펀딩비·미결제약정이 없다 — ③을 '확인 불가'로 정직하게 둔다.
+        fundingAvailable: state.source !== 'binance-spot',
       }),
-    [account.equity],
+    [account.equity, state.source],
   );
 
   const loadCandles = useCallback(async (symbol: string, tf: '1H' | '4H', limit: number, force: boolean) => {
-    const cached = force ? null : readCandles(symbol, tf, SURGE_TTL[tf]);
+    const cached = force ? null : readCandles(exchange, symbol, tf, SURGE_TTL[tf]);
     if (cached && cached.length >= Math.min(limit, 140)) return cached;
-    const rows = await fetchBigCandles(symbol, tf, limit);
+    const rows = await fetchMarketCandles(exchange, symbol, tf, limit);
     // 스캐너와 같은 캐시를 쓴다 — 다음 스캔·재진입에서 재요청이 사라진다.
-    writeCandles(symbol, tf, rows);
+    writeCandles(exchange, symbol, tf, rows);
     return rows;
-  }, []);
+  }, [exchange]);
 
   const scan = useCallback(
     async (force = false) => {
       if (running.current) return;
       const rows = universe.rows;
       if (!rows.length) {
-        setError('비트겟 코인 선물 목록을 아직 받지 못했습니다. 잠시 뒤 다시 시도해 주세요.');
+        setError(`${EXCHANGES[exchange].universeLabel} 목록을 아직 받지 못했습니다. 잠시 뒤 다시 시도해 주세요.`);
         return;
       }
       running.current = true;
@@ -164,13 +170,22 @@ export function SurgeExplorer({ state, account, autoTrade }: Props) {
         running.current = false;
       }
     },
-    [build, loadCandles, tickerBySymbol, universe.coinCount, universe.eligible, universe.rows],
+    [build, exchange, loadCandles, tickerBySymbol, universe.coinCount, universe.eligible, universe.rows],
   );
+
+  /* 거래소를 바꾸면 이전 거래소의 후보를 비우고 새 마켓만 다시 탐색한다. */
+  useEffect(() => {
+    setPicks([]);
+    setMeta(null);
+    setError(null);
+    storeRef.current = new Map();
+    btcRef.current = [];
+  }, [exchange]);
 
   useEffect(() => {
     if (universe.rows.length > 0 && picks.length === 0 && !loading) void scan();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [universe.rows.length]);
+  }, [universe.rows.length, exchange]);
 
   /* 잔고·매매 스타일이 바뀌면(계좌 연결 직후) 캔들을 다시 받지 않고 레버리지·점수만 갱신한다. */
   useEffect(() => {
@@ -221,8 +236,8 @@ export function SurgeExplorer({ state, account, autoTrade }: Props) {
             </div>
             <div className="summary-sub" data-surge-sub>
               {meta
-                ? `코인 선물 ${meta.coinCount}개 중 24h 거래대금 ${fmtVolume(universe.minVolume)} 이상 ${meta.eligible}개 탐색 · ${fmtTime(at)} 기준`
-                : `코인 선물 유니버스 ${universe.coinCount}개 · 24h 거래대금 ${fmtVolume(universe.minVolume)} 이상 ${universe.eligible}개`}
+                ? `${EXCHANGES[exchange].universeLabel} ${meta.coinCount}개 중 24h 거래대금 ${fmtVolume(universe.minVolume)} 이상 ${meta.eligible}개 탐색 · ${fmtTime(at)} 기준`
+                : `${EXCHANGES[exchange].universeLabel} 유니버스 ${universe.coinCount}개 · 24h 거래대금 ${fmtVolume(universe.minVolume)} 이상 ${universe.eligible}개`}
             </div>
           </div>
           <button className={`rescan ${loading ? 'busy' : ''}`} onClick={() => void scan(true)} disabled={loading} data-surge-rescan>
@@ -285,7 +300,11 @@ export function SurgeExplorer({ state, account, autoTrade }: Props) {
         </div>
       )}
       {!loading && !error && picks.length === 0 && (
-        <div className="notice">{universe.rows.length ? '탐색을 시작합니다…' : '비트겟 코인 선물 목록을 기다리는 중입니다.'}</div>
+        <div className="notice">
+          {universe.rows.length
+            ? '탐색을 시작합니다…'
+            : `${EXCHANGES[exchange].universeLabel} 목록을 기다리는 중입니다.`}
+        </div>
       )}
       {overflow && (
         <div className="feed-note" data-surge-overflow>
@@ -357,7 +376,7 @@ export function SurgeExplorer({ state, account, autoTrade }: Props) {
             <div className="surge-detail-line">
               손익비 <b>{plan.rr}</b> · 손절 기준{' '}
               {pick.plan.stopBasis === 'swing' ? '직전 스윙 저점' : pick.plan.stopBasis === 'atr' ? 'ATR 1.5배' : pick.plan.stopBasis === 'floor' ? '최소 0.6%' : '최대 12%'} · 펀딩{' '}
-              <b>{pick.fundingRate > 0 ? '+' : ''}{pick.fundingRate.toFixed(3)}%</b> · {pick.bars}봉 · {pick.htfChecked ? '4H 확인' : '4H 미확인'}
+              <b>{state.source === 'binance-spot' ? '—' : `${pick.fundingRate > 0 ? '+' : ''}${pick.fundingRate.toFixed(3)}%`}</b> · {pick.bars}봉 · {pick.htfChecked ? '4H 확인' : '4H 미확인'}
             </div>
 
             {pick.warnings.map((w) => (
@@ -371,21 +390,31 @@ export function SurgeExplorer({ state, account, autoTrade }: Props) {
                 {copied === pick.symbol ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
                 {copied === pick.symbol ? '복사됨' : '진입·목표·손절 복사'}
               </button>
-              {account.connected ? (
-                <button className="surge-order" onClick={() => void order(pick)} disabled={ordering === pick.symbol} data-order>
-                  {ordering === pick.symbol ? '주문 중…' : `⚡ ${pick.plan.leverage}x 롱 원클릭`}
-                </button>
+              {EXCHANGES[exchange].tradable ? (
+                account.connected ? (
+                  <button className="surge-order" onClick={() => void order(pick)} disabled={ordering === pick.symbol} data-order>
+                    {ordering === pick.symbol ? '주문 중…' : `⚡ ${pick.plan.leverage}x 롱 원클릭`}
+                  </button>
+                ) : (
+                  <span className="surge-order-hint" data-order-hint>
+                    계좌를 연결하면 원클릭 주문
+                  </span>
+                )
               ) : (
                 <span className="surge-order-hint" data-order-hint>
-                  계좌를 연결하면 원클릭 주문
+                  바이낸스 모드 · 주문은 비트겟 계좌 전용
                 </span>
               )}
               <button
                 className="link-btn"
-                onClick={() => void openBitgetFutures(pick.symbol, bitgetFuturesUrl(pick.symbol))}
-                aria-label={`${pick.base} 비트겟 열기`}
+                onClick={() =>
+                  void (EXCHANGES[exchange].tradable
+                    ? openBitgetFutures(pick.symbol, bitgetFuturesUrl(pick.symbol))
+                    : openExternalUrl(binanceTradeUrl(pick.symbol)))
+                }
+                aria-label={`${pick.base} ${EXCHANGES[exchange].koName} 열기`}
               >
-                비트겟 <ArrowUpRightIcon size={11} />
+                {EXCHANGES[exchange].koName} <ArrowUpRightIcon size={11} />
               </button>
             </div>
           </article>
@@ -424,8 +453,11 @@ export function SurgeExplorer({ state, account, autoTrade }: Props) {
       )}
 
       <div className="feed-note">
-        비트겟 USDT-M 코인 선물 1시간봉 {BARS_1H}개(상위 후보는 4시간봉 {BARS_4H}개)와 실시간 티커·펀딩비·미결제약정만으로
-        계산합니다. 점수는 ①변동성 응축 20 ②거래량 유입 20 ③숏스퀴즈 15 ④BTC 대비 강세 15 ⑤저항 돌파 임박 15 ⑥비과열 15
+        {EXCHANGES[exchange].universeLabel} 1시간봉 {BARS_1H}개(상위 후보는 4시간봉 {BARS_4H}개)와 실시간 티커
+        {state.source === 'binance-spot'
+          ? '만으로 계산합니다 — 현물 데이터에는 펀딩비·미결제약정이 없어 ③ 숏스퀴즈는 확인 불가(부분 점수)로 둡니다. '
+          : '·펀딩비·미결제약정만으로 계산합니다. '}
+        점수는 ①변동성 응축 20 ②거래량 유입 20 ③숏스퀴즈 15 ④BTC 대비 강세 15 ⑤저항 돌파 임박 15 ⑥비과열 15
         = {SURGE_MAX_SCORE}점이며, 이미 급등한 자리는 ⑥에서 감점합니다. 과거 패턴은 미래를 보장하지 않으며 투자 권유가 아닙니다.
       </div>
     </div>

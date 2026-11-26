@@ -81,6 +81,12 @@ export interface SurgeInput {
   decimals?: number;
   maxLever?: number;
   equity?: number | null;
+  /**
+   * 펀딩비·미결제약정을 실제로 받을 수 있는 출처인가(선물).
+   * 바이낸스 **현물** 데이터에는 둘 다 없으므로 ③ 숏스퀴즈를 '확인 불가'로 두고 점수를 주지 않는다
+   * (없는 값을 0 으로 읽어 "펀딩 0% → 숏이 비용 부담"으로 통과시키면 거짓 근거가 된다).
+   */
+  fundingAvailable?: boolean;
 }
 
 export interface SurgePlan {
@@ -314,17 +320,31 @@ export function scoreSurge(input: SurgeInput): SurgePick | null {
   const shortPass = funding <= 0 || oiRatio >= 0.6;
   // 요건 문구 그대로 "펀딩 0 이하 **또는** 숏 쏠림" — 둘 중 강한 쪽을 신용도로 쓴다.
   const shortCredit = clamp(Math.max(fundingCredit, oiCredit), 0, 1);
-  const shortSqueeze: SurgeReq = {
-    key: 'shortSqueeze',
-    no: 3,
-    label: '숏스퀴즈 압력',
-    weight: 15,
-    credit: shortCredit,
-    state: stateOf(shortCredit, shortPass),
-    value: `펀딩 ${signed(funding, 3)}%`,
-    detail: `펀딩 ${signed(funding, 3)}%/8h · 미결제약정 ${usdCompact(oiUsd)} (24h 거래대금의 ${(oiRatio * 100).toFixed(0)}%)`,
-    headline: funding <= 0 ? `펀딩 ${signed(funding, 3)}%로 숏이 비용 부담` : `OI/거래대금 ${(oiRatio * 100).toFixed(0)}% 축적`,
-  };
+  const fundingAvailable = input.fundingAvailable !== false;
+  const shortSqueeze: SurgeReq = fundingAvailable
+    ? {
+        key: 'shortSqueeze',
+        no: 3,
+        label: '숏스퀴즈 압력',
+        weight: 15,
+        credit: shortCredit,
+        state: stateOf(shortCredit, shortPass),
+        value: `펀딩 ${signed(funding, 3)}%`,
+        detail: `펀딩 ${signed(funding, 3)}%/8h · 미결제약정 ${usdCompact(oiUsd)} (24h 거래대금의 ${(oiRatio * 100).toFixed(0)}%)`,
+        headline: funding <= 0 ? `펀딩 ${signed(funding, 3)}%로 숏이 비용 부담` : `OI/거래대금 ${(oiRatio * 100).toFixed(0)}% 축적`,
+      }
+    : {
+        key: 'shortSqueeze',
+        no: 3,
+        label: '숏스퀴즈 압력',
+        weight: 15,
+        // 현물 데이터에는 펀딩비·미결제약정이 없다 — 중립(부분)으로만 두고 통과로 세지 않는다.
+        credit: 0.3,
+        state: 'partial',
+        value: '확인 불가',
+        detail: '현물 데이터에는 펀딩비·미결제약정이 없어 숏 쏠림을 확인할 수 없습니다',
+        headline: '펀딩·미결제약정 정보 없음',
+      };
 
   /* ---------- ④ BTC 대비 상대 강세 — 6h/24h 초과 수익 + EMA20 위 + 4H 추세 ---------- */
   const ema20 = ema(closes, 20)[n - 1];

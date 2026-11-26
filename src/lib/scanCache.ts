@@ -5,13 +5,19 @@
  * 2) 분석: 캔들(마지막 봉 시각 + 개수)이 같으면 6전략 백테스트 결과도 같다 → 재계산 없이 재사용.
  * 3) 실시간 가격: 티커만 새로 받아 시그널의 현재가·수익률·진행도를 다시 계산한다(0.3초).
  * 4) 스냅숏: 앱을 다시 열면 직전 결과를 즉시 그리고, 뒤에서 최신 데이터로 조용히 갱신한다.
+ *
+ * 거래소(bitget/binance)는 모든 키에 들어간다 — BTCUSDT 라도 거래소가 다르면 다른 캔들·분석이다.
+ * 스냅숏도 거래소별로 하나씩만 두고, 다른 거래소 스냅숏은 읽지 않는다(전환 시 빈 화면에서 새로 스캔).
  */
 import type { Candle, Contract, Signal, SymbolAnalysis, TF, Ticker } from '../engine/types';
+import type { Exchange } from '../lib/exchange';
 
 export const CANDLE_TTL_MS: Record<TF, number> = { '1H': 90_000, '4H': 180_000 };
 
-const SNAPSHOT_KEY = 'cota.scan.snapshot.v1';
+const SNAPSHOT_KEY = 'cota.scan.snapshot.v2';
 const SNAPSHOT_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+
+type Ex = Exchange | 'bitget';
 
 interface CandleEntry {
   at: number;
@@ -21,7 +27,7 @@ interface CandleEntry {
 const candleStore = new Map<string, CandleEntry>();
 const analysisStore = new Map<string, { stamp: string; analysis: SymbolAnalysis }>();
 
-const keyOf = (symbol: string, tf: TF) => `${symbol}|${tf}`;
+const keyOf = (ex: Ex, symbol: string, tf: TF) => `${ex}|${symbol}|${tf}`;
 const stampOf = (candles: Candle[]): string =>
   candles.length
     ? `${candles.length}:${candles[candles.length - 1].t}:${candles[candles.length - 1].c}`
@@ -32,26 +38,26 @@ export function ttlFor(tf: TF): number {
 }
 
 /** TTL 안에 받아 둔 캔들이면 그대로 쓴다. maxAgeMs=0 이면 항상 새로 받는다. */
-export function readCandles(symbol: string, tf: TF, maxAgeMs = ttlFor(tf)): Candle[] | null {
-  const entry = candleStore.get(keyOf(symbol, tf));
+export function readCandles(ex: Ex, symbol: string, tf: TF, maxAgeMs = ttlFor(tf)): Candle[] | null {
+  const entry = candleStore.get(keyOf(ex, symbol, tf));
   if (!entry) return null;
   if (maxAgeMs <= 0) return null;
   if (Date.now() - entry.at > maxAgeMs) return null;
   return entry.candles;
 }
 
-export function writeCandles(symbol: string, tf: TF, candles: Candle[]): void {
-  candleStore.set(keyOf(symbol, tf), { at: Date.now(), candles });
+export function writeCandles(ex: Ex, symbol: string, tf: TF, candles: Candle[]): void {
+  candleStore.set(keyOf(ex, symbol, tf), { at: Date.now(), candles });
 }
 
-export function candleAgeMs(symbol: string, tf: TF): number {
-  const entry = candleStore.get(keyOf(symbol, tf));
+export function candleAgeMs(ex: Ex, symbol: string, tf: TF): number {
+  const entry = candleStore.get(keyOf(ex, symbol, tf));
   return entry ? Date.now() - entry.at : Number.POSITIVE_INFINITY;
 }
 
 /** 같은 캔들로 계산한 분석이 있으면 재사용(지표·백테스트 재계산 생략). */
-export function readAnalysis(symbol: string, tf: TF, candles: Candle[]): SymbolAnalysis | null {
-  const entry = analysisStore.get(keyOf(symbol, tf));
+export function readAnalysis(ex: Ex, symbol: string, tf: TF, candles: Candle[]): SymbolAnalysis | null {
+  const entry = analysisStore.get(keyOf(ex, symbol, tf));
   if (!entry) return null;
   if (!entry.stamp) return null;
   return entry.stamp === stampOf(candles) ? entry.analysis : null;
@@ -61,32 +67,38 @@ export function readAnalysis(symbol: string, tf: TF, candles: Candle[]): SymbolA
  * 캔들 없이도 TTL 안이면 분석을 그대로 쓴다.
  * 앱을 다시 열었을 때 직전 스냅숏의 분석을 그대로 이어 쓰기 위한 경로(재요청 0건).
  */
-export function readFreshAnalysis(symbol: string, tf: TF, maxAgeMs = ttlFor(tf)): SymbolAnalysis | null {
-  const entry = analysisStore.get(keyOf(symbol, tf));
+export function readFreshAnalysis(ex: Ex, symbol: string, tf: TF, maxAgeMs = ttlFor(tf)): SymbolAnalysis | null {
+  const entry = analysisStore.get(keyOf(ex, symbol, tf));
   if (!entry) return null;
   const at = entry.analysis.candleAt ?? 0;
   if (!at || maxAgeMs <= 0) return null;
   return Date.now() - at <= maxAgeMs ? entry.analysis : null;
 }
 
-export function writeAnalysis(analysis: SymbolAnalysis, candles: Candle[], at = Date.now()): void {
-  analysisStore.set(keyOf(analysis.symbol, analysis.tf), {
+export function writeAnalysis(ex: Ex, analysis: SymbolAnalysis, candles: Candle[], at = Date.now()): void {
+  analysisStore.set(keyOf(ex, analysis.symbol, analysis.tf), {
     stamp: stampOf(candles),
     analysis: { ...analysis, candleAt: at },
   });
 }
 
 /** 스냅숏에서 복원한 분석을 캐시에 올린다 — 캔들 재요청 없이 이어 쓴다. */
-export function hydrateAnalyses(list: SymbolAnalysis[]): void {
+export function hydrateAnalyses(ex: Ex, list: SymbolAnalysis[]): void {
   for (const a of list) {
     if (!a?.symbol || !a.tf) continue;
-    analysisStore.set(keyOf(a.symbol, a.tf), { stamp: '', analysis: a });
+    analysisStore.set(keyOf(ex, a.symbol, a.tf), { stamp: '', analysis: a });
   }
 }
 
-export function clearScanCache(): void {
-  candleStore.clear();
-  analysisStore.clear();
+/** 한 거래소의 캐시만 비운다(전환 직후 이전 거래소 캔들로 새 마켓을 계산하지 않게). */
+export function clearScanCache(ex?: Ex): void {
+  if (!ex) {
+    candleStore.clear();
+    analysisStore.clear();
+    return;
+  }
+  for (const key of [...candleStore.keys()]) if (key.startsWith(`${ex}|`)) candleStore.delete(key);
+  for (const key of [...analysisStore.keys()]) if (key.startsWith(`${ex}|`)) analysisStore.delete(key);
 }
 
 /** 시그널에 실시간 가격을 반영 — 현재가·진입가 대비 수익률·진행도·잔여 R을 다시 계산한다. */
@@ -137,11 +149,13 @@ export function repriceAnalysis(analysis: SymbolAnalysis, price: number): Symbol
 }
 
 /* ------------------------------------------------------------------ *
- * 스냅숏 — 앱 재진입 시 즉시 그리기
+ * 스냅숏 — 앱 재진입 시 즉시 그리기 (거래소별 1개)
  * ------------------------------------------------------------------ */
 
 export interface ScanSnapshot {
-  v: 1;
+  v: 2;
+  /** 이 스냅숏을 만든 거래소 — 다른 거래소로 전환하면 그대로 쓰지 않는다 */
+  exchange: Exchange;
   at: number;
   elapsedMs: number;
   contracts: Contract[];
@@ -171,12 +185,14 @@ function pack(snapshot: ScanSnapshot): ScanSnapshot {
   };
 }
 
-export function loadSnapshot(): ScanSnapshot | null {
+/** 저장된 스냅숏 — 요청한 거래소의 것일 때만 돌려준다. */
+export function loadSnapshot(exchange: Exchange): ScanSnapshot | null {
   try {
     const raw = localStorage.getItem(SNAPSHOT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as ScanSnapshot;
-    if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.signals)) return null;
+    if (!parsed || parsed.v !== 2 || parsed.exchange !== exchange) return null;
+    if (!Array.isArray(parsed.signals)) return null;
     if (Date.now() - parsed.at > SNAPSHOT_MAX_AGE_MS) return null;
     return parsed;
   } catch {

@@ -31,6 +31,7 @@ const context = await browser.newContext({
 });
 // 첫 실행 온보딩을 건너뛰도록 프로필을 미리 저장한다.
 await context.addInitScript(() => {
+  localStorage.setItem('cota.exchange.v1', 'bitget');
   localStorage.setItem(
     'cota.profile.v1',
     JSON.stringify({ seed: 1000, style: 'conservative', updatedAt: Date.now() }),

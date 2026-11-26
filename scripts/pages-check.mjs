@@ -36,6 +36,7 @@ const run = async () => {
   const browser = await chromium.launch({ args: ['--no-sandbox'] });
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   await ctx.addInitScript(() => {
+    localStorage.setItem('cota.exchange.v1', 'bitget');
     localStorage.setItem(
       'cota.profile.v1',
       JSON.stringify({ seed: 1000, style: 'conservative', updatedAt: Date.now() }),

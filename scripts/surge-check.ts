@@ -177,6 +177,24 @@ check(
   `${shortOf({ fundingRate: -0.02, openInterestBase: 0 }).credit} vs ${shortOf({ fundingRate: 0.02, openInterestBase: (0.4 * 20_000_000) / 100 }).credit}`,
 );
 
+/* 바이낸스 현물 데이터 — 펀딩·OI 가 없으므로 ③ 을 '통과'로 세지 않는다(거짓 근거 금지) */
+const spotPick = pickOf(baseBars(), { fundingRate: 0, openInterestBase: undefined }, { fundingAvailable: false })!;
+const spotShort = spotPick.reqs.find((r) => r.key === 'shortSqueeze')!;
+check(
+  '현물: ③ 숏스퀴즈 = 확인 불가(부분) · 통과 아님',
+  spotShort.state === 'partial' && spotShort.value === '확인 불가' && /펀딩비·미결제약정이 없어/.test(spotShort.detail),
+  `${spotShort.state} · ${spotShort.value}`,
+);
+check(
+  '현물: ③ 이 통과에서 빠져 점수가 내려간다(펀딩 0% 를 통과로 오독하지 않음)',
+  !spotPick.prime || spotPick.score < prime.score,
+  `현물 ${spotPick.score}점 vs 선물 ${prime.score}점`,
+);
+check(
+  '선물(펀딩 있음): 같은 0% 라도 ③ 은 기존 규칙대로 계산',
+  pickOf(baseBars(), { fundingRate: 0, openInterestBase: undefined }, { fundingAvailable: true })!.reqs.find((r) => r.key === 'shortSqueeze')!.state === 'pass',
+);
+
 /* ------------------------------------------------------------------ *
  * 5) ④ BTC 대비 상대 강세
  * ------------------------------------------------------------------ */

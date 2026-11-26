@@ -180,6 +180,7 @@ async function browserChecks() {
     // (헤드리스 Chromium 은 알림 권한을 항상 denied 로 두므로, 앱이 부르는 Notification API
     //  계약(permission / requestPermission / 생성자)을 granted 로 대신해 호출 여부를 검증한다.)
     await context.addInitScript(() => {
+      localStorage.setItem('cota.exchange.v1', 'bitget');
       // 첫 실행 온보딩을 건너뛰도록 프로필을 미리 저장한다.
       localStorage.setItem(
         'cota.profile.v1',

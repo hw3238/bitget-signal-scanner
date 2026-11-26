@@ -23,6 +23,7 @@ import {
   type AutoTradeConfig,
 } from '../lib/autotrade';
 import { NumField } from './ui';
+import { EXCHANGES, type Exchange } from '../lib/exchange';
 import { APP_VERSION, APK_DOWNLOAD_URL } from '../lib/update';
 import { accountKindLabel } from '../lib/bitgetUta';
 import { openExternalUrl } from '../lib/native';
@@ -30,6 +31,10 @@ import { openExternalUrl } from '../lib/native';
 interface Props {
   api: AutoTradeApi;
   signals: Signal[];
+  /** 현재 거래소 — 자동매매는 비트겟 계좌 전용이라 바이낸스 모드에서는 안내를 먼저 보여준다 */
+  exchange: Exchange;
+  /** 바이낸스 모드에서 `Bitget으로 전환` */
+  onSwitchExchange: (exchange: Exchange) => void;
 }
 
 const SYMBOL_LABEL: Record<string, string> = {
@@ -63,7 +68,7 @@ const SYMBOL_SCOPE_HINT = {
  * 🤖 비트겟 자동매매 — 키 연결 · 안전장치 · 자동/수동 주문 · 로그.
  * 실제 주문은 앱(안드로이드) 네이티브가 넣고, 이 화면은 명령과 결과만 다룬다.
  */
-export function AutoTradeTab({ api, signals }: Props) {
+export function AutoTradeTab({ api, signals, exchange, onSwitchExchange }: Props) {
   const {
     config,
     keys,
@@ -189,6 +194,26 @@ export function AutoTradeTab({ api, signals }: Props) {
   return (
     <div className="tab autotrade-tab" data-auto-root>
       {toast && <div className="auto-toast">{toast}</div>}
+
+      {exchange !== 'bitget' && (
+        <section className="exchange-only-note" data-auto-bitget-only>
+          <div className="exchange-only-copy">
+            <b>자동매매·원클릭 주문은 Bitget 계좌 전용입니다</b>
+            <p>
+              지금은 <b>{EXCHANGES[exchange].koName}</b> 모드 — 시그널 탐지만 동작하고 주문은 나가지 않습니다.
+              24시간 자동매매를 쓰려면 비트겟으로 전환하세요.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="exchange-only-btn"
+            data-switch-bitget
+            onClick={() => onSwitchExchange('bitget')}
+          >
+            Bitget으로 전환
+          </button>
+        </section>
+      )}
 
       {/* ---------- 상태 ---------- */}
       <section className={`auto-hero ${badge.tone}`} data-auto-hero>

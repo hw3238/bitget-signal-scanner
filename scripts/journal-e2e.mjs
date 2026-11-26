@@ -118,6 +118,7 @@ const run = async () => {
       timezoneId: 'Asia/Seoul',
     });
     await context.addInitScript((data) => {
+      localStorage.setItem('cota.exchange.v1', 'bitget');
       // v1.5.5 — 손익 기준은 연결된 계좌 잔고다. 네이티브 브리지를 흉내내 잔고 $5,000 을 준다.
       window.androidBridge = { postMessage: () => {} };
       const methods = ['bitgetHasKeys', 'bitgetTestConnection', 'autoTradeStatus', 'autoTradeStop', 'appInfo']

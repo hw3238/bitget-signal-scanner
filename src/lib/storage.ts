@@ -1,3 +1,5 @@
+import type { Exchange } from './exchange';
+
 export interface Settings {
   /** 'auto' = 시그널마다 COTA 추천 배율, 'manual' = 아래 leverage 고정 */
   leverageMode: 'auto' | 'manual';
@@ -81,12 +83,17 @@ export const saveSettings = (s: Settings) => localStorage.setItem(SETTINGS_KEY, 
  * 승률·누적 R이 흔들리므로, 1건 ≈ 0.25KB 기준 1,200건(≈300KB)까지 보관한다.
  */
 export const HISTORY_LIMIT = 1200;
-export const loadHistory = () => readArray<HistoryRecord>(HISTORY_KEY);
-export const saveHistory = (h: HistoryRecord[]) =>
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(0, HISTORY_LIMIT)));
 
-export const loadSwapLog = () => readArray<SwapLogEntry>(LOG_KEY);
-export const saveSwapLog = (l: SwapLogEntry[]) => localStorage.setItem(LOG_KEY, JSON.stringify(l.slice(0, 200)));
+/** 거래소별 저장 키 — 비트겟은 기존 키를 그대로 쓰고 바이낸스는 접미사를 붙인다. */
+const exKey = (base: string, exchange: Exchange) => (exchange === 'bitget' ? base : `${base}.${exchange}`);
+
+export const loadHistory = (exchange: Exchange = 'bitget') => readArray<HistoryRecord>(exKey(HISTORY_KEY, exchange));
+export const saveHistory = (h: HistoryRecord[], exchange: Exchange = 'bitget') =>
+  localStorage.setItem(exKey(HISTORY_KEY, exchange), JSON.stringify(h.slice(0, HISTORY_LIMIT)));
+
+export const loadSwapLog = (exchange: Exchange = 'bitget') => readArray<SwapLogEntry>(exKey(LOG_KEY, exchange));
+export const saveSwapLog = (l: SwapLogEntry[], exchange: Exchange = 'bitget') =>
+  localStorage.setItem(exKey(LOG_KEY, exchange), JSON.stringify(l.slice(0, 200)));
 
 /**
  * 시그널 고유 키 — 같은 캔들에서 감지된 시그널은 스캔이 반복돼도 같은 키를 갖는다.

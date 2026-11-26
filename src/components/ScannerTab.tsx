@@ -8,10 +8,13 @@ import type { Settings } from '../lib/storage';
 import { signalKey, type MyTrade } from '../lib/storage';
 import { recommendLeverage } from '../lib/profile';
 import type { AccountBase } from '../lib/account';
+import { EXCHANGES, marketSourceLabel, type Exchange } from '../lib/exchange';
 import { SignalCard } from './SignalCard';
 import { CloseIcon, RefreshIcon, SearchIcon, StarIcon } from './Icons';
 
 interface Props {
+  /** 현재 선택된 거래소 — 바이낸스 모드에서는 주식선물 필터를 숨긴다 */
+  exchange: Exchange;
   state: ScanState;
   settings: Settings;
   favorites: FavoriteEntry[];
@@ -55,6 +58,7 @@ function matchesQuery(signal: Signal, terms: string[]): boolean {
 type TfFilter = 'all' | '1H' | '4H';
 
 export function ScannerTab({
+  exchange,
   state,
   settings,
   favorites,
@@ -77,6 +81,12 @@ export function ScannerTab({
   const [favOnly, setFavOnly] = useState(false);
   const [query, setQuery] = useState('');
   const [visible, setVisible] = useState(PAGE_SIZE);
+  const bitget = exchange === 'bitget';
+
+  // 바이낸스 모드에는 주식선물이 없다 — 필터가 숨겨진 채로 남아 결과를 가리지 않게 되돌린다.
+  useEffect(() => {
+    if (!bitget && asset === 'stock') setAsset('crypto');
+  }, [bitget, asset]);
 
   const terms = useMemo(() => query.trim().toLowerCase().split(/\s+/).filter(Boolean), [query]);
 
@@ -189,10 +199,13 @@ export function ScannerTab({
               진행 중 시그널 <span className="dot-live" /> <b>{openSignals.length}</b>
             </div>
             <div className="summary-sub">
-              비트겟 USDT-M 코인·주식선물 · {marketCount}개 마켓 · {qualified}개 마켓 시그널
+              {EXCHANGES[exchange].marketLine} · {marketCount}개 마켓 · {qualified}개 마켓 시그널
             </div>
           </div>
           <div className="scan-actions">
+            <span className="source-chip" data-scan-source title="지금 시세를 받고 있는 실제 데이터 출처">
+              {marketSourceLabel(state.source)}
+            </span>
             <button className={`rescan ${scanning ? 'busy' : ''}`} onClick={onRescan} disabled={scanning}>
               <RefreshIcon size={16} />
               {scanning ? `${pct}%` : '실시간 갱신'}
@@ -275,15 +288,20 @@ export function ScannerTab({
               );
             })}
           </div>
-          <div className="segmented" role="group" aria-label="자산 구분">
+          <div className="segmented" role="group" aria-label="자산 구분" data-asset-filter>
             {(
               [
                 ['crypto', '코인'],
-                ['stock', '주식선물'],
+                ...(bitget ? ([['stock', '주식선물']] as [AssetFilter, string][]) : []),
                 ['all', '전체'],
               ] as [AssetFilter, string][]
             ).map(([key, label]) => (
-              <button key={key} className={asset === key ? 'on' : ''} onClick={() => setAsset(key)}>
+              <button
+                key={key}
+                className={asset === key ? 'on' : ''}
+                data-asset={key}
+                onClick={() => setAsset(key)}
+              >
                 {label}
               </button>
             ))}
@@ -353,7 +371,7 @@ export function ScannerTab({
 
       {state.status === 'error' && (
         <div className="notice error">
-          비트겟 API 호출 실패: {state.error}
+          {EXCHANGES[exchange].name} 마켓 데이터 호출 실패: {state.error}
           <button onClick={onRescan}>다시 시도</button>
         </div>
       )}
@@ -376,7 +394,7 @@ export function ScannerTab({
                 settings.leverageMode === 'auto'
                   ? 'COTA 추천 배율(잔고·손절폭 기준)'
                   : `레버리지 ${settings.leverage}x 고정`
-              } · 코인 ${counts.crypto}건 · 주식선물 ${counts.stock}건`}
+              } · 코인 ${counts.crypto}건${bitget ? ` · 주식선물 ${counts.stock}건` : ''}`}
         </span>
       </div>
 
@@ -497,7 +515,7 @@ export function ScannerTab({
       </div>
 
       <div className="feed-note">
-        실시간 비트겟 캔들(1H/4H, 200봉) 기반 · 마지막 스캔{' '}
+        {EXCHANGES[exchange].marketLine} 캔들(1H/4H, 200봉) 기반 · 데이터 {marketSourceLabel(state.source)} · 마지막 스캔{' '}
         {state.finishedAt ? new Date(state.finishedAt).toLocaleTimeString('ko-KR', { hour12: false }) : '-'} ·
         자동 갱신 {settings.refreshSec ? `${settings.refreshSec}초` : '꺼짐'} · 즐겨찾기 {scanFavorites.length}개 저장됨
       </div>

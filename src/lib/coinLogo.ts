@@ -45,3 +45,9 @@ export async function coinIconUrl(base: string, asset: AssetClass): Promise<stri
 export function bitgetFuturesUrl(symbol: string): string {
   return `https://www.bitget.com/futures/usdt/${symbol.replace(/\s+/g, '').toUpperCase()}`;
 }
+
+/** 바이낸스 USDT 마켓 거래 페이지 — BTCUSDT → /trade/BTC_USDT */
+export function binanceTradeUrl(symbol: string): string {
+  const base = symbol.replace(/USDT$/i, '').replace(/\s+/g, '').toUpperCase();
+  return `https://www.binance.com/en/trade/${base}_USDT`;
+}

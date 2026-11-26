@@ -6824,3 +6824,408 @@ textarea {
     display: none;
   }
 }
+
+/* =========================================================
+   🏦 거래소 선택 · 전환 (비트겟 / 바이낸스)
+   ========================================================= */
+
+.exchange-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+  padding: 5px 9px 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  cursor: pointer;
+  flex: 0 0 auto;
+  box-shadow: var(--shadow-sm);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.exchange-chip:hover {
+  background: var(--card-2);
+  border-color: #d7dce2;
+}
+
+.exchange-chip img {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.exchange-chip b {
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+}
+
+.exchange-chip svg {
+  color: var(--sub);
+}
+
+.exchange-chip.binance img {
+  padding: 1px;
+}
+
+.source-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card-2);
+  color: var(--ink-2);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+}
+
+/* ---------- 첫 방문 선택 화면 ---------- */
+
+.app-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 28px 18px 40px;
+  background:
+    radial-gradient(680px 320px at 50% -8%, #ffffff 0%, rgba(255, 255, 255, 0) 70%),
+    var(--bg);
+}
+
+.exchange-gate-inner {
+  width: 100%;
+  max-width: 430px;
+  text-align: center;
+}
+
+.exchange-gate-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 17px;
+  object-fit: cover;
+  background: #eff4fb;
+  box-shadow: 0 6px 18px -8px rgba(17, 24, 39, 0.35);
+}
+
+.exchange-gate-inner h1 {
+  margin: 16px 0 8px;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: -0.9px;
+  color: var(--ink);
+}
+
+.exchange-gate-inner p {
+  margin: 0 0 22px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--sub);
+  font-weight: 500;
+}
+
+.exchange-gate-foot {
+  margin-top: 18px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--sub);
+}
+
+.exchange-gate-foot b {
+  color: var(--ink-2);
+  font-weight: 800;
+}
+
+.exchange-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.exchange-options.settings {
+  gap: 8px;
+}
+
+.exchange-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 15px 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 18px;
+  background: var(--card);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+
+.exchange-option:hover {
+  border-color: #cfd8e3;
+  transform: translateY(-1px);
+}
+
+.exchange-option:active {
+  transform: translateY(0);
+}
+
+.exchange-option.on {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  box-shadow: 0 8px 22px -16px rgba(49, 130, 246, 0.9);
+}
+
+.exchange-option-logo {
+  width: 50px;
+  height: 50px;
+  border-radius: 15px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.exchange-option-logo img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
+.exchange-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.exchange-option-copy b {
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: -0.4px;
+  color: var(--ink);
+  word-break: keep-all;
+}
+
+.exchange-option-copy b em {
+  font-style: normal;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.exchange-option-copy span {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--sub);
+  font-weight: 500;
+  word-break: keep-all;
+  text-wrap: pretty;
+}
+
+.exchange-option-badge {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+}
+
+.exchange-option-arrow {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sub);
+}
+
+/* 설정 탭 카드 — 조금 더 조밀하게 */
+.exchange-panel .exchange-option {
+  padding: 12px 13px;
+  border-radius: 16px;
+}
+
+.exchange-panel .exchange-option-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+}
+
+.exchange-panel .exchange-option-logo img {
+  width: 34px;
+  height: 34px;
+}
+
+/* ---------- 전환 시트 ---------- */
+
+.exchange-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(17, 24, 39, 0.34);
+  backdrop-filter: blur(2px);
+}
+
+.exchange-sheet {
+  width: 100%;
+  max-width: 480px;
+  padding: 18px 18px calc(20px + env(safe-area-inset-bottom));
+  border-radius: 24px 24px 0 0;
+  background: var(--bg);
+  box-shadow: 0 -8px 40px rgba(17, 24, 39, 0.2);
+  animation: exchangeSheetUp 0.18s ease-out;
+}
+
+@keyframes exchangeSheetUp {
+  from {
+    transform: translateY(14px);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.exchange-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.exchange-sheet-head b {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+}
+
+.exchange-sheet-close {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: #e5e8eb;
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.exchange-sheet-note {
+  margin: 4px 0 12px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--sub);
+  font-weight: 500;
+}
+
+@media (min-width: 700px) {
+  .exchange-sheet-backdrop {
+    align-items: center;
+  }
+
+  .exchange-sheet {
+    border-radius: 24px;
+  }
+}
+
+/* ---------- 자동매매 — 바이낸스 모드 안내 ---------- */
+
+.exchange-only-note {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 16px;
+  border: 1px solid #ffe0b2;
+  border-radius: var(--radius);
+  background: var(--amber-soft);
+}
+
+.exchange-only-copy {
+  flex: 1;
+  min-width: 0;
+  word-break: keep-all;
+}
+
+.exchange-only-copy > b {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 900;
+  letter-spacing: -0.4px;
+  color: #8a5b00;
+}
+
+/* 본문 속 강조(거래소 이름)는 문장 안에 그대로 이어지게 */
+.exchange-only-copy p b {
+  display: inline;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
+
+.exchange-only-copy p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8a5b00;
+  opacity: 0.9;
+  font-weight: 500;
+  word-break: keep-all;
+}
+
+.exchange-only-btn {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: #f5a623;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: -0.3px;
+  cursor: pointer;
+  box-shadow: 0 6px 14px -8px rgba(245, 166, 35, 0.9);
+}
+
+.exchange-only-btn:hover {
+  background: #e89a17;
+}
+
+@media (max-width: 520px) {
+  .brand-text span {
+    display: none;
+  }
+
+  .exchange-chip {
+    margin-left: 0;
+  }
+}
+
+@media (min-width: 700px) {
+  .exchange-only-note {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+@media (max-width: 380px) {
+  .exchange-only-btn {
+    width: 100%;
+  }
+}

@@ -1,5 +1,6 @@
 import type { Candle, TF } from '../engine/types';
-import { fetchCandles } from './bitget';
+import type { Exchange } from '../lib/exchange';
+import { fetchMarketCandles } from './market';
 
 /**
  * COTA 공개 시장 데이터 — 브라우저에서 직접 호출해 CORS 통과를 확인한 엔드포인트만 쓴다.
@@ -229,6 +230,11 @@ export async function fetchBithumbPrices(bases: string[]): Promise<Map<string, K
 
 /* ---------------- 캔들 ---------------- */
 
-export async function fetchBigCandles(symbol: string, tf: TF, limit = 500): Promise<Candle[]> {
-  return fetchCandles(symbol, tf, limit);
+export async function fetchBigCandles(
+  exchange: Exchange,
+  symbol: string,
+  tf: TF,
+  limit = 500,
+): Promise<Candle[]> {
+  return fetchMarketCandles(exchange, symbol, tf, limit);
 }

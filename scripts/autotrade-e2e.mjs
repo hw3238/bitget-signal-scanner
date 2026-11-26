@@ -126,10 +126,12 @@ function snapshotScript() {
     candlesLoaded: 0,
     candleAt: now,
   };
+  localStorage.setItem('cota.exchange.v1', 'bitget');
   localStorage.setItem(
-    'cota.scan.snapshot.v1',
+    'cota.scan.snapshot.v2',
     JSON.stringify({
-      v: 1,
+      v: 2,
+      exchange: 'bitget',
       at: now,
       contracts: [contract],
       markets: 1,
@@ -398,7 +400,7 @@ async function open({ native = true, blockMarket = true, oldApk = false, seedCon
   // 알트 코인(DOGE) 시그널을 하나 더 심어 '전체 코인' 기본값이 실제 감시 목록에 들어가는지 본다.
   if (altSignal) {
     await ctx.addInitScript(() => {
-      const raw = localStorage.getItem('cota.scan.snapshot.v1');
+      const raw = localStorage.getItem('cota.scan.snapshot.v2');
       if (!raw) return;
       const snap = JSON.parse(raw);
       const now = Date.now();
@@ -421,7 +423,7 @@ async function open({ native = true, blockMarket = true, oldApk = false, seedCon
         ...snap.contracts,
         { ...snap.contracts[0], symbol: 'DOGEUSDT', base: 'DOGE', decimals: 4, minTradeNum: 1, volumePlace: 0, minTradeUsdt: 5 },
       ];
-      localStorage.setItem('cota.scan.snapshot.v1', JSON.stringify(snap));
+      localStorage.setItem('cota.scan.snapshot.v2', JSON.stringify(snap));
     });
   }
   // 예전 버전이 저장해 둔 설정을 심는다 — 새로고침 때 다시 덮지 않도록 없을 때만 쓴다.

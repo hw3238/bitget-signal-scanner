@@ -1,6 +1,6 @@
 # COTA — 실시간 트레이딩 시그널
 
-비트겟 USDT-M **코인 선물**을 실시간으로 스캔해 고승률 셋업만 골라 주는 모바일 우선 스캐너입니다.
+비트겟 USDT-M **코인 선물**과 바이낸스 **USDT 마켓**을 거래소별로 따로 스캔해 고승률 셋업만 골라 주는 모바일 우선 스캐너입니다.
 토스/토스증권 스타일의 라이트 UI, 전면 한글 라벨, 종목별 가격 가독성, **연결된 비트겟 실계좌 잔고 기준** COTA 추천 레버리지를 제공합니다.
 
 | 구분 | 링크 |
@@ -10,6 +10,26 @@
 | 현재 버전 | **v1.5.7** (versionCode 13) |
 
 ## 주요 기능
+
+- **🏦 거래소 선택(바이낸스·비트겟) · 거래소별 독립 탐지 (v1.5.7 웹 기능, APK 재설치 불필요)**
+  - **첫 화면 = 거래소 선택**: 아직 고르지 않았으면(첫 방문) 스캐너 대신 **Binance (바이낸스)** / **Bitget (비트겟)** 카드를 보여 줍니다.
+    카드마다 **공식 로고**(`public/exchanges/binance.svg` · `bitget.svg`)·설명이 붙고, 고르면 `cota.exchange.v1`(localStorage)에 저장되어
+    다음 방문부터는 바로 스캐너로 들어갑니다. 헤더의 **거래소 칩**을 누르거나 `설정 → 🏦 거래소` 카드에서 **언제든 전환**할 수 있습니다.
+  - **거래소별 독립 탐지**: 시그널 목록·급등 탐색기·계약·캔들·시그널 이력이 거래소별로 분리됩니다(캐시 키 `exchange|symbol|tf`).
+    거래소를 바꾸면 이전 거래소의 시그널·후보를 **즉시 비우고** 새 거래소 마켓만 다시 스캔합니다.
+    · Bitget = USDT-M 선물 + 주식선물, `주식선물` 필터 사용
+    · Binance = USDT 마켓 코인 전용(현물에 없는 `주식선물` 필터는 숨김, 법정화폐 쌍 제외)
+  - **바이낸스 데이터 경로(정직한 폴백)**: ① `fapi.binance.com`(선물) → 451·CORS·네트워크 실패 시 ② `data-api.binance.vision/api/v3`(공식 현물 마켓 데이터, 지역 무관).
+    화면의 **출처 배지**(`data-scan-source`)에 실제로 붙은 곳(`바이낸스 선물` / `바이낸스 현물 데이터` / `비트겟 선물`)을 그대로 표시합니다.
+    현물 데이터에는 펀딩비·미결제약정이 없어 급등 탐색기의 ③ 숏스퀴즈를 **확인 불가(부분 점수)** 로 두고, 카드 펀딩은 `—`로 표시합니다(없는 값을 0으로 읽어 통과시키지 않음).
+  - **자동매매는 비트겟 전용**: 바이낸스 모드에서 `자동매매` 탭을 열면 그 사실을 안내하고 **`Bitget으로 전환`** 버튼을 바로 제공합니다.
+    바이낸스 시그널은 자동매매 감시·원클릭 주문 대상에서 **원천 제외**됩니다(비트겟 계좌로 다른 거래소 시그널이 주문되는 사고 방지).
+  - **바이낸스 API 최적화**: 재스캔은 계약 목록 기준 `?symbols=` 배치로 받고(전 종목 24h 1.9MB 반복 요청 방지),
+    현물 계약 스펙은 거래대금 상위 180종목만 `exchangeInfo?symbols=`로 받습니다(전체 18MB 회피). 펀딩비는 5분 캐시.
+  - 검증: `npm run check:exchange` **41건**(메타·저장/불러오기·출처 폴백 순서·호가/수량 단위·티커·캔들·유니버스) ·
+    `npm run check:exchange-e2e` **46건**(첫 방문 선택 화면 → Binance 스캔·가격 교차검증 → 저장 → 칩/설정 전환 → 비트겟 재스캔 → 급등 탐색기 거래소 일치 → 자동매매 안내 · 콘솔 에러 0).
+  - 스크린샷: `docs/screens/105-exchange-gate.png` · `106-exchange-binance-scanner.png` · `107-exchange-switch-sheet.png` ·
+    `108-exchange-bitget-scanner.png` · `109-exchange-binance-surge.png` · `110-exchange-autotrade-notice.png` · `111-exchange-settings-card.png`.
 
 - **🎯 매매 스타일·프리셋 제거 · 잔고만 보고 유동 레버리지 · 자동매매 진입 문제 해결(v1.5.7)**
   - **매매 스타일(보수적/공격적)과 프리셋을 완전히 없앴습니다.** 첫 실행 온보딩 모달이 사라져 앱을 열면 바로 스캐너가 뜨고,
@@ -261,7 +281,9 @@ npm run check:journal               # 매매 복기 집계(승률·누적 R·MDD
 npm run bench:strategies            # 매매법 전수 백테스트(실제 비트겟 60마켓 × 500봉 · 수수료 · IS/OOS)
 npm run bench:strategies -- --engine  # 앱 엔진 그대로 200봉 시뮬레이션(진행 중 시그널 수·채택 분포)
 node scripts/journal-e2e.mjs        # 기록 대시보드 E2E — 세그먼트·곡선 색/클리핑·전략표·복기 메모·원탭 진입 (스크린샷 47~51)
-npm run check:surge                 # 급등 탐색기 6요건 경계·점수·플랜·유니버스·필터 + 실제 API 교차검증(76건)
+npm run check:exchange              # 거래소 선택·바이낸스 어댑터 — 저장/불러오기·451 폴백 순서·호가 단위·티커·캔들·유니버스(41건)
+npm run check:exchange-e2e          # 거래소 선택·전환 E2E — 첫 방문 → Binance 스캔 → Bitget 전환 → 급등/자동매매 거래소 일치 (스크린샷 105~113)
+npm run check:surge                 # 급등 탐색기 6요건 경계·점수·플랜·유니버스·필터 + 실제 API 교차검증(79건)
 npm run check:surge-e2e             # 급등 탐색기 E2E — 진행률·카드 정합성·티커/캔들 교차검증·필터·복사 (스크린샷 82~86)
 node scripts/features-check.mjs     # 메뉴 8도구·김프·생존·사이징·수수료·도플갱어·키맞추기·시황 카드 E2E (스크린샷 25~36)
 node scripts/toss-ui-check.mjs      # 5탭·코인 집중·한글화·가격·온보딩·COTA 추천·실전 주문 콕핏·공유카드 (스크린샷 45)
@@ -270,6 +292,7 @@ node scripts/notify-check.mjs       # 알림 로직 + 설정 UI
 node scripts/favorites-check.mjs    # 즐겨찾기·검색·더보기·기록
 node scripts/pages-check.mjs        # /bitget-signal-scanner/ 서브패스 배포 경로
 node scripts/live-check.mjs         # 라이브 Pages 검증
+node scripts/live-exchange-check.mjs # 라이브 거래소 선택 → 바이낸스 시그널 → 비트겟 전환 검증 (스크린샷 114~116)
 node scripts/live-notify-check.mjs  # 라이브 알림 UI 검증
 ```
 

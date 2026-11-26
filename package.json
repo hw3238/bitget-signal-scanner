@@ -14,6 +14,8 @@
     "check:journal": "esbuild scripts/journal-check.ts --bundle --platform=node --format=esm --outfile=.tmp/journal-check.mjs --log-level=error && node .tmp/journal-check.mjs",
     "check:adoption": "esbuild scripts/adoption-check.ts --bundle --platform=node --format=esm --outfile=.tmp/adoption-check.mjs --log-level=error && node .tmp/adoption-check.mjs",
     "check:surge": "esbuild scripts/surge-check.ts --bundle --platform=node --format=esm --outfile=.tmp/surge-check.mjs --log-level=error && node .tmp/surge-check.mjs",
+    "check:exchange": "esbuild scripts/exchange-check.ts --bundle --platform=node --format=esm --outfile=.tmp/exchange-check.mjs --log-level=error && node .tmp/exchange-check.mjs",
+    "check:exchange-e2e": "node scripts/exchange-e2e.mjs",
     "check:journal-e2e": "node scripts/journal-e2e.mjs",
     "check:features": "node scripts/features-check.mjs",
     "check:surge-e2e": "node scripts/surge-e2e.mjs",

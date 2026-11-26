@@ -61,6 +61,23 @@ async function waitReady(page) {
   await page.waitForTimeout(600);
 }
 
+/**
+ * 진행중 시그널이 1장뿐인 시간대에도 카드 동작(⭐·검색·더보기)을 검증할 수 있게
+ * `종료 포함`으로 넓혀 카드를 채운다. 이미 충분하면 아무것도 하지 않는다.
+ */
+async function ensureCards(page, need = 3) {
+  let count = await page.locator('.signal-card:not(.skeleton)').count();
+  if (count >= need) return count;
+  const toggle = page.locator('.ghost-toggle').first();
+  const text = (await toggle.count()) ? ((await toggle.textContent()) ?? '') : '';
+  if (text.includes('진행중만')) {
+    await toggle.click();
+    await page.waitForTimeout(700);
+    count = await page.locator('.signal-card:not(.skeleton)').count();
+  }
+  return count;
+}
+
 const favCount = (page) =>
   page.evaluate((key) => {
     try {
@@ -147,6 +164,7 @@ const run = async () => {
   });
   // 첫 실행 온보딩을 건너뛰도록 투자 프로필을 미리 저장한다.
   await mobile.addInitScript(() => {
+    localStorage.setItem('cota.exchange.v1', 'bitget');
     localStorage.setItem(
       'cota.profile.v1',
       JSON.stringify({ seed: 1000, style: 'conservative', updatedAt: Date.now() }),
@@ -157,7 +175,7 @@ const run = async () => {
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
   await waitReady(page);
 
-  const initialCards = await page.locator('.signal-card:not(.skeleton)').count();
+  const initialCards = await ensureCards(page, 3);
   check('스캐너 시그널 카드 렌더', initialCards > 0, `${initialCards}장`);
   check('즐겨찾기 필터 칩 표시', await page.locator('.fav-toggle').isVisible());
   check('초기 즐겨찾기 0개', (await favCount(page)) === 0, `localStorage=${await favCount(page)}`);
@@ -416,6 +434,7 @@ const run = async () => {
     timezoneId: 'Asia/Seoul',
   });
   await desktop.addInitScript(() => {
+    localStorage.setItem('cota.exchange.v1', 'bitget');
     localStorage.setItem(
       'cota.profile.v1',
       JSON.stringify({ seed: 1000, style: 'conservative', updatedAt: Date.now() }),
@@ -425,7 +444,7 @@ const run = async () => {
   attach(dpage, 'desktop');
   await dpage.goto(URL, { waitUntil: 'domcontentloaded' });
   await waitReady(dpage);
-  const desktopCards = await dpage.locator('.signal-card:not(.skeleton)').count();
+  const desktopCards = await ensureCards(dpage, 3);
   check('데스크톱 카드 렌더', desktopCards > 0, `${desktopCards}장`);
   await dpage.locator('.signal-card:not(.skeleton) .fav-btn').first().click();
   await dpage.locator('.signal-card:not(.skeleton) .fav-btn').nth(1).click();

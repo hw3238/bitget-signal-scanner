@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BottomNav, NAV_TABS, type TabKey } from './components/BottomNav';
+import { ExchangeGate, ExchangeSheet } from './components/ExchangePicker';
 import { HistoryTab } from './components/HistoryTab';
 import { MarketTab } from './components/MarketTab';
 import { MenuTab } from './components/MenuTab';
@@ -8,7 +9,7 @@ import { SettingsTab } from './components/SettingsTab';
 import type { MenuView } from './components/MenuTab';
 import { ShareModal } from './components/ShareModal';
 import logoUrl from './assets/cota-logo.png';
-import { RefreshIcon } from './components/Icons';
+import { RefreshIcon, SwapIcon } from './components/Icons';
 import type { Contract, Signal } from './engine/types';
 import { useFavorites } from './hooks/useFavorites';
 import { useAutoTrade } from './hooks/useAutoTrade';
@@ -20,6 +21,7 @@ import { useApkUpdate } from './lib/useApkUpdate';
 import { useSignalNotifications } from './lib/notify';
 import { APK_DOWNLOAD_URL, checkForUpdate, RELEASES_PAGE } from './lib/update';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from './lib/storage';
+import { EXCHANGES, loadExchange, saveExchange, type Exchange } from './lib/exchange';
 import { recommendLeverage } from './lib/profile';
 import { planRiskSave } from './lib/settingsSync';
 
@@ -27,6 +29,9 @@ type Tab = TabKey;
 
 export default function App() {
   const [settings, setSettings] = useState<Settings>(() => ({ ...DEFAULT_SETTINGS, ...loadSettings() }));
+  /** 거래소 선택 — null 이면 아직 고르지 않은 첫 방문(선택 화면을 먼저 보여준다) */
+  const [exchange, setExchange] = useState<Exchange | null>(() => loadExchange());
+  const [exchangeSheet, setExchangeSheet] = useState(false);
   const [tab, setTab] = useState<Tab>('scanner');
   const [shareSignal, setShareSignal] = useState<Signal | null>(null);
   const [update, setUpdate] = useState<{ version: string; apkUrl: string | null; htmlUrl: string } | null>(
@@ -48,6 +53,7 @@ export default function App() {
   const { state, history, swapLog, scan, clearHistory, clearSwapLog } = useScanner({
     refreshSec: settings.refreshSec,
     favoriteSymbols,
+    exchange,
   });
 
   /**
@@ -65,7 +71,9 @@ export default function App() {
   }, [state.contracts]);
 
   const autoTrade = useAutoTrade({
-    signals: state.signals,
+    // 자동매매·원클릭 주문은 **비트겟 계좌 전용** — 바이낸스 모드에서는 시그널을 감시 대상에서 뺀다.
+    // (바이낸스 시그널로 비트겟 주문이 나가는 사고를 원천 차단)
+    signals: exchange === 'bitget' ? state.signals : [],
     contracts: state.contracts,
     // 잔고(equity)와 종목 최대 배율을 함께 넘겨 잔고 구간별 유동 레버리지를 쓴다(v1.5.6)
     leverageFor: (signal, equity) =>
@@ -103,6 +111,13 @@ export default function App() {
       saveSettings(next);
       return next;
     });
+  }, []);
+
+  /** 거래소 선택·전환 — 저장하고, 스캐너는 새 거래소 마켓만 다시 스캔한다(useScanner). */
+  const chooseExchange = useCallback((next: Exchange) => {
+    saveExchange(next);
+    setExchangeSheet(false);
+    setExchange(next);
   }, []);
 
   // 새 시그널 알림음
@@ -189,6 +204,18 @@ export default function App() {
     setTab(next);
   }, []);
 
+  /** 첫 방문 — 거래소를 고르기 전에는 선택 화면만 보여준다. */
+  if (!exchange) {
+    return (
+      <div className="app app-gate">
+        <ExchangeGate onPick={chooseExchange} />
+      </div>
+    );
+  }
+
+  const exchangeMeta = EXCHANGES[exchange];
+  const bitgetMode = exchange === 'bitget';
+
   return (
     <div className="app">
       <header className="app-bar">
@@ -197,8 +224,20 @@ export default function App() {
             <img className="brand-logo" src={logoUrl} alt="COTA" width={34} height={34} />
             <div className="brand-text">
               <b>COTA</b>
-              <span>실시간 코인 · 주식선물 시그널</span>
+              <span>{exchangeMeta.marketLine} 시그널</span>
             </div>
+            <button
+              type="button"
+              className={`exchange-chip ${exchange}`}
+              data-exchange-chip
+              data-exchange-value={exchange}
+              onClick={() => setExchangeSheet(true)}
+              aria-label={`거래소 전환 — 현재 ${exchangeMeta.koName}`}
+            >
+              <img src={exchangeMeta.logo} alt="" width={18} height={18} data-exchange-chip-logo />
+              <b>{exchangeMeta.koName}</b>
+              <SwapIcon size={12} />
+            </button>
           </div>
 
           <nav className="top-nav">
@@ -273,6 +312,7 @@ export default function App() {
         )}
         {tab === 'scanner' && (
           <ScannerTab
+            exchange={exchange}
             state={state}
             settings={settings}
             favorites={favorites.entries}
@@ -285,18 +325,25 @@ export default function App() {
             onConnectAccount={openAutoTrade}
             myTrades={myTrades.entries}
             onToggleMyTrade={myTrades.toggle}
-            onQuickOrder={(s) => {
-              void autoTrade.quickOrder(s).then((res) => {
-                if (!res.ok) window.alert(res.message);
-              });
-            }}
+            onQuickOrder={
+              // 바이낸스 모드는 탐지 전용 — 비트겟 계좌로 주문이 나가지 않도록 버튼 자체를 숨긴다.
+              bitgetMode
+                ? (s) => {
+                    void autoTrade.quickOrder(s).then((res) => {
+                      if (!res.ok) window.alert(res.message);
+                    });
+                  }
+                : undefined
+            }
             quickOrderMode={autoTrade.tradeMode.mode}
             quickOrderSymbol={autoTrade.busy?.startsWith('order:') ? autoTrade.busy.slice(6) : null}
           />
         )}
-        {tab === 'market' && <MarketTab state={state} onRescan={() => void scan(true)} />}
+        {tab === 'market' && <MarketTab state={state} exchange={exchange} onRescan={() => void scan(true)} />}
         {tab === 'menu' && (
           <MenuTab
+            exchange={exchange}
+            onExchangeChange={chooseExchange}
             state={state}
             account={autoTrade.accountBase}
             view={menuView}
@@ -324,6 +371,8 @@ export default function App() {
         )}
         {tab === 'settings' && (
           <SettingsTab
+            exchange={exchange}
+            onExchangeChange={chooseExchange}
             settings={settings}
             state={state}
             onChange={patchSettings}
@@ -352,6 +401,10 @@ export default function App() {
           onToggleFavorite={favorites.toggle}
           onClose={() => setShareSignal(null)}
         />
+      )}
+
+      {exchangeSheet && (
+        <ExchangeSheet current={exchange} onPick={chooseExchange} onClose={() => setExchangeSheet(false)} />
       )}
     </div>
   );

@@ -80,6 +80,7 @@ const run = async () => {
     permissions: ['clipboard-read', 'clipboard-write'],
   });
   await mobile.addInitScript(() => {
+    localStorage.setItem('cota.exchange.v1', 'bitget');
     window.clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
     // 자동 갱신은 꺼 두고(스캔 완료 화면 고정) 프로필은 첫 실행 상태로 둔다.
     if (!localStorage.getItem('bgss.settings.v1')) {
@@ -584,6 +585,7 @@ const run = async () => {
     timezoneId: 'Asia/Seoul',
   });
   await desktop.addInitScript(() => {
+    localStorage.setItem('cota.exchange.v1', 'bitget');
     window.clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
     localStorage.setItem('cota.profile.v1', JSON.stringify({ style: 'conservative', updatedAt: Date.now() }));
   });

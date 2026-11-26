@@ -7,11 +7,12 @@ import { fmtPct, fmtPrice, fmtTime } from '../lib/format';
 import { ArrowUpRightIcon, RefreshIcon } from './Icons';
 import { bitgetFuturesUrl } from '../lib/coinLogo';
 import { openBitgetFutures } from '../lib/native';
+import type { Exchange } from '../lib/exchange';
 
 const TOP_N = 30;
 const CANDLE_COUNT = 60;
 
-export function KeyMatchRadar({ state }: { state: ScanState }) {
+export function KeyMatchRadar({ exchange, state }: { exchange: Exchange; state: ScanState }) {
   const [bars, setBars] = useState(4);
   const [btcCloses, setBtcCloses] = useState<number[]>([]);
   const [series, setSeries] = useState<Map<string, { closes: number[]; last: number; base: string }>>(new Map());
@@ -20,6 +21,12 @@ export function KeyMatchRadar({ state }: { state: ScanState }) {
   const [error, setError] = useState<string | null>(null);
   const [at, setAt] = useState(0);
   const running = useRef(false);
+
+  /* 거래소를 바꾸면 이전 거래소 캔들로 만든 시계열을 버린다. */
+  useEffect(() => {
+    setSeries(new Map());
+    setBtcCloses([]);
+  }, [exchange]);
 
   /** 비트겟 24h 거래대금 상위 코인 + BTC */
   const universe = useMemo(() => {
@@ -40,14 +47,14 @@ export function KeyMatchRadar({ state }: { state: ScanState }) {
     setProgress(0);
     try {
       const btcSym = universe.find((u) => u.symbol === 'BTCUSDT') ? 'BTCUSDT' : 'BTCUSDT';
-      const btc = await fetchBigCandles(btcSym, '1H', CANDLE_COUNT);
+      const btc = await fetchBigCandles(exchange, btcSym, '1H', CANDLE_COUNT);
       setBtcCloses(btc.map((c: Candle) => c.c));
       const list = universe.filter((u) => u.symbol !== 'BTCUSDT');
       const next = new Map<string, { closes: number[]; last: number; base: string }>();
       let done = 0;
       await mapLimit(list, 2, async (coin) => {
         try {
-          const rows = await fetchBigCandles(coin.symbol, '1H', CANDLE_COUNT);
+          const rows = await fetchBigCandles(exchange, coin.symbol, '1H', CANDLE_COUNT);
           next.set(coin.symbol, { closes: rows.map((c) => c.c), last: coin.last, base: coin.base });
         } catch {
           /* 개별 종목 실패는 건너뛴다 */
@@ -64,7 +71,7 @@ export function KeyMatchRadar({ state }: { state: ScanState }) {
       setLoading(false);
       running.current = false;
     }
-  }, [universe]);
+  }, [exchange, universe]);
 
   useEffect(() => {
     if (universe.length > 0 && series.size === 0 && !loading) void load();

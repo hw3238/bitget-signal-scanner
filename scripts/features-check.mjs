@@ -76,6 +76,7 @@ const run = async () => {
     timezoneId: 'Asia/Seoul',
   });
   await mobile.addInitScript(() => {
+    localStorage.setItem('cota.exchange.v1', 'bitget');
     localStorage.setItem('cota.profile.v1', JSON.stringify({ seed: 5000, style: 'conservative', updatedAt: Date.now() }));
     if (!localStorage.getItem('bgss.settings.v1')) {
       localStorage.setItem('bgss.settings.v1', JSON.stringify({ refreshSec: 0 }));
@@ -590,6 +591,7 @@ const run = async () => {
     timezoneId: 'Asia/Seoul',
   });
   await desktop.addInitScript(() => {
+    localStorage.setItem('cota.exchange.v1', 'bitget');
     localStorage.setItem('cota.profile.v1', JSON.stringify({ seed: 1000, style: 'conservative', updatedAt: Date.now() }));
   });
   const dpage = await desktop.newPage();

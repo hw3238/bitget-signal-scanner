@@ -8,11 +8,12 @@ import { CoinSelect } from './ui';
 import { DownloadIcon, RefreshIcon } from './Icons';
 import { ImageCardModal } from './ImageCardModal';
 import { drawDoppelCard } from './doppelCard';
+import type { Exchange } from '../lib/exchange';
 
 const PATTERN_OPTIONS = [18, 24, 36];
 const FUTURE_BARS = 12;
 
-export function Doppelganger({ state }: { state: ScanState }) {
+export function Doppelganger({ exchange, state }: { exchange: Exchange; state: ScanState }) {
   const coins = useMemo(
     () =>
       state.contracts
@@ -39,7 +40,7 @@ export function Doppelganger({ state }: { state: ScanState }) {
     setLoading(true);
     setError(null);
     try {
-      const rows = await fetchBigCandles(symbol, tf, 500);
+      const rows = await fetchBigCandles(exchange, symbol, tf, 500);
       if (rows.length < patternLen + FUTURE_BARS + 5) throw new Error('캔들이 부족합니다');
       setCandles(rows);
       setAt(Date.now());
@@ -48,7 +49,7 @@ export function Doppelganger({ state }: { state: ScanState }) {
     } finally {
       setLoading(false);
     }
-  }, [symbol, tf, patternLen]);
+  }, [exchange, symbol, tf, patternLen]);
 
   useEffect(() => {
     void load();

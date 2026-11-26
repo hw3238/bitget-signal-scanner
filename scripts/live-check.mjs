@@ -29,6 +29,7 @@ const context = await browser.newContext({
   timezoneId: 'Asia/Seoul',
 });
 await context.addInitScript(() => {
+  localStorage.setItem('cota.exchange.v1', 'bitget');
   window.clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
 });
 const page = await context.newPage();
