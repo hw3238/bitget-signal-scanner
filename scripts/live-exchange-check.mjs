@@ -82,7 +82,6 @@ const readScanner = () =>
       }))
       .filter((x) => x.symbol),
     stored: localStorage.getItem('cota.exchange.v1'),
-    scripts: [...document.querySelectorAll('script[src]')].map((s) => s.getAttribute('src')),
   }));
 
 const binance = await binanceSymbols();
@@ -112,48 +111,46 @@ const gate = await page.evaluate(() => {
 check(gateSeen && !gate.scanner, '라이브 첫 방문 = 거래소 선택 화면', `heading="${gate.heading}"`);
 check(gate.options.join(',') === 'binance,bitget', '선택 카드 = Binance · Bitget', gate.options.join(','));
 check(
+  gate.logos.every((l) => l.ok) &&
+    gate.logos.some((l) => /exchanges\/binance\.svg/.test(l.src ?? '')) &&
+    gate.logos.some((l) => /exchanges\/bitget\.svg/.test(l.src ?? '')),
   '라이브 로고 2개 로드(내장 svg)',
-  gate.logos.every((l) => l.ok) && gate.logos.some((l) => /exchanges\/binance\.svg/.test(l.src ?? '')) && gate.logos.some((l) => /exchanges\/bitget\.svg/.test(l.src ?? '')),
   JSON.stringify(gate.logos),
 );
-check('새 빌드 자산 로드', gate.scripts.some((s) => /index-.*\.js/.test(s ?? '')), gate.scripts.join(','));
+check(gate.scripts.some((s) => /index-.*\.js/.test(s ?? '')), '새 빌드 자산 로드', gate.scripts.join(','));
 await page.screenshot({ path: `${OUT}/114-live-exchange-gate.png` });
 
 /* ---------- 2) Binance → 실제 탐지 ---------- */
 await page.locator('[data-exchange-option="binance"]').click();
 await waitScanner();
 const b = await readScanner();
-check('라이브 Binance 선택 → 저장', b.stored === 'binance', String(b.stored));
-check('라이브 헤더 칩 = 바이낸스 + 로고', b.chip === 'binance' && b.chipLogo);
-check('라이브 요약 = 바이낸스 USDT 마켓', /바이낸스 USDT 마켓/.test(b.summary), b.summary);
-check('라이브 출처 배지 = 바이낸스 선물/현물', /^바이낸스 (선물|현물 데이터)$/.test(b.source), b.source);
-check('라이브 바이낸스: 주식선물 필터 없음', !b.assets.includes('주식선물'), b.assets.join(','));
-check('라이브 바이낸스 코인 시그널 탐지', b.cards > 0, `${b.cards}건 · ${b.symbols.slice(0, 5).join(',')}`);
+check(b.stored === 'binance', '라이브 Binance 선택 → 저장', String(b.stored));
+check(b.chip === 'binance' && b.chipLogo, '라이브 헤더 칩 = 바이낸스 + 로고');
+check(/바이낸스 USDT 마켓/.test(b.summary), '라이브 요약 = 바이낸스 USDT 마켓', b.summary);
+check(/^바이낸스 (선물|현물 데이터)$/.test(b.source), '라이브 출처 배지 = 바이낸스 선물/현물', b.source);
+check(!b.assets.includes('주식선물') && b.assets.includes('코인'), '라이브 바이낸스: 주식선물 필터 없음', b.assets.join(','));
+check(b.cards > 0, '라이브 바이낸스 코인 시그널 탐지', `${b.cards}건 · ${b.symbols.slice(0, 5).join(',')}`);
 check(
-  '라이브 바이낸스 시그널이 전부 바이낸스 USDT 마켓',
   b.cards > 0 && b.symbols.every((s) => binance.size === 0 || binance.has(s)),
+  '라이브 바이낸스 시그널이 전부 바이낸스 USDT 마켓',
   b.symbols.slice(0, 6).join(','),
 );
-const livePrices = await (async () => {
+const livePrices = new Map();
+for (const { symbol } of b.prices) {
   try {
-    const out = new Map();
-    for (const { symbol } of b.prices) {
-      const r = await fetch(`${BINANCE_SPOT}/api/v3/ticker/24hr?symbol=${symbol}`);
-      if (!r.ok) continue;
-      out.set(symbol, Number((await r.json()).lastPrice));
-    }
-    return out;
+    const r = await fetch(`${BINANCE_SPOT}/api/v3/ticker/24hr?symbol=${symbol}`);
+    if (r.ok) livePrices.set(symbol, Number((await r.json()).lastPrice));
   } catch {
-    return new Map();
+    /* 비교 표본에서 제외 */
   }
-})();
+}
 const priceRows = b.prices
   .filter((p) => livePrices.has(p.symbol))
   .map((p) => ({ ...p, live: livePrices.get(p.symbol) }));
 check(
-  '라이브 카드 가격 = 바이낸스 실시간 티커(±2%)',
   priceRows.length === 0 ||
     priceRows.every((p) => Math.abs(Number(String(p.price).replace(/[^0-9.-]/g, '')) / p.live - 1) * 100 <= 2),
+  '라이브 카드 가격 = 바이낸스 실시간 티커(±2%)',
   priceRows.map((p) => `${p.symbol} ${p.price} vs ${p.live}`).join(' | ').slice(0, 180) || '비교 표본 없음',
 );
 await page.screenshot({ path: `${OUT}/115-live-binance-signals.png` });
@@ -165,10 +162,10 @@ await page.screenshot({ path: `${OUT}/116-live-switch-sheet.png` });
 await page.locator('.exchange-sheet [data-exchange-option="bitget"]').click();
 await waitScanner();
 const g = await readScanner();
-check('라이브 Bitget 전환 → 저장', g.stored === 'bitget', String(g.stored));
-check('라이브 출처 배지 = 비트겟 선물', g.source === '비트겟 선물', g.source);
-check('라이브 비트겟: 주식선물 필터 복귀', g.assets.includes('주식선물'), g.assets.join(','));
-check('라이브 비트겟 코인 시그널 탐지', g.cards > 0, `${g.cards}건 · ${g.symbols.slice(0, 5).join(',')}`);
+check(g.stored === 'bitget', '라이브 Bitget 전환 → 저장', String(g.stored));
+check(g.source === '비트겟 선물', '라이브 출처 배지 = 비트겟 선물', g.source);
+check(g.assets.includes('주식선물'), '라이브 비트겟: 주식선물 필터 복귀', g.assets.join(','));
+check(g.cards > 0, '라이브 비트겟 코인 시그널 탐지', `${g.cards}건 · ${g.symbols.slice(0, 5).join(',')}`);
 await page.screenshot({ path: `${OUT}/117-live-bitget-signals.png` });
 
 /* ---------- 4) 새로고침 유지 ---------- */
@@ -177,16 +174,15 @@ const after = await page.evaluate(() => ({
   gate: !!document.querySelector('[data-exchange-gate]'),
   chip: document.querySelector('[data-exchange-chip]')?.getAttribute('data-exchange-value'),
 }));
-check('라이브 새로고침 후 선택 유지(선택 화면 없음)', !after.gate && after.chip === 'bitget', JSON.stringify(after));
+check(!after.gate && after.chip === 'bitget', '라이브 새로고침 후 선택 유지(선택 화면 없음)', JSON.stringify(after));
 
 const expected = (line) => /451|fapi\.binance\.com|Failed to load resource/.test(line);
 const realConsole = consoleErrors.filter((e) => !expected(e));
-check('라이브 콘솔 에러 0건(451 폴백 제외)', realConsole.length === 0, JSON.stringify(realConsole.slice(0, 3)));
-check('라이브 페이지 에러 0건', pageErrors.length === 0, JSON.stringify(pageErrors.slice(0, 2)));
+check(realConsole.length === 0, '라이브 콘솔 에러 0건(451 폴백 제외)', JSON.stringify(realConsole.slice(0, 3)));
+check(pageErrors.length === 0, '라이브 페이지 에러 0건', JSON.stringify(pageErrors.slice(0, 2)));
 
 await context.close();
 await browser.close();
 
-const failed = failures;
-console.log(`\n${failed === 0 ? '✅ 라이브 거래소 선택·전환 검증 통과' : `❌ 실패 ${failed}건`}`);
-if (failed) process.exitCode = 1;
+console.log(`\n${failures === 0 ? '✅ 라이브 거래소 선택·전환 검증 통과' : `❌ 실패 ${failures}건`}`);
+if (failures) process.exitCode = 1;
