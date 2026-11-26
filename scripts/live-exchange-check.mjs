@@ -166,15 +166,32 @@ await page.waitForSelector('[data-exchange-sheet]', { timeout: 15000 });
 await page.screenshot({ path: `${OUT}/116-live-switch-sheet.png` });
 await page.locator('.exchange-sheet [data-exchange-option="bitget"]').click();
 await waitScanner();
+// 진행중 코인 시그널이 없는 시간대에도 카드 검증이 되도록 '종료 포함 → 자산 전체'로 넓힌다.
+if ((await page.locator('.scanner-tab .signal-card:not(.skeleton)').count()) === 0) {
+  const toggle = page.locator('.scanner-tab .ghost-toggle').first();
+  if (((await toggle.textContent()) ?? '').includes('진행중만')) {
+    await toggle.click();
+    await page.waitForTimeout(900);
+  }
+  if ((await page.locator('.scanner-tab .signal-card:not(.skeleton)').count()) === 0) {
+    const all = page.locator('.scanner-tab [data-asset-filter] button[data-asset="all"]');
+    if (await all.count()) {
+      await all.first().click();
+      await page.waitForTimeout(900);
+    }
+  }
+}
 const g = await readScanner();
 check(g.stored === 'bitget', '라이브 Bitget 전환 → 저장', String(g.stored));
 check(g.source === '비트겟 선물', '라이브 출처 배지 = 비트겟 선물', g.source);
 check(g.assets.includes('주식선물'), '라이브 비트겟: 주식선물 필터 복귀', g.assets.join(','));
-check(g.cards > 0, '라이브 비트겟 코인 시그널 탐지', `${g.cards}건 · ${g.symbols.slice(0, 5).join(',')}`);
+check(g.cards > 0, '라이브 비트겟 시그널 카드 렌더', `${g.cards}건 · ${g.symbols.slice(0, 5).join(',')}`);
 await page.screenshot({ path: `${OUT}/117-live-bitget-signals.png` });
 
 /* ---------- 4) 새로고침 유지 ---------- */
 await page.reload({ waitUntil: 'domcontentloaded' });
+// 🔐 게이트(v1.5.8) — 저장된 세션 복원이 끝나야 앱이 그려진다(부팅 → 앱).
+await page.waitForSelector('[data-exchange-chip]', { timeout: 60000 });
 const after = await page.evaluate(() => ({
   gate: !!document.querySelector('[data-exchange-gate]'),
   chip: document.querySelector('[data-exchange-chip]')?.getAttribute('data-exchange-value'),

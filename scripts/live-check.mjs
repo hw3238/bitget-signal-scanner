@@ -57,20 +57,53 @@ const firstRun = await page.evaluate(() => ({
 }));
 check(!firstRun.onboarding && firstRun.scanner, '라이브 첫 화면 = 온보딩 없이 바로 스캐너', JSON.stringify(firstRun));
 check(firstRun.styleCards === 0 && firstRun.profile === null, '라이브에 매매 성향 선택·저장값 없음', `styleCards=${firstRun.styleCards}`);
-await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 180000 });
 await page.waitForFunction(
   () => {
-    const b = document.querySelector('.rescan');
+    const b = document.querySelector('.scanner-tab .rescan');
     return !!b && !b.classList.contains('busy');
   },
   { timeout: 180000 },
 );
+// 진행중 코인 시그널이 없는 시간대에도 카드 검증이 되도록 '종료 포함 → 자산 전체'로 넓힌다.
+if ((await page.locator('.scanner-tab .signal-card:not(.skeleton)').count()) === 0) {
+  const toggle = page.locator('.scanner-tab .ghost-toggle').first();
+  if (((await toggle.textContent()) ?? '').includes('진행중만')) {
+    await toggle.click();
+    await page.waitForTimeout(900);
+  }
+  if ((await page.locator('.scanner-tab .signal-card:not(.skeleton)').count()) === 0) {
+    const all = page.locator('.scanner-tab [data-asset-filter] button[data-asset="all"]');
+    if (await all.count()) {
+      await all.first().click();
+      await page.waitForTimeout(900);
+    }
+  }
+}
+await page.waitForSelector('.scanner-tab .signal-card:not(.skeleton)', { timeout: 60000 });
 await page.waitForTimeout(1500);
+
+/** 스캐너 탭에 다녀오면 필터가 기본값(진행중·코인)으로 돌아간다 — 카드가 없으면 넓혀서 다시 찾는다. */
+const ensureCard = async () => {
+  if ((await page.locator('.scanner-tab .signal-card:not(.skeleton)').count()) > 0) return true;
+  const toggle = page.locator('.scanner-tab .ghost-toggle').first();
+  if (((await toggle.textContent()) ?? '').includes('진행중만')) {
+    await toggle.click();
+    await page.waitForTimeout(900);
+  }
+  if ((await page.locator('.scanner-tab .signal-card:not(.skeleton)').count()) > 0) return true;
+  const all = page.locator('.scanner-tab [data-asset-filter] button[data-asset="all"]');
+  if (await all.count()) {
+    await all.first().click();
+    await page.waitForTimeout(900);
+  }
+  return (await page.locator('.scanner-tab .signal-card:not(.skeleton)').count()) > 0;
+};
 
 const ui = await page.evaluate(() => {
   const nav = document.querySelector('.bottom-nav');
   const cards = [...document.querySelectorAll('.scanner-tab .signal-card:not(.skeleton)')];
-  const c = cards[0];
+  // 진행 중(현재 수익률) 카드가 있으면 그 카드를 대표로 본다 — 없으면(시장에 진행 중 코인 시그널 0건) 첫 카드.
+  const c = cards.find((x) => /현재 수익률/.test(x.querySelector('.roi-cap')?.textContent || '')) ?? cards[0];
   return {
     brand: clean(document.querySelector('.brand-text b')?.textContent),
     title: document.title,
@@ -81,6 +114,8 @@ const ui = await page.evaluate(() => {
     labels: [...c.querySelectorAll('.lvl-label')].map((l) => clean(l.textContent)),
     price: clean(c?.querySelector('.price')?.textContent),
     rec: clean(c?.querySelector('.badge.rec')?.textContent),
+    openCard: /현재 수익률/.test(c?.querySelector('.roi-cap')?.textContent || ''),
+    state: clean(c?.querySelector('.badge.state')?.textContent),
     cockpitCells: [...c.querySelectorAll('.cockpit-cell b')].map((b) => clean(b.textContent)),
     cockpitRisk: clean(c?.querySelector('.cockpit-risk')?.textContent),
     unlinked: clean(c?.querySelector('[data-cockpit-unlinked]')?.textContent),
@@ -98,7 +133,8 @@ check(/^(롱 · 매수|숏 · 매도)$/.test(ui.side), '라이브 방향 배지 
 check(ui.labels.join('|') === '목표가|진입가|본전 (EQ)|손절가', '라이브 가격 박스 한글', ui.labels.join(' / '));
 check(/^COTA 추천 \d+x$/.test(ui.rec), '라이브 COTA 추천 배지', ui.rec);
 check(
-  ui.cockpitCells.length === 0 && ui.cockpitRisk === '실계좌 미연결' && /계좌를 연결하면 실시간 잔고 기준/.test(ui.unlinked),
+  !ui.openCard ||
+    (ui.cockpitCells.length === 0 && ui.cockpitRisk === '실계좌 미연결' && /계좌를 연결하면 실시간 잔고 기준/.test(ui.unlinked)),
   '라이브 실전 주문 콕핏 = 실계좌 미연결 안내(수동 시드 없음)',
   `${ui.cockpitRisk} · ${ui.unlinked.slice(0, 40)}`,
 );
@@ -178,6 +214,7 @@ await page.screenshot({ path: `${OUT}/92-live-settings-save.png` });
 // 내 진입 원탭 → 기록 대시보드
 await page.locator('.bottom-nav button[data-tab="scanner"]').click();
 await page.waitForTimeout(700);
+await ensureCard();
 const pinBtn = page.locator('.scanner-tab .signal-card:not(.skeleton) .pin-btn').first();
 await pinBtn.scrollIntoViewIfNeeded();
 const pinLabel = (await pinBtn.innerText()).replace(/\s+/g, ' ').trim();

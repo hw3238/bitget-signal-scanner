@@ -50,14 +50,29 @@ page.on('console', (m) => {
 page.on('pageerror', (e) => errors.push(`pageerror: ${e}`));
 
 await page.goto(URL, { waitUntil: 'domcontentloaded' });
-await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 180000 });
 await page.waitForFunction(
   () => {
-    const btn = document.querySelector('.rescan');
+    const btn = document.querySelector('.scanner-tab .rescan');
     return !!btn && !btn.classList.contains('busy');
   },
   { timeout: 180000 },
 );
+// 진행중 코인 시그널이 없는 시간대에도 카드 검증이 되도록 '종료 포함 → 자산 전체'로 넓힌다.
+if ((await page.locator('.scanner-tab .signal-card:not(.skeleton)').count()) === 0) {
+  const toggle = page.locator('.scanner-tab .ghost-toggle').first();
+  if (((await toggle.textContent()) ?? '').includes('진행중만')) {
+    await toggle.click();
+    await page.waitForTimeout(900);
+  }
+  if ((await page.locator('.scanner-tab .signal-card:not(.skeleton)').count()) === 0) {
+    const all = page.locator('.scanner-tab [data-asset-filter] button[data-asset="all"]');
+    if (await all.count()) {
+      await all.first().click();
+      await page.waitForTimeout(900);
+    }
+  }
+}
+await page.waitForSelector('.scanner-tab .signal-card:not(.skeleton)', { timeout: 60000 });
 await page.waitForTimeout(1500);
 
 const cards = await page.locator('.signal-card:not(.skeleton)').count();

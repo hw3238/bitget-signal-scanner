@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-11-26T10:52:55.593Z",
- "count": 206,
+ "generatedAt": "2026-11-26T12:59:48.372Z",
+ "count": 207,
  "sources": {
-  "okx": 0,
+  "okx": 1,
   "binance": 0,
   "coincap": 0
  },
@@ -102,6 +102,7 @@
   "KERNEL": "KERNEL.png",
   "KGEN": "KGEN.png",
   "KITE": "KITE.png",
+  "LA": "LA.png",
   "LAB": "LAB.png",
   "LAYER": "LAYER.png",
   "LDO": "LDO.png",
