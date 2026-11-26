@@ -12,6 +12,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import './lib/chromium-env.mjs';
+import { installE2EStubs, seedAuthSession } from './lib/auth-seed.mjs';
 
 const PORT = 4183;
 const URL = `http://127.0.0.1:${PORT}/`;
@@ -129,6 +130,10 @@ const check = (ok, label, detail = '') => {
 
 async function scenario(allowInstall) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  // 🔐 회원 전용 게이트(v1.5.8) — 기존 시나리오는 '로그인된 상태'에서 시작한다.
+  await ctx.addInitScript(seedAuthSession);
+  await installE2EStubs(ctx);
+
   await ctx.addInitScript(([allow]) => {
     localStorage.setItem('cota.exchange.v1', 'bitget');
     localStorage.setItem('cota.profile.v1', JSON.stringify({ seed: 1000, style: 'conservative', updatedAt: Date.now() }));

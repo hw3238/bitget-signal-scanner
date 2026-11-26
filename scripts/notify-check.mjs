@@ -14,6 +14,7 @@ import { pathToFileURL } from 'node:url';
 import { build as esbuild } from 'esbuild';
 import { chromium } from 'playwright';
 import './lib/chromium-env.mjs';
+import { installE2EStubs, seedAuthSession } from './lib/auth-seed.mjs';
 
 const PORT = 4174;
 const URL = `http://127.0.0.1:${PORT}/`;
@@ -175,6 +176,10 @@ async function browserChecks() {
       timezoneId: 'Asia/Seoul',
       permissions: ['notifications'],
     });
+  // 🔐 회원 전용 게이트(v1.5.8) — 기존 시나리오는 '로그인된 상태'에서 시작한다.
+  await context.addInitScript(seedAuthSession);
+  await installE2EStubs(context);
+
 
     // 브라우저 Notification 를 가로채 기록.
     // (헤드리스 Chromium 은 알림 권한을 항상 denied 로 두므로, 앱이 부르는 Notification API

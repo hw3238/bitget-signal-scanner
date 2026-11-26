@@ -1,15 +1,20 @@
 /**
- * 🔐 회원가입 · 로그인 · 연결 동기화 · 관리자 대시보드 E2E (v1.5.8 웹)
+ * 🔒 회원 전용 게이트 · 회원가입 · 로그아웃 E2E (v1.5.8)
  *
  * Supabase(Auth·PostgREST)는 **가짜 서버로 가로챈다**(page.route) — 실제 DB에 테스트 계정을 남기지 않고,
  * 요청 본문을 그대로 검사해 보안 규칙(API 키 원문 전송 금지)을 증명한다.
  *
- *  1) 비회원: 배너·계정 카드가 보이고, 모바일 헤더 칩은 숨김(가로 오버플로 0)
- *  2) 회원가입: 빈 값 검증 → 가입 성공 → 프로필(role=user) INSERT + 연결 초기 행 UPSERT
- *  3) 연결 동기화: 자동매매 ON·거래소 전환 → cota_connections 에 7개 필드만 전송(키·시크릿 없음)
- *  4) 잘못된 비밀번호 → 한국어 오류, 로그아웃 → 비회원 상태 복귀
- *  5) 관리자: 메뉴에만 🛡️ 관리자 대시보드, 요약 카드·유저 목록·검색·필터·새로고침
- *  6) 새로고침 후에도 세션 유지 · 일반 유저에게는 관리자 메뉴가 없다
+ *  1) 미로그인 방문 → **회원가입/로그인 게이트만** 뜬다.
+ *     스캐너·시그널 카드·상단 헤더·하단 탭바·메뉴·설정·거래소 선택이 DOM 에 **하나도 없다**
+ *     (스냅숏이 localStorage 에 있어도 그리지 않는다). 닫기·'로그인 없이 둘러보기'·게스트 배너도 없다.
+ *     미로그인 동안 거래소 마켓 API 호출 0건(백그라운드 스캔 차단).
+ *  2) 게이트 안에서 잘못된 비밀번호 → 한국어 안내 + 게이트 유지.
+ *  3) 회원가입 → **즉시 게이트 해제** → 거래소 미선택이면 거래소 선택 화면 → 선택하면
+ *     스캐너·시황·메뉴·기록·설정이 그 자리에서 모두 열린다(마켓 API 호출 재개).
+ *  4) 설정에서 로그아웃 → **다시 게이트로 잠김**(탭바·헤더 DOM 소멸).
+ *  5) 게이트에서 로그인 → 즉시 앱(저장된 거래소로 바로 스캐너).
+ *  6) 새로고침 후에도 세션 유지(게이트 안 뜸) · 연결 동기화는 7개 화이트리스트 필드만 전송.
+ *  7) 관리자 계정: 메뉴에만 🛡️ 관리자 대시보드 · 요약·목록·검색·필터·새로고침.
  *
  * 실행: npm run build && npm run auth-e2e
  */
@@ -68,7 +73,7 @@ function freshState() {
     { user_id: 'u-boss', exchange: 'bitget', mode: 'live', api_connected: true, autotrade_enabled: true, account_equity: 5000, updated_at: new Date(now - 60_000).toISOString() },
     { user_id: 'u-trader', exchange: 'binance', mode: 'demo', api_connected: false, autotrade_enabled: false, account_equity: null, updated_at: new Date(now - 3600_000).toISOString() },
   ];
-  return { users, connections, tokens: new Map(), requests: [], nextId: 1 };
+  return { users, connections, tokens: new Map(), requests: [], nextId: 1, market: 0 };
 }
 
 function json(route, status, body, extraHeaders = {}) {
@@ -282,7 +287,7 @@ const check = (a, b, detail) => {
 const clean = (t) => String(t ?? '').replace(/\s+/g, ' ').trim();
 
 /** 앱이 복원하는 스캔 스냅숏 — 실 API 없이도 시그널 카드가 결정적으로 뜬다. */
-function seedScript() {
+function seedScript({ exchange = null, snapshot = true } = {}) {
   const now = Date.now();
   const signal = {
     id: `BTCUSDT|1H|long|${now}`,
@@ -337,51 +342,76 @@ function seedScript() {
     candlesLoaded: 0,
     candleAt: now,
   };
-  localStorage.setItem('cota.exchange.v1', 'bitget');
-  if (localStorage.getItem('cota.e2e.seeded.v1') === '1') return;
-  localStorage.setItem('cota.e2e.seeded.v1', '1');
-  localStorage.setItem(
-    'cota.scan.snapshot.v2',
-    JSON.stringify({ v: 2, exchange: 'bitget', at: now, contracts: [contract], markets: 1, analyses: [analysis], signals: [signal], tickers: [] }),
-  );
+  if (exchange) localStorage.setItem('cota.exchange.v1', exchange);
   localStorage.setItem('bgss.settings.v1', JSON.stringify({ refreshSec: 0, leverageMode: 'auto', leverage: 10, minRR: 1.5, riskPct: 1.5, sound: false, notifyEnabled: false }));
   localStorage.setItem('cota.autotrade.migrated.cryptoDefault.v1', '1');
   localStorage.setItem('cota.autotrade.migrated.entryGate.v157', '1');
+  if (!snapshot) return;
+  localStorage.setItem(
+    'cota.scan.snapshot.v2',
+    JSON.stringify({ v: 2, exchange: exchange ?? 'bitget', at: now, contracts: [contract], markets: 1, analyses: [analysis], signals: [signal], tickers: [] }),
+  );
 }
+
+/** 화면에 그려진 '앱' 조각 — 게이트 상태에서는 전부 0 이어야 한다. */
+const DOM_PROBE = () => ({
+  gate: document.querySelectorAll('[data-auth-gate]').length,
+  gateState: document.querySelector('[data-auth-gate]')?.getAttribute('data-auth-state') ?? null,
+  boot: document.querySelectorAll('[data-auth-boot]').length,
+  tabs: document.querySelectorAll('[data-tab]').length,
+  bottomNav: document.querySelectorAll('.bottom-nav').length,
+  appBar: document.querySelectorAll('.app-bar').length,
+  scanner: document.querySelectorAll('.scanner-tab').length,
+  signalCards: document.querySelectorAll('.signal-card').length,
+  market: document.querySelectorAll('.market-tab').length,
+  menu: document.querySelectorAll('.menu-tab, .menu-hub').length,
+  settings: document.querySelectorAll('.settings-tab').length,
+  history: document.querySelectorAll('.history-tab').length,
+  exchangeGate: document.querySelectorAll('[data-exchange-gate]').length,
+  exchangeChip: document.querySelectorAll('[data-exchange-chip]').length,
+  guestBtn: document.querySelectorAll('[data-auth-guest]').length,
+  banner: document.querySelectorAll('[data-auth-banner]').length,
+  closeBtn: document.querySelectorAll('[data-auth-close]').length,
+  guestRow: [...document.querySelectorAll('button')].filter((b) => /둘러보기|게스트/.test(b.textContent ?? '')).length,
+  overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+});
 
 const run = async () => {
   const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 
-  const newContext = async (state) => {
+  const newContext = async (state, { exchange = null, snapshot = true, desktop = false } = {}) => {
     const context = await browser.newContext({
-      viewport: { width: 390, height: 844 },
+      viewport: desktop ? { width: 1280, height: 900 } : { width: 390, height: 844 },
       deviceScaleFactor: 2,
-      isMobile: true,
-      hasTouch: true,
+      ...(desktop ? {} : { isMobile: true, hasTouch: true }),
       locale: 'ko-KR',
       timezoneId: 'Asia/Seoul',
     });
-    await context.addInitScript(seedScript);
+    await context.addInitScript(seedScript, { exchange, snapshot });
     await context.route(`**://${SUPABASE_HOST}/**`, (route, request) => handleSupabase(route, request, state));
-    await context.route('**://api.bitget.com/**', (route) => route.abort());
-    await context.route('**://api.binance.com/**', (route) => route.abort());
-    await context.route('**://fapi.binance.com/**', (route) => route.abort());
+    // 마켓 API 는 끊되 **호출 횟수는 센다** — 게이트 동안 0건, 로그인 뒤 재개를 증명한다.
+    for (const host of ['api.bitget.com', 'api.binance.com', 'fapi.binance.com']) {
+      await context.route(`**://${host}/**`, (route) => {
+        state.market += 1;
+        return route.abort();
+      });
+    }
     await context.route('**://api.github.com/**', (route) => route.abort());
     return context;
   };
 
   const waitState = async (fn, timeout = 8000) => {
     const start = Date.now();
-    while (Date.now() - start < timeout) {
+    while (Date.now() < start + timeout) {
       if (fn()) return true;
       await sleep(60);
     }
     return false;
   };
 
-  /* ================= 1. 비회원 ================= */
+  /* ================= 1. 미로그인 = 잠금 게이트 ================= */
   const state = freshState();
-  const context = await newContext(state);
+  const context = await newContext(state); // 거래소 선택값 없음 · 스냅숏은 심어 둔다
   const page = await context.newPage();
   const consoleErrors = [];
   page.on('console', (m) => {
@@ -391,115 +421,125 @@ const run = async () => {
   page.on('pageerror', (e) => pageErrors.push(String(e)));
 
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('.bottom-nav button[data-tab="menu"]', { timeout: 60000 });
-  await page.waitForTimeout(600);
+  await page.waitForSelector('[data-auth-gate]', { timeout: 60000 });
+  await page.waitForTimeout(900);
 
-  const guest = await page.evaluate(() => ({
-    banner: !!document.querySelector('[data-auth-banner]'),
-    chipDisplay: document.querySelector('[data-auth-chip]') ? getComputedStyle(document.querySelector('[data-auth-chip]')).display : 'missing',
-    overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
-    session: localStorage.getItem('cota.auth.session.v1'),
-  }));
-  check('비회원: 상단에 회원가입 배너가 보인다', guest.banner);
-  check('비회원: 모바일 헤더 칩은 숨김(가로 오버플로 방지)', guest.chipDisplay === 'none', guest.chipDisplay);
-  check('비회원: 390px 가로 오버플로 0건', !guest.overflow);
-  check('비회원: 저장된 세션 없음', guest.session === null);
-  await page.screenshot({ path: `${OUT}/118-auth-banner-guest.png` });
+  const locked = await page.evaluate(DOM_PROBE);
+  check('미로그인: 회원가입/로그인 게이트가 전체 화면으로 뜬다', locked.gate === 1 && locked.gateState === 'locked', `gate=${locked.gate}`);
+  check('미로그인: 하단 탭바 DOM 없음', locked.bottomNav === 0);
+  check('미로그인: 상단 헤더 DOM 없음', locked.appBar === 0);
+  check('미로그인: 탭 버튼 0개(스캐너·시황·메뉴·기록·설정 접근 불가)', locked.tabs === 0);
+  check('미로그인: 스캐너 화면 없음', locked.scanner === 0);
+  check('미로그인: 시그널 카드 0장(스냅숏이 있어도 그리지 않는다)', locked.signalCards === 0);
+  check('미로그인: 시황·메뉴·설정·기록 화면 모두 없음', locked.market === 0 && locked.menu === 0 && locked.settings === 0 && locked.history === 0);
+  check('미로그인: 거래소 선택 화면·헤더 칩 없음', locked.exchangeGate === 0 && locked.exchangeChip === 0);
+  check('미로그인: 닫기 버튼 없음(게이트를 닫을 수 없다)', locked.closeBtn === 0, String(locked.closeBtn));
+  check('미로그인: "로그인 없이 둘러보기"·게스트 문구 없음', locked.guestBtn === 0 && locked.guestRow === 0);
+  check('미로그인: 게스트 배너 없음', locked.banner === 0);
+  check('미로그인: 390px 가로 오버플로 0건', !locked.overflow);
+  const gateText = clean(await page.locator('[data-auth-gate]').innerText());
+  check('게이트 문구: 회원 전용 안내 + 회원가입 폼', /회원 전용/.test(gateText) && gateText.includes('닉네임') && gateText.includes('이메일') && gateText.includes('비밀번호'));
+  check('미로그인: 마켓 API 호출 0건(백그라운드 스캔 차단)', state.market === 0, `${state.market}건`);
+  check('미로그인: 저장된 세션 없음', (await page.evaluate(() => localStorage.getItem('cota.auth.session.v1'))) === null);
+  await page.screenshot({ path: `${OUT}/130-auth-gate-locked.png` });
 
-  await page.locator('.bottom-nav button[data-tab="menu"]').click();
-  await page.waitForSelector('[data-account-card]', { timeout: 20000 });
-  const guestCard = await page.evaluate(() => {
-    const card = document.querySelector('[data-account-card]');
-    return {
-      state: card?.getAttribute('data-account-state'),
-      text: card?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
-      signup: !!card?.querySelector('[data-account-signup]'),
-      login: !!card?.querySelector('[data-account-login]'),
-      admin: document.querySelectorAll('[data-admin-group]').length,
-    };
-  });
-  check('비회원: 메뉴에 계정 카드(회원가입·로그인 버튼)', guestCard.state === 'guest' && guestCard.signup && guestCard.login, guestCard.text.slice(0, 40));
-  check('비회원: 관리자 메뉴는 없다', guestCard.admin === 0);
+  /* 게이트는 Escape·배경 클릭으로 닫히지 않는다 */
+  await page.keyboard.press('Escape');
+  await page.mouse.click(10, 10);
+  await page.waitForTimeout(250);
+  check('미로그인: Escape·배경 클릭으로도 게이트가 닫히지 않는다', (await page.locator('[data-auth-gate]').count()) === 1);
 
-  /* ================= 2. 회원가입 ================= */
-  await page.locator('[data-account-signup]').click();
-  await page.waitForSelector('[data-auth-sheet]', { timeout: 10000 });
-  const sheet = await page.evaluate(() => ({
-    signupTab: document.querySelector('[data-auth-tab="signup"]')?.getAttribute('aria-selected'),
-    nickname: !!document.querySelector('[data-auth-field="nickname"]'),
-    email: !!document.querySelector('[data-auth-field="email"]'),
-    password: !!document.querySelector('[data-auth-field="password"]'),
-    guest: !!document.querySelector('[data-auth-guest]'),
-  }));
-  check('가입 시트: 닉네임·이메일·비밀번호 입력 + 게스트 버튼', sheet.nickname && sheet.email && sheet.password && sheet.guest && sheet.signupTab === 'true');
-  await page.screenshot({ path: `${OUT}/119-auth-signup.png` });
+  /* ================= 2. 게이트 안 로그인 오류 ================= */
+  await page.locator('[data-auth-tab="login"]').click();
+  await page.locator('[data-auth-field="email"]').fill('trader@cota.app');
+  await page.locator('[data-auth-field="password"]').fill('wrongpass1');
+  await page.locator('[data-auth-submit]').click();
+  await page.waitForSelector('[data-auth-error]', { timeout: 15000 });
+  const wrong = clean(await page.locator('[data-auth-error]').innerText());
+  check('게이트 로그인: 잘못된 비밀번호 → 한국어 안내', wrong.includes('이메일 또는 비밀번호가 맞지 않습니다'), wrong);
+  check('게이트 로그인 실패 → 게이트 유지(앱 DOM 여전히 0)', (await page.evaluate(DOM_PROBE)).tabs === 0);
+  await page.screenshot({ path: `${OUT}/131-auth-gate-login.png` });
 
+  /* ================= 3. 회원가입 → 즉시 해제 ================= */
+  await page.locator('[data-auth-tab="signup"]').click();
   await page.locator('[data-auth-submit]').click();
   await page.waitForTimeout(250);
-  check('가입 검증: 빈 값 → 닉네임 안내', (await page.locator('[data-auth-error]').innerText()).includes('닉네임'));
+  check('가입 검증: 빈 값 → 닉네임 안내', clean(await page.locator('[data-auth-error]').innerText()).includes('닉네임'));
 
   await page.locator('[data-auth-field="nickname"]').fill('테스터');
   await page.locator('[data-auth-field="email"]').fill('tester@cota.app');
   await page.locator('[data-auth-field="password"]').fill('cota1234');
+  await page.screenshot({ path: `${OUT}/132-auth-gate-signup.png` });
   await page.locator('[data-auth-submit]').click();
-  await page.waitForSelector('[data-auth-sheet]', { state: 'detached', timeout: 15000 });
-  check('가입 성공 → 시트가 닫힌다', true);
-  // 프로필 INSERT 응답이 화면에 반영될 때까지(닉네임 = 폼에서 입력한 값) 기다린다.
-  await page
-    .waitForFunction(
-      () => (document.querySelector('[data-account-card]')?.textContent ?? '').includes('테스터'),
-      { timeout: 8000 },
-    )
-    .catch(() => {});
+  await page.waitForSelector('[data-auth-gate]', { state: 'detached', timeout: 20000 });
+  check('가입 성공 → 게이트가 그 자리에서 사라진다', true);
+
+  // 거래소를 고르지 않았으므로 다음 화면은 거래소 선택 — 앱 탭은 아직 없다.
+  await page.waitForSelector('[data-exchange-gate]', { timeout: 15000 });
+  const afterSignup = await page.evaluate(DOM_PROBE);
+  check('가입 직후: 거래소 미선택이면 거래소 선택 화면', afterSignup.exchangeGate === 1 && afterSignup.tabs === 0);
+  check('가입 직후: 세션이 저장됐다', !!(await page.evaluate(() => localStorage.getItem('cota.auth.session.v1'))));
+  check('가입 직후: 아직 거래소를 고르기 전에는 마켓 호출 0건', state.market === 0, `${state.market}건`);
+  await page.screenshot({ path: `${OUT}/133-after-signup-exchange.png` });
+
+  await page.locator('[data-exchange-option="bitget"]').click();
+  await page.waitForSelector('.scanner-tab', { timeout: 20000 });
+  await page.waitForTimeout(1200);
+  const unlocked = await page.evaluate(DOM_PROBE);
+  check('거래소 선택 → 게이트 없이 스캐너가 열린다', unlocked.gate === 0 && unlocked.scanner === 1);
+  check('거래소 선택 → 상단 헤더·하단 탭바 복귀', unlocked.appBar === 1 && unlocked.bottomNav === 1);
+  const tabKeys = await page.evaluate(() => [...new Set([...document.querySelectorAll('[data-tab]')].map((el) => el.getAttribute('data-tab')))]);
+  check(
+    '거래소 선택 → 상단·하단 탭(스캐너·시황·메뉴·기록·설정) 모두 복귀',
+    ['scanner', 'market', 'menu', 'history', 'settings'].every((k) => tabKeys.includes(k)) && unlocked.tabs >= 9,
+    `${unlocked.tabs}개 · ${tabKeys.join(',')}`,
+  );
+  check('로그인 뒤: 백그라운드 스캔 재개(마켓 API 호출 발생)', state.market > 0, `${state.market}건`);
+  await page.screenshot({ path: `${OUT}/134-member-scanner.png` });
+
+  /* 모든 메뉴가 즉시 열린다 */
+  const tabsWork = {};
+  for (const [key, sel] of [
+    ['market', '.market-tab'],
+    ['menu', '[data-account-card]'],
+    ['history', '.history-tab'],
+    ['settings', '.settings-tab'],
+  ]) {
+    await page.locator(`.bottom-nav button[data-tab="${key}"]`).click();
+    await page.waitForSelector(sel, { timeout: 20000 });
+    tabsWork[key] = true;
+  }
+  check('가입 직후: 시황·메뉴·기록·설정이 모두 그 자리에서 열린다', Object.values(tabsWork).every(Boolean));
 
   await page.locator('.bottom-nav button[data-tab="menu"]').click();
-  await page.waitForTimeout(350);
-  await page.locator('[data-account-card]').scrollIntoViewIfNeeded();
-  await page.screenshot({ path: `${OUT}/120-account-menu.png` });
-  const signedUp = await page.evaluate(() => ({
-    session: !!localStorage.getItem('cota.auth.session.v1'),
-    card: document.querySelector('[data-account-card]')?.getAttribute('data-account-state'),
-    text: document.querySelector('[data-account-card]')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
-    banner: !!document.querySelector('[data-auth-banner]'),
-  }));
-  check('가입 성공: 세션 저장 + 계정 카드가 회원 상태', signedUp.session && signedUp.card === 'member', signedUp.text.slice(0, 50));
-  check('가입 성공: 닉네임·이메일·일반 배지 표시', signedUp.text.includes('테스터') && signedUp.text.includes('tester@cota.app') && signedUp.text.includes('일반'));
-  check('가입 성공: 미가입 배너는 사라진다', !signedUp.banner);
+  await page.waitForSelector('[data-account-card]', { timeout: 10000 });
+  const memberCard = await page.evaluate(() => {
+    const card = document.querySelector('[data-account-card]');
+    return {
+      state: card?.getAttribute('data-account-state'),
+      role: card?.getAttribute('data-account-role'),
+      text: card?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+    };
+  });
+  check('메뉴 계정 카드 = 회원(테스터 · 일반)', memberCard.state === 'member' && memberCard.role === 'user' && memberCard.text.includes('테스터'), memberCard.text.slice(0, 50));
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: `${OUT}/135-member-menu.png` });
 
   const signupReq = state.requests.find((r) => r.path === '/auth/v1/signup');
   check('요청: 가입 닉네임을 metadata 로 전송', signupReq?.body?.data?.nickname === '테스터', JSON.stringify(signupReq?.body));
   const insertReq = state.requests.find((r) => r.path === '/rest/v1/cota_profiles' && r.method === 'POST');
   const insertRow = Array.isArray(insertReq?.body) ? insertReq?.body?.[0] : insertReq?.body;
-  check(
-    '요청: 프로필 INSERT = role user · 선호 거래소 bitget',
-    insertRow?.role === 'user' && insertRow?.preferred_exchange === 'bitget',
-    JSON.stringify(insertRow),
-  );
+  check('요청: 프로필 INSERT = role user · 선호 거래소 bitget', insertRow?.role === 'user' && insertRow?.preferred_exchange === 'bitget', JSON.stringify(insertRow));
 
-  // FK(프로필 INSERT) 경합: 첫 요청은 409 로 막혀도 재시도로 초기 행이 만들어진다.
-  const synced = await waitState(
-    () => state.connections.some((c) => c.user_id === 'u-1'),
-    8000,
-  );
-  check('회원가입 직후: 연결 초기 행 UPSERT(프로필 FK 재시도 포함)', synced);
-  const fkBlocked = state.requests.filter(
-    (r) => r.path === '/rest/v1/cota_connections' && r.method === 'POST' && r.body?.[0]?.user_id === 'u-1',
-  ).length;
-  check('첫 동기화가 FK 로 막혀도 재시도로 성공', fkBlocked >= 1, `${fkBlocked}회 시도`);
-  const firstConn = state.requests.find((r) => r.path === '/rest/v1/cota_connections' && r.method === 'POST');
-  const connKeys1 = Object.keys(firstConn?.body?.[0] ?? {}).sort();
-  check(
-    '연결 행 키 = user_id·exchange·mode·api_connected·autotrade_enabled·account_equity·updated_at',
-    connKeys1.join(',') === 'account_equity,api_connected,autotrade_enabled,exchange,mode,updated_at,user_id',
-    connKeys1.join(','),
-  );
-  check('연결 행: 초기 거래소 bitget · 모의 · API 미연결', firstConn?.body?.[0]?.exchange === 'bitget' && firstConn?.body?.[0]?.mode === 'demo' && firstConn?.body?.[0]?.api_connected === false);
-
-  /* ================= 3. 연결 동기화 ================= */
+  /* ================= 4. 연결 동기화 (7개 필드) ================= */
   await page.locator('.menu-auto[data-menu="auto"]').click();
   await page.waitForSelector('[data-auto-hero]', { timeout: 20000 });
   await page.locator('[data-auto-toggle]').click();
-  const autoSynced = await waitState(() => state.requests.some((r) => r.path === '/rest/v1/cota_connections' && r.body?.[0]?.autotrade_enabled === true), 8000);
+  const autoSynced = await waitState(
+    () => state.requests.some((r) => r.path === '/rest/v1/cota_connections' && r.body?.[0]?.autotrade_enabled === true),
+    8000,
+  );
   check('자동매매 ON → cota_connections.autotrade_enabled = true', autoSynced);
 
   await page.locator('.bottom-nav button[data-tab="scanner"]').click();
@@ -507,51 +547,103 @@ const run = async () => {
   await page.locator('[data-exchange-chip]').click();
   await page.waitForSelector('[data-exchange-option="binance"]', { timeout: 10000 });
   await page.locator('[data-exchange-option="binance"]').click();
-  const exSynced = await waitState(() => state.requests.some((r) => r.path === '/rest/v1/cota_connections' && r.body?.[0]?.exchange === 'binance'), 8000);
+  const exSynced = await waitState(
+    () => state.requests.some((r) => r.path === '/rest/v1/cota_connections' && r.body?.[0]?.exchange === 'binance'),
+    8000,
+  );
   check('거래소 전환(바이낸스) → cota_connections.exchange = binance', exSynced);
 
   const connBodies = state.requests.filter((r) => r.path === '/rest/v1/cota_connections' && r.method === 'POST').map((r) => JSON.stringify(r.body));
+  const firstConn = state.requests.find((r) => r.path === '/rest/v1/cota_connections' && r.method === 'POST');
+  const connKeys = Object.keys(firstConn?.body?.[0] ?? {}).sort();
   check(
-    '보안: 어떤 연결 요청에도 API Key·Secret·Passphrase 원문이 없다',
-    connBodies.every((b) => !/secret|passphrase|api[_-]?key|bg_/i.test(b)),
-    `${connBodies.length}건 검사`,
+    '연결 행 키 = user_id·exchange·mode·api_connected·autotrade_enabled·account_equity·updated_at',
+    connKeys.join(',') === 'account_equity,api_connected,autotrade_enabled,exchange,mode,updated_at,user_id',
+    connKeys.join(','),
   );
+  check('보안: 어떤 연결 요청에도 API Key·Secret·Passphrase 원문이 없다', connBodies.every((b) => !/secret|passphrase|api[_-]?key|bg_/i.test(b)), `${connBodies.length}건 검사`);
 
-  /* ================= 4. 오류 · 로그아웃 ================= */
+  /* ================= 5. 로그아웃 → 다시 잠김 ================= */
   await page.locator('.bottom-nav button[data-tab="settings"]').click();
-  await page.waitForSelector('#settings-account, [data-account-card]', { timeout: 20000 });
-  const settingsCard = await page.evaluate(() => !!document.querySelector('.settings-tab [data-account-card]'));
-  check('설정 탭에도 계정 카드(로그인 상태 확인)', settingsCard);
-
+  await page.waitForSelector('.settings-tab [data-account-card]', { timeout: 20000 });
   await page.locator('.settings-tab [data-account-logout]').click();
-  await page.waitForTimeout(400);
-  const out = await page.evaluate(() => ({
-    session: localStorage.getItem('cota.auth.session.v1'),
-    state: document.querySelector('.settings-tab [data-account-card]')?.getAttribute('data-account-state'),
-  }));
-  check('로그아웃 → 세션 삭제 · 비회원 카드', out.session === null && out.state === 'guest');
+  await page.waitForSelector('[data-auth-gate]', { timeout: 15000 });
+  await page.waitForTimeout(500);
+  const afterLogout = await page.evaluate(DOM_PROBE);
+  check('로그아웃 → 즉시 게이트로 잠긴다', afterLogout.gate === 1 && afterLogout.gateState === 'locked');
+  check('로그아웃 → 탭바·헤더·스캐너·설정 DOM 소멸', afterLogout.tabs === 0 && afterLogout.bottomNav === 0 && afterLogout.appBar === 0 && afterLogout.scanner === 0 && afterLogout.settings === 0);
+  check('로그아웃 → 세션 삭제', (await page.evaluate(() => localStorage.getItem('cota.auth.session.v1'))) === null);
+  await page.screenshot({ path: `${OUT}/136-logout-locked.png` });
 
-  await page.locator('.settings-tab [data-account-login]').click();
-  await page.waitForSelector('[data-auth-sheet]', { timeout: 10000 });
+  await page.waitForTimeout(1500);
+  const marketAtLogout = state.market;
+  await page.waitForTimeout(2500);
+  check('로그아웃 뒤: 마켓 API 호출이 멈춘다', state.market === marketAtLogout, `${marketAtLogout} → ${state.market}`);
+
+  /* ================= 6. 게이트에서 로그인 → 즉시 앱 ================= */
+  await page.locator('[data-auth-tab="login"]').click();
   await page.locator('[data-auth-field="email"]').fill('tester@cota.app');
-  await page.locator('[data-auth-field="password"]').fill('wrongpass1');
+  await page.locator('[data-auth-field="password"]').fill('cota1234');
   await page.locator('[data-auth-submit]').click();
-  await page.waitForSelector('[data-auth-error]', { timeout: 10000 });
-  const wrong = clean(await page.locator('[data-auth-error]').innerText());
-  check('잘못된 비밀번호 → 한국어 안내', wrong.includes('이메일 또는 비밀번호가 맞지 않습니다'), wrong);
-  await page.screenshot({ path: `${OUT}/121-auth-login-error.png` });
-  await page.locator('[data-auth-close]').click();
-  await page.waitForSelector('[data-auth-sheet]', { state: 'detached', timeout: 8000 });
+  await page.waitForSelector('[data-auth-gate]', { state: 'detached', timeout: 20000 });
+  // 거래소는 저장돼 있다(마지막에 바이낸스로 전환) → 거래소 선택 없이 바로 앱.
+  await page.waitForSelector('.scanner-tab', { timeout: 20000 });
+  const relogin = await page.evaluate(DOM_PROBE);
+  check('게이트 로그인 → 즉시 앱(저장된 거래소로 스캐너)', relogin.scanner === 1 && relogin.tabs >= 9 && relogin.gate === 0, `tab ${relogin.tabs}`);
+  check('게이트 로그인 → 마지막 거래소 유지(바이낸스)', (await page.evaluate(() => localStorage.getItem('cota.exchange.v1'))) === 'binance');
 
-  const ignorable = (t) => /api\.github\.com|api\.bitget\.com|api\.binance\.com|fapi\.binance\.com|rate limit|Failed to fetch|net::ERR|400|401|403|409/i.test(t);
+  /* ================= 7. 새로고침 후 세션 유지 ================= */
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.scanner-tab', { timeout: 60000 });
+  await page.waitForTimeout(600);
+  const persisted = await page.evaluate(DOM_PROBE);
+  check('새로고침 후에도 세션 유지 → 게이트가 뜨지 않는다', persisted.gate === 0 && persisted.scanner === 1);
+
+  const ignorable = (t) =>
+    /api\.github\.com|api\.bitget\.com|api\.binance\.com|fapi\.binance\.com|rate limit|Failed to fetch|net::ERR|400|401|403|409/i.test(t);
   const realErrors = consoleErrors.filter((t) => !ignorable(t));
   check('콘솔 오류 0건(거래소 API 차단 로그 제외)', realErrors.length === 0, realErrors.slice(0, 2).join(' | '));
   check('페이지 예외 0건', pageErrors.length === 0, pageErrors.slice(0, 2).join(' | '));
   await context.close();
 
-  /* ================= 5. 관리자 ================= */
+  /* ================= 8. 가입 직후 '바로 사용' 화면(거래소 기억) ================= */
+  const quickState = freshState();
+  const quickCtx = await newContext(quickState, { exchange: 'bitget' });
+  const quick = await quickCtx.newPage();
+  await quick.goto(APP_URL, { waitUntil: 'domcontentloaded' });
+  await quick.waitForSelector('[data-auth-gate]', { timeout: 60000 });
+  const beforeSignupCards = await quick.evaluate(() => document.querySelectorAll('.signal-card').length);
+  check('게이트 상태: 스냅숏이 있어도 시그널 카드는 0장', beforeSignupCards === 0, String(beforeSignupCards));
+  await quick.locator('[data-auth-field="nickname"]').fill('바로시작');
+  await quick.locator('[data-auth-field="email"]').fill('quick@cota.app');
+  await quick.locator('[data-auth-field="password"]').fill('cota1234');
+  await quick.locator('[data-auth-submit]').click();
+  await quick.waitForSelector('[data-auth-gate]', { state: 'detached', timeout: 20000 });
+  await quick.waitForSelector('.scanner-tab', { timeout: 20000 });
+  await quick.waitForTimeout(1200);
+  const instant = await quick.evaluate(() => ({
+    cards: document.querySelectorAll('.signal-card:not(.skeleton)').length,
+    tabs: document.querySelectorAll('[data-tab]').length,
+  }));
+  check('거래소가 기억된 기기: 가입 직후 게이트 없이 스캐너 + 시그널 카드', instant.tabs >= 9 && instant.cards >= 1, `탭 ${instant.tabs} · 카드 ${instant.cards}장`);
+  await quick.screenshot({ path: `${OUT}/137-member-instant.png` });
+  await quickCtx.close();
+
+  /* ================= 9. 데스크톱 게이트 ================= */
+  const deskState = freshState();
+  const deskCtx = await newContext(deskState, { desktop: true });
+  const desk = await deskCtx.newPage();
+  await desk.goto(APP_URL, { waitUntil: 'domcontentloaded' });
+  await desk.waitForSelector('[data-auth-gate]', { timeout: 60000 });
+  await desk.waitForTimeout(600);
+  const deskProbe = await desk.evaluate(DOM_PROBE);
+  check('데스크톱(1280px): 게이트만 · 탭 0 · 가로 오버플로 0', deskProbe.gate === 1 && deskProbe.tabs === 0 && !deskProbe.overflow);
+  await desk.screenshot({ path: `${OUT}/138-auth-gate-desktop.png` });
+  await deskCtx.close();
+
+  /* ================= 10. 관리자 ================= */
   const adminState = freshState();
-  const adminCtx = await newContext(adminState);
+  const adminCtx = await newContext(adminState, { exchange: 'bitget' });
   const admin = await adminCtx.newPage();
   const adminErrors = [];
   admin.on('pageerror', (e) => adminErrors.push(String(e)));
@@ -559,16 +651,15 @@ const run = async () => {
     if (m.type() === 'error') adminErrors.push(m.text());
   });
   await admin.goto(APP_URL, { waitUntil: 'domcontentloaded' });
-  await admin.waitForSelector('.bottom-nav button[data-tab="menu"]', { timeout: 60000 });
-  await admin.waitForTimeout(500);
-
-  await admin.locator('.bottom-nav button[data-tab="menu"]').click();
-  await admin.locator('[data-account-login]').click();
-  await admin.waitForSelector('[data-auth-sheet]', { timeout: 10000 });
+  await admin.waitForSelector('[data-auth-gate]', { timeout: 60000 });
+  await admin.locator('[data-auth-tab="login"]').click();
   await admin.locator('[data-auth-field="email"]').fill('boss@cota.app');
   await admin.locator('[data-auth-field="password"]').fill('boss1234');
   await admin.locator('[data-auth-submit]').click();
-  await admin.waitForSelector('[data-admin-group]', { timeout: 15000 });
+  await admin.waitForSelector('[data-auth-gate]', { state: 'detached', timeout: 20000 });
+  await admin.waitForSelector('.scanner-tab', { timeout: 20000 });
+  check('관리자 로그인 → 게이트 해제(거래소 기억 → 스캐너)', (await admin.locator('.scanner-tab').count()) === 1);
+
   // 관리자 본인 기기의 상태(모의·API 미연결)가 본인 연결 행을 덮어쓰는 것은 실제 동작이다.
   // 대시보드 기대값을 고정하기 위해, 동기화가 끝난 뒤 시드 상태로 되돌리고 새로고침으로 읽는다.
   await waitState(
@@ -579,22 +670,24 @@ const run = async () => {
     { user_id: 'u-boss', exchange: 'bitget', mode: 'live', api_connected: true, autotrade_enabled: true, account_equity: 5000, updated_at: new Date().toISOString() },
     { user_id: 'u-trader', exchange: 'binance', mode: 'demo', api_connected: false, autotrade_enabled: false, account_equity: null, updated_at: new Date().toISOString() },
   ];
+  await admin.locator('.bottom-nav button[data-tab="menu"]').click();
+  await admin.waitForSelector('[data-admin-group]', { timeout: 15000 });
   const adminMenu = await admin.evaluate(() => ({
     role: document.querySelector('[data-account-card]')?.getAttribute('data-account-role'),
     group: document.querySelector('[data-admin-group]')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
     row: !!document.querySelector('[data-menu="admin"]'),
     normal: !!document.querySelector('[data-menu="surge"]'),
   }));
-  check('관리자 로그인 → 계정 카드 role=admin · 관리자 배지', adminMenu.role === 'admin');
+  check('관리자: 계정 카드 role=admin · 관리자 배지', adminMenu.role === 'admin');
   check('관리자: 메뉴에 🛡️ 관리자 대시보드가 생긴다', adminMenu.row && adminMenu.group.includes('관리자 대시보드'), adminMenu.group.slice(0, 40));
   check('관리자: 기존 실전 레이더 메뉴는 그대로', adminMenu.normal);
   await admin.evaluate(() => window.scrollTo(0, 0));
   await admin.waitForTimeout(200);
-  await admin.screenshot({ path: `${OUT}/122-admin-menu.png` });
+  await admin.screenshot({ path: `${OUT}/139-admin-menu.png` });
 
   await admin.locator('[data-menu="admin"]').click();
   await admin.waitForSelector('[data-admin-dashboard]', { timeout: 20000 });
-  await admin.waitForTimeout(500);
+  await admin.waitForTimeout(600);
 
   const dash = await admin.evaluate(() => ({
     total: document.querySelector('[data-admin-total]')?.getAttribute('data-admin-total'),
@@ -610,12 +703,12 @@ const run = async () => {
   check('대시보드 요약: 자동매매 ON 1명', dash.auto === '1', String(dash.auto));
   check('대시보드 요약: 거래소 분포 비트겟 1 · 바이낸스 1', dash.dist === '1:1', String(dash.dist));
   check('대시보드 목록: 유저 3명', dash.rows.length === 3, dash.rows.join(','));
-  check('대시보드: 닉네임·이메일·권한·연결 상태 표시', dash.text.includes('보스') && dash.text.includes('boss@cota.app') && dash.text.includes('관리자') && dash.text.includes('연결됨 · 실거래'));
+  check(
+    '대시보드: 닉네임·이메일·권한·연결 상태 표시',
+    dash.text.includes('보스') && dash.text.includes('boss@cota.app') && dash.text.includes('관리자') && dash.text.includes('연결됨 · 실거래'),
+  );
   check('대시보드 390px 가로 오버플로 0건', !dash.overflow);
-  await admin.screenshot({ path: `${OUT}/123-admin-dashboard.png` });
-  await admin.evaluate(() => window.scrollTo(0, 0));
-  await admin.waitForTimeout(200);
-  await admin.screenshot({ path: `${OUT}/124-admin-dashboard-full.png`, fullPage: true, scale: 'css' });
+  await admin.screenshot({ path: `${OUT}/140-admin-dashboard.png` });
 
   await admin.locator('[data-admin-search]').fill('trader');
   await admin.waitForTimeout(250);
@@ -630,7 +723,6 @@ const run = async () => {
     [...document.querySelectorAll('[data-admin-row]')].map((el) => el.getAttribute('data-admin-email')),
   );
   check('필터: 관리자만 → 1명', adminOnly.length === 1 && adminOnly[0] === 'boss@cota.app', adminOnly.join(','));
-  await admin.screenshot({ path: `${OUT}/125-admin-filter-search.png` });
 
   await admin.locator('[data-admin-filter="all"]').click();
   const beforeRefresh = adminState.requests.filter((r) => r.path === '/rest/v1/cota_profiles' && r.method === 'GET').length;
@@ -640,30 +732,14 @@ const run = async () => {
     6000,
   );
   check('새로고침 → Supabase 재조회', refreshed);
-
-  /* ================= 6. 세션 유지 ================= */
-  await admin.reload({ waitUntil: 'domcontentloaded' });
-  await admin.waitForSelector('.bottom-nav button[data-tab="menu"]', { timeout: 60000 });
-  await admin.locator('.bottom-nav button[data-tab="menu"]').click();
-  await admin.waitForSelector('[data-admin-group]', { timeout: 15000 });
-  const persisted = await admin.evaluate(() => ({
-    state: document.querySelector('[data-account-card]')?.getAttribute('data-account-state'),
-    text: document.querySelector('[data-account-card]')?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
-    role: document.querySelector('[data-account-card]')?.getAttribute('data-account-role'),
-  }));
-  check(
-    '새로고침 후에도 로그인 유지(세션 복원 · 관리자 메뉴 그대로)',
-    persisted.state === 'member' && persisted.role === 'admin' && persisted.text.includes('보스'),
-    persisted.text.slice(0, 40),
-  );
   check('관리자 화면 콘솔/예외 0건', adminErrors.filter((t) => !ignorable(t)).length === 0, adminErrors.slice(0, 2).join(' | '));
-
   await adminCtx.close();
+
   await browser.close();
 
   const failed = checks.filter((c) => !c.ok);
   console.log('');
-  console.log(`COTA 계정·관리자 대시보드 E2E: ${checks.length - failed.length}/${checks.length} 통과`);
+  console.log(`COTA 회원 전용 게이트 E2E: ${checks.length - failed.length}/${checks.length} 통과`);
   if (failed.length) {
     console.log(`실패: ${failed.map((f) => f.name).join(' · ')}`);
     process.exitCode = 1;

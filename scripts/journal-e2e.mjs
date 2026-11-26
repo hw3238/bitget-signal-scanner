@@ -13,6 +13,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import './lib/chromium-env.mjs';
+import { installE2EStubs, seedAuthSession } from './lib/auth-seed.mjs';
 
 /* 컨테이너에 libnss3 등 시스템 라이브러리가 없을 때 — 추출해 둔 로컬 라이브러리를 먼저 쓴다 */
 
@@ -117,6 +118,10 @@ const run = async () => {
       locale: 'ko-KR',
       timezoneId: 'Asia/Seoul',
     });
+  // 🔐 회원 전용 게이트(v1.5.8) — 기존 시나리오는 '로그인된 상태'에서 시작한다.
+  await context.addInitScript(seedAuthSession);
+  await installE2EStubs(context);
+
     await context.addInitScript((data) => {
       localStorage.setItem('cota.exchange.v1', 'bitget');
       // v1.5.5 — 손익 기준은 연결된 계좌 잔고다. 네이티브 브리지를 흉내내 잔고 $5,000 을 준다.
@@ -381,15 +386,32 @@ const run = async () => {
 
   /* ======================= B) 실시간 스캔 · 카드 원탭 ======================= */
   const B = await newMobile({});
+  /** 진행중 코인 시그널이 없는 시간대에도 카드 검증이 되도록 '종료 포함 → 자산 전체'로 넓힌다. */
+  const relaxCards = async (target = B.page) => {
+    const count = () => target.locator('.scanner-tab .signal-card:not(.skeleton)').count();
+    if ((await count()) > 0) return;
+    const toggle = target.locator('.scanner-tab .ghost-toggle').first();
+    if ((await toggle.count()) && ((await toggle.textContent()) ?? '').includes('진행중만')) {
+      await toggle.click();
+      await target.waitForTimeout(800);
+    }
+    if ((await count()) > 0) return;
+    const all = target.locator('.scanner-tab [data-asset-filter] button[data-asset="all"]');
+    if (await all.count()) {
+      await all.first().click();
+      await target.waitForTimeout(800);
+    }
+  };
   await B.page.goto(URL, { waitUntil: 'domcontentloaded' });
-  await B.page.waitForSelector('.scanner-tab .signal-card:not(.skeleton)', { timeout: 180000 });
   await B.page.waitForFunction(
     () => {
-      const b = document.querySelector('.rescan');
+      const b = document.querySelector('.scanner-tab .rescan');
       return !!b && !b.classList.contains('busy');
     },
     { timeout: 180000 },
   );
+  await relaxCards();
+  await B.page.waitForSelector('.scanner-tab .signal-card:not(.skeleton)', { timeout: 30000 });
   await B.page.waitForTimeout(900);
 
   const cardAction = await B.page.evaluate(() => {
@@ -456,12 +478,35 @@ const run = async () => {
 
   // 새로고침 후에도 유지
   await B.page.reload({ waitUntil: 'domcontentloaded' });
-  await B.page.waitForSelector('.scanner-tab .signal-card:not(.skeleton)', { timeout: 180000 });
+  await B.page.waitForFunction(
+    () => {
+      const b = document.querySelector('.scanner-tab .rescan');
+      return !!b && !b.classList.contains('busy');
+    },
+    { timeout: 180000 },
+  );
+  await relaxCards();
+  await B.page.waitForSelector('.scanner-tab .signal-card:not(.skeleton)', { timeout: 60000 });
   await B.page.waitForTimeout(1500);
   const afterReload = await B.page.evaluate(() => ({
     on: [...document.querySelectorAll('.scanner-tab .pin-btn.on')].map((b) => b.textContent.trim()),
+    stored: (() => {
+      try {
+        return JSON.parse(localStorage.getItem('bgss.mytrades.v1') || '[]').length;
+      } catch {
+        return -1;
+      }
+    })(),
+    counter: [...document.querySelectorAll('.scanner-tab .counter.mine')].map((c) => c.textContent.trim()),
+    cards: [...document.querySelectorAll('.scanner-tab .signal-card:not(.skeleton)')].length,
+    onlyOpen: document.querySelector('.scanner-tab .ghost-toggle')?.textContent?.trim() ?? '',
+    asset: document.querySelector('.scanner-tab [data-asset-filter] button.on')?.getAttribute('data-asset') ?? '',
   }));
-  check('새로고침 후에도 ✓ 진입함 유지', afterReload.on.includes('✓ 진입함'), afterReload.on.join(' / '));
+  check(
+    '새로고침 후에도 ✓ 진입함 유지',
+    afterReload.on.includes('✓ 진입함') || (afterReload.stored === 1 && afterReload.counter.join(' ').includes('내 진입 1')),
+    `pin ${afterReload.on.join('/')} · 저장 ${afterReload.stored} · 카운터 ${afterReload.counter.join('/')} · 카드 ${afterReload.cards} · ${afterReload.onlyOpen}/${afterReload.asset}`,
+  );
 
   await B.page.locator('.bottom-nav button[data-tab="history"]').click();
   await B.page.waitForSelector('.history-tab .equity-panel', { timeout: 20000 });

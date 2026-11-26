@@ -15,6 +15,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { chromium } from 'playwright';
 import './lib/chromium-env.mjs';
+import { installE2EStubs, seedAuthSession } from './lib/auth-seed.mjs';
 
 const PORT = 4179;
 const URL = `http://127.0.0.1:${PORT}/`;
@@ -139,6 +140,10 @@ try {
     deviceScaleFactor: 2,
     ...(useStorage ? { storageState: storagePath } : {}),
   });
+  // 🔐 회원 전용 게이트(v1.5.8) — 기존 시나리오는 '로그인된 상태'에서 시작한다.
+  await context.addInitScript(seedAuthSession);
+  await installE2EStubs(context);
+
   if (!useStorage) {
     await context.addInitScript((profile) => {
       localStorage.setItem('cota.exchange.v1', 'bitget');

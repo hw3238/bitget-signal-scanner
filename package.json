@@ -26,7 +26,8 @@
     "check:autotrade-e2e": "node scripts/autotrade-e2e.mjs",
     "settings-e2e": "node scripts/settings-e2e.mjs",
     "bench:strategies": "esbuild scripts/strategy-tournament.ts --bundle --platform=node --format=esm --outfile=.tmp/strategy-tournament.mjs --log-level=error && node .tmp/strategy-tournament.mjs",
-    "check:native": "bash scripts/native-check.sh"
+    "check:native": "bash scripts/native-check.sh",
+    "binance-e2e": "node scripts/binance-e2e.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.3",

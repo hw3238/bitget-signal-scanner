@@ -116,6 +116,12 @@ interface Options {
   favoriteSymbols?: string[];
   /** 현재 선택된 거래소 — null 이면 아직 고르지 않음(선택 화면) */
   exchange: Exchange | null;
+  /**
+   * 🔒 스캔 허용 여부(v1.5.8 회원 전용 게이트).
+   *  · false(미로그인)면 자동 시작·주기 갱신·거래소 전환 스캔을 모두 멈추고 진행 중 스캔 결과도 버린다.
+   *  · true 로 바뀌는 순간(로그인·가입 직후) 바로 한 번 스캔한다.
+   */
+  enabled?: boolean;
 }
 
 interface Job {
@@ -127,7 +133,7 @@ interface Job {
   tier: number;
 }
 
-export function useScanner({ refreshSec, autoStart = true, favoriteSymbols = [], exchange }: Options) {
+export function useScanner({ refreshSec, autoStart = true, favoriteSymbols = [], exchange, enabled = true }: Options) {
   const exRef = useRef<Exchange | null>(exchange);
   const lastEx = useRef<Exchange | null>(exchange);
   const [state, setState] = useState<ScanState>(() => (exchange ? initialStateFrom(exchange) : baseState()));
@@ -135,6 +141,11 @@ export function useScanner({ refreshSec, autoStart = true, favoriteSymbols = [],
   const [swapLog, setSwapLog] = useState<SwapLogEntry[]>(() => loadSwapLog(exchange ?? 'bitget'));
   const running = useRef(false);
   const pending = useRef(false);
+  /** 게이트 상태 — 스캔 콜백이 최신 값을 보도록 ref 로 둔다(콜백은 [] 로 고정) */
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  /** 실패 뒤 자동 재시도 타이머 */
+  const retryTimer = useRef(0);
   /** 스캔 세대 — 거래소를 바꾸면 올려서 진행 중인 스캔의 결과가 화면을 덮지 않게 한다. */
   const runId = useRef(0);
   const analysesRef = useRef<SymbolAnalysis[]>(state.analyses);
@@ -150,6 +161,8 @@ export function useScanner({ refreshSec, autoStart = true, favoriteSymbols = [],
       pending.current = true;
       return;
     }
+    // 🔒 미로그인(게이트) — 거래소 API 를 한 번도 호출하지 않는다.
+    if (!enabledRef.current) return;
     const ex = exRef.current;
     if (!ex) return;
     running.current = true;
@@ -317,6 +330,10 @@ export function useScanner({ refreshSec, autoStart = true, favoriteSymbols = [],
 
       const analyses = [...results.values()];
       const elapsedMs = Date.now() - startedAt;
+      if (retryTimer.current) {
+        window.clearTimeout(retryTimer.current);
+        retryTimer.current = 0;
+      }
       setState((prev) => ({
         ...prev,
         status: 'ready',
@@ -406,13 +423,23 @@ export function useScanner({ refreshSec, autoStart = true, favoriteSymbols = [],
       }
     } catch (e) {
       if (stale()) return;
+      const message = e instanceof Error && e.message ? e.message : '데이터를 불러오지 못했습니다';
+      // 이미 시그널이 있으면 화면을 '연결 오류'로 덮지 않는다 — 직전 결과를 그대로 보여주고 뒤에서 다시 시도한다.
+      const hasData = analysesRef.current.length > 0;
       setState((prev) => ({
         ...prev,
-        status: 'error',
-        error: e instanceof Error ? e.message : '데이터를 불러오지 못했습니다',
+        status: hasData ? 'ready' : 'error',
+        error: message,
         finishedAt: Date.now(),
         elapsedMs: Date.now() - startedAt,
       }));
+      // 일시적 실패(레이트리밋·네트워크·지역 차단 전환) → 6초 뒤 한 번 자동 재시도. 사용자가 누를 것 없이 회복된다.
+      if (!retryTimer.current) {
+        retryTimer.current = window.setTimeout(() => {
+          retryTimer.current = 0;
+          void scan(false);
+        }, 6000);
+      }
     } finally {
       running.current = false;
       if (pending.current) {
@@ -435,24 +462,62 @@ export function useScanner({ refreshSec, autoStart = true, favoriteSymbols = [],
       setState(baseState());
       return;
     }
+    if (!enabledRef.current) {
+      // 게이트 상태 — 목록·이력만 준비하고 스캔은 로그인 뒤에 시작한다.
+      setHistory(loadHistory(exchange));
+      setSwapLog(loadSwapLog(exchange));
+      setState(baseState());
+      return;
+    }
     setState({ ...baseState(), status: 'scanning', startedAt: Date.now() });
     setHistory(loadHistory(exchange));
     setSwapLog(loadSwapLog(exchange));
     void scan(true);
   }, [exchange, scan]);
 
+  // 첫 마운트 — 로그인된 상태로 열렸다면 바로 스캔(게이트면 아무것도 하지 않는다).
   useEffect(() => {
-    if (autoStart) void scan(false);
+    if (autoStart && enabledRef.current) void scan(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * 🔒 게이트 전환 — 로그인하면 즉시 스캔을 시작하고, 로그아웃하면 멈춘다.
+   *   · 진행 중이던 스캔은 runId 를 올려 무효화한다(로그아웃 뒤 결과가 화면·스냅숏에 남지 않게).
+   *   · 거래소 전환 스캔은 위 거래소 효과가 맡는다(여기서 또 돌리지 않는다).
+   */
+  const wasEnabled = useRef(enabled);
   useEffect(() => {
-    if (!refreshSec) return;
+    if (!enabled) {
+      // 로그아웃(true→false)일 때만 화면 데이터를 비운다. 게이트 상태로 처음 열린 경우에는
+      // 저장된 스냅숏을 메모리에 남겨 두어, 로그인하자마자 바로 시그널이 뜨게 한다(그리는 것만 막힌다·App 게이트).
+      if (wasEnabled.current) {
+        runId.current += 1;
+        if (retryTimer.current) {
+          window.clearTimeout(retryTimer.current);
+          retryTimer.current = 0;
+        }
+        running.current = false;
+        pending.current = false;
+        analysesRef.current = [];
+        setState(baseState());
+      }
+      wasEnabled.current = false;
+      return;
+    }
+    if (wasEnabled.current) return;
+    wasEnabled.current = true;
+    // 로그인·가입 직후 — 거래소가 정해져 있으면 그 자리에서 스캔을 시작한다.
+    if (autoStart && exRef.current) void scan(false);
+  }, [enabled, autoStart, scan]);
+
+  useEffect(() => {
+    if (!refreshSec || !enabled) return;
     const id = window.setInterval(() => {
       if (!running.current) void scan(false);
     }, refreshSec * 1000);
     return () => window.clearInterval(id);
-  }, [refreshSec, scan]);
+  }, [refreshSec, scan, enabled]);
 
   const clearHistory = useCallback(() => {
     setHistory([]);

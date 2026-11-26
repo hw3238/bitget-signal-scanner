@@ -11,9 +11,13 @@
 
 ## 주요 기능
 
-- **🔐 회원가입 · 로그인(Supabase) + 🛡️ 관리자 대시보드 (v1.5.8 웹 기능, APK 재설치 불필요)**
-  - **가입·로그인 입구**: ① 미로그인 상단 배너 `가입` ② 메뉴 탭·설정 탭의 **COTA 계정 카드**(회원가입·로그인) ③ 데스크톱 헤더 계정 칩.
-    **로그인 없이도 스캐너·자동매매·모든 도구를 그대로** 쓸 수 있습니다(게스트 둘러보기 — 로그인은 '있으면 좋은' 기능).
+- **🔒 회원 전용 게이트 — 가입/로그인 없이는 아무것도 못 본다 (v1.5.8 웹 기능, APK 재설치 불필요)**
+  - **미로그인 = 잠금**: 세션이 없으면 **회원가입/로그인 전체 화면 게이트**(`src/components/AuthGate.tsx`)만 뜹니다.
+    스캐너·시그널 카드·시황·메뉴·기록·설정·거래소 선택·하단 탭바·상단 헤더가 **DOM 에 하나도 생기지 않고**,
+    **마켓 스캔(거래소 API 호출)도 시작하지 않습니다**(`useScanner({ enabled })`). 닫기·`로그인 없이 둘러보기`·게스트 배너는 없습니다.
+  - **가입/로그인 즉시 사용**: 성공하면 그 자리에서 게이트가 걷히고, 거래소를 아직 고르지 않았다면 **거래소 선택 화면**으로 이어집니다.
+    거래소가 기억돼 있으면 곧바로 스캐너(직전 스냅숏 시그널 포함)가 열립니다. **로그아웃하면 즉시 다시 잠깁니다**(진행 중 스캔도 무효화).
+  - 화면 순서: `부팅(세션 복원) → 가입/로그인 게이트 → 거래소 선택 → 앱` (`src/lib/gate.ts` 의 `gateStage`).
   - **회원가입**: 이메일·비밀번호·닉네임 → Supabase Auth(Confirm email OFF, 가입 즉시 로그인) →
     `cota_profiles` 에 `{ id, email, nickname, role:'user', preferred_exchange }` **INSERT**, `cota_connections` 에 초기 행 **UPSERT**.
     로그인할 때마다 `last_seen_at`·선호 거래소만 갱신하며 **role 은 절대 건드리지 않습니다**(권한 승격 방지).
@@ -41,12 +45,15 @@
     grant update on public.cota_connections to authenticated;  -- upsert(ON CONFLICT DO UPDATE)에 필요
     revoke all on public.cota_profiles, public.cota_connections from anon;
     ```
-  - 검증: `npm run check:auth` **59건**(입력 검증·오류 문구·payload 화이트리스트·동기화 판단·요약/검색/필터/날짜) ·
-    `npm run auth-e2e` **41건**(가짜 Supabase 로 가입→프로필 INSERT→연결 UPSERT→자동매매/거래소 전환 동기화→로그아웃→오류 문구→
-    관리자 메뉴·대시보드 요약/목록/검색/필터/새로고침→새로고침 후 세션 유지, 요청 본문에 키 원문 없음까지 검사 · **가입 직후 FK 경합(409) 재시도**).
+  - 검증: `npm run check:auth` **72건**(입력 검증·오류 문구·payload 화이트리스트·동기화 판단·요약/검색/필터/날짜) ·
+    `npm run auth-e2e` **62건**(미로그인 = 게이트만·앱 DOM 0·마켓 호출 0 → 게이트 로그인 오류 문구 → 가입 즉시 해제 → 거래소 선택 → 모든 탭 →
+    자동매매/거래소 전환 동기화 → 로그아웃 재잠금(탭바 소멸·스캔 정지) → 게이트 로그인 즉시 앱 → 새로고침 세션 유지 →
+    관리자 메뉴·대시보드 요약/목록/검색/필터/새로고침, 요청 본문에 키 원문 없음까지 검사).
     실제 Supabase 로그인·관리자 조회도 별도로 확인했습니다(`docs/screens/126-live-admin-dashboard.png`).
-  - 스크린샷: `docs/screens/118-auth-banner-guest.png` · `119-auth-signup.png` · `120-account-menu.png` · `121-auth-login-error.png` ·
-    `122-admin-menu.png` · `123-admin-dashboard.png` · `124-admin-dashboard-full.png` · `125-admin-filter-search.png` · `126-live-admin-dashboard.png` · `127-live-guest-banner.png` · `128-live-admin-dashboard.png`(배포본 라이브) · `129-live-signup-member.png`.
+  - 스크린샷: `docs/screens/130-auth-gate-locked.png`(미로그인 잠금) · `131-auth-gate-login.png` · `132-auth-gate-signup.png` ·
+    `133-after-signup-exchange.png`(가입 직후 = 거래소 선택) · `134-member-scanner.png`(거래소 선택 → 스캐너) · `135-member-menu.png` ·
+    `136-logout-locked.png`(로그아웃 → 재잠금) · `137-member-instant.png`(거래소 기억 시 가입 즉시 시그널) · `138-auth-gate-desktop.png` ·
+    `139-admin-menu.png` · `140-admin-dashboard.png` · 관리자 대시보드 실데이터: `126-live-admin-dashboard.png` · `128-live-admin-dashboard.png`.
 
 - **🏦 거래소 선택(바이낸스·비트겟) · 거래소별 독립 탐지 (v1.5.7 웹 기능, APK 재설치 불필요)**
   - **첫 화면 = 거래소 선택**: 아직 고르지 않았으면(첫 방문) 스캐너 대신 **Binance (바이낸스)** / **Bitget (비트겟)** 카드를 보여 줍니다.
@@ -58,6 +65,18 @@
     · Binance = USDT 마켓 코인 전용(현물에 없는 `주식선물` 필터는 숨김, 법정화폐 쌍 제외)
   - **바이낸스 데이터 경로(정직한 폴백)**: ① `fapi.binance.com`(선물) → 451·CORS·네트워크 실패 시 ② `data-api.binance.vision/api/v3`(공식 현물 마켓 데이터, 지역 무관).
     화면의 **출처 배지**(`data-scan-source`)에 실제로 붙은 곳(`바이낸스 선물` / `바이낸스 현물 데이터` / `비트겟 선물`)을 그대로 표시합니다.
+  - **바이낸스 선택 시 오류 방지(2026-11-26 보강)**: 거래소를 고를 때 빨간 `연결 오류` 배너가 뜨던 문제를 아래처럼 없앴습니다.
+    · **출처 기억**: 한 번 막힌 출처(451·CORS)는 `cota.binance.source.v1` 에 저장해 **거래소 전환·재실행마다 같은 실패를 반복하지 않습니다**(30분 뒤 자동 재확인).
+      붙은 출처는 먼저, 다른 출처는 **예비**로 뒤에 두어 일시 장애 때 자동으로 넘어갑니다(`planSources`).
+    · **일시 장애 vs 차단 구분**: 418(IP 밴)·429(한도)는 **출처를 막지 않고** 요청 게이트를 물러나게 한 뒤 재시도(`Throttled`),
+      451·403·CORS·DNS 만 그 기기에서 못 쓰는 출처로 기록합니다(`SourceBlocked`). 400·404 같은 개별 요청 오류도 출처를 막지 않습니다.
+    · **CORS 재시도 제거**: 시간 초과만 한 번 재시도 → 막힌 출처에 두 번 요청해 콘솔 오류를 두 줄 남기던 동작을 없앴습니다.
+    · **한 종목·보조 호출 실패가 전체 스캔을 깨지 않게**: 계약 목록(exchangeInfo) 실패 → 티커 기반 최소 계약으로 계속,
+      펀딩비 실패는 5분 기억(매 스캔 재시도 금지), 티커가 비어 오면 다음 출처/재시도, 급등 탐색기 BTC 기준선 실패 → 자기 수익률만으로 계속.
+    · **화면 보호**: 이미 시그널이 있으면 일시 실패에 화면을 `연결 오류`로 덮지 않고 직전 결과를 유지하며 **6초 뒤 자동 재시도**합니다.
+    · 검증: `npm run binance-e2e` **26건** — 첫 화면 바이낸스 선택 · 헤더 칩 전환 · 설정 카드 왕복 · 시황 · 급등 탐색기에서
+      **오류 배너 0 · 페이지 예외 0 · 앱 콘솔 오류 0**, 장애 주입(선물 abort + 현물 429)에서 **빨간 배너 없이 회복**,
+      두 출처 전면 차단에서도 화면은 살아 있고 `다시 시도` 안내만 표시.
     현물 데이터에는 펀딩비·미결제약정이 없어 급등 탐색기의 ③ 숏스퀴즈를 **확인 불가(부분 점수)** 로 두고, 카드 펀딩은 `—`로 표시합니다(없는 값을 0으로 읽어 통과시키지 않음).
   - **자동매매는 비트겟 전용**: 바이낸스 모드에서 `자동매매` 탭을 열면 그 사실을 안내하고 **`Bitget으로 전환`** 버튼을 바로 제공합니다.
     바이낸스 시그널은 자동매매 감시·원클릭 주문 대상에서 **원천 제외**됩니다(비트겟 계좌로 다른 거래소 시그널이 주문되는 사고 방지).
@@ -323,7 +342,8 @@ npm run check:exchange-e2e          # 거래소 선택·전환 E2E — 첫 방�
 npm run check:surge                 # 급등 탐색기 6요건 경계·점수·플랜·유니버스·필터 + 실제 API 교차검증(79건)
 npm run check:surge-e2e             # 급등 탐색기 E2E — 진행률·카드 정합성·티커/캔들 교차검증·필터·복사 (스크린샷 82~86)
 npm run check:auth                  # 계정·관리자 단위 — 입력 검증·오류 문구·연결 payload 화이트리스트(키 원문 금지)·요약/검색/필터 (59건)
-npm run auth-e2e                    # 회원가입·로그인·연결 동기화·관리자 대시보드 E2E — 가짜 Supabase 로 요청 본문까지 검사 (스크린샷 118~125)
+npm run auth-e2e                    # 회원 전용 게이트 E2E — 미로그인 잠금·가입 즉시 해제·로그아웃 재잠금·연결 동기화·관리자 대시보드 (스크린샷 130~140)
+npm run binance-e2e                 # 바이낸스 모드 E2E — 선택/전환·시황·급등·장애 주입(폴백·재시도)에서 오류 0 (스크린샷 141~145)
 node scripts/features-check.mjs     # 메뉴 8도구·김프·생존·사이징·수수료·도플갱어·키맞추기·시황 카드 E2E (스크린샷 25~36)
 node scripts/toss-ui-check.mjs      # 5탭·코인 집중·한글화·가격·온보딩·COTA 추천·실전 주문 콕핏·공유카드 (스크린샷 45)
 node scripts/coin-logo-check.mjs    # 코인 로고·글자 아바타 폴백·비트겟 바로가기 URL (스크린샷 23)

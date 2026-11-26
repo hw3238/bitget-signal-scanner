@@ -15,6 +15,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import './lib/chromium-env.mjs';
+import { installE2EStubs, seedAuthSession } from './lib/auth-seed.mjs';
 
 const PORT = 4190;
 const URL = `http://127.0.0.1:${PORT}/`;
@@ -177,6 +178,10 @@ const run = async () => {
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
   });
+  // 🔐 회원 전용 게이트(v1.5.8) — 기존 시나리오는 '로그인된 상태'에서 시작한다.
+  await context.addInitScript(seedAuthSession);
+  await installE2EStubs(context);
+
   await context.addInitScript(snapshotScript);
   const page = await context.newPage();
   // 설정 화면 검증만 한다 — 거래소·GitHub API 호출은 끊어 스캔이 화면을 흔들지 않게 한다.

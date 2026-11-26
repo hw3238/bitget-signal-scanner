@@ -1,5 +1,5 @@
 /**
- * 🔐 계정(Auth)·관리자 대시보드 단위 검증 (v1.5.8 웹)
+ * 🔐 계정(Auth)·게이트·관리자 대시보드 단위 검증 (v1.5.8 웹)
  *   실행: npm run check:auth
  *
  * 1) 입력 검증 — 이메일·비밀번호·닉네임 규칙
@@ -7,6 +7,9 @@
  * 3) 연결 내역 payload — **화이트리스트 7개 필드만** 나가고 API 키/시크릿/패스프레이즈는 절대 없다
  * 4) 동기화 판단 — 의미 있는 값이 바뀔 때만 전송(updated_at 만 바뀐 경우 전송 안 함)
  * 5) 관리자 대시보드 — 프로필+연결 조인, 요약 집계, 검색·필터, 날짜 표기
+ * 6) 세션 만료 판단
+ * 7) **회원 전용 게이트** — 화면 순서(부팅 → 가입/로그인 → 거래소 선택 → 앱)
+ * 8) **게이트 정적 검사** — 둘러보기·게스트 배너·닫기 흔적이 소스에 남아 있지 않은지
  */
 import {
   CONNECTION_FIELDS,
@@ -21,6 +24,9 @@ import {
   fmtAgo,
   fmtDay,
 } from '../src/lib/accountSync';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { gateStage } from '../src/lib/gate';
 import {
   SESSION_STORAGE_KEY,
   authErrorMessage,
@@ -159,8 +165,43 @@ check('세션: 5분 남으면 그대로 사용', !sessionNeedsRefresh({ ...sessi
 check('세션: 30초 남으면 갱신 필요', sessionNeedsRefresh({ ...session, expiresAt: t0 + 30_000 }, t0));
 check('세션 저장 키 고정', SESSION_STORAGE_KEY === 'cota.auth.session.v1');
 
+/* 7) 회원 전용 게이트 — 화면 순서 */
+check('게이트: 세션 복원 전에는 부팅 화면', gateStage({ authReady: false, hasSession: false, exchange: null }) === 'booting');
+check('게이트: 복원 전인데 세션이 있어도 부팅', gateStage({ authReady: false, hasSession: true, exchange: 'bitget' }) === 'booting');
+check('게이트: 미로그인 → 가입/로그인 게이트', gateStage({ authReady: true, hasSession: false, exchange: null }) === 'auth');
+check('게이트: 미로그인인데 거래소가 저장돼 있어도 게이트', gateStage({ authReady: true, hasSession: false, exchange: 'bitget' }) === 'auth');
+check('게이트: 로그인 + 거래소 미선택 → 거래소 선택', gateStage({ authReady: true, hasSession: true, exchange: null }) === 'exchange');
+check('게이트: 로그인 + 거래소 선택 → 앱', gateStage({ authReady: true, hasSession: true, exchange: 'binance' }) === 'app');
+
+/* 8) 게이트 정적 검사 — 예전 '게스트 둘러보기' 흔적이 남아 있지 않은가 */
+const ROOT = process.cwd();
+function sources(dir: string): { path: string; text: string }[] {
+  const out: { path: string; text: string }[] = [];
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) {
+      out.push(...sources(full));
+      continue;
+    }
+    if (!/\.(tsx?|css)$/.test(name)) continue;
+    out.push({ path: full.replace(`${ROOT}/`, ''), text: readFileSync(full, 'utf8') });
+  }
+  return out;
+}
+const srcFiles = sources(join(ROOT, 'src'));
+const allSrc = srcFiles.map((f) => `${f.path}\n${f.text}`).join('\n');
+const appSrc = srcFiles.find((f) => f.path.endsWith('src/App.tsx'))?.text ?? '';
+const gateSrc = srcFiles.find((f) => f.path.endsWith('src/components/AuthGate.tsx'))?.text ?? '';
+check('정적: 회원 전용 게이트 컴포넌트가 있다(data-auth-gate)', gateSrc.includes('data-auth-gate'));
+check('정적: 게이트는 닫기 버튼을 두지 않는다', !gateSrc.includes('data-auth-close'));
+check('정적: "로그인 없이 둘러보기"·게스트 버튼이 없다', !/data-auth-guest|로그인 없이 둘러보기|게스트로 둘러보기/.test(allSrc));
+check('정적: 게스트 배너(data-auth-banner·cota.auth.banner)가 없다', !/data-auth-banner|auth-banner-guest|cota\.auth\.banner/.test(allSrc));
+check('정적: 예전 AuthSheet(모달)는 삭제됐다', !srcFiles.some((f) => f.path.endsWith('src/components/AuthSheet.tsx')));
+check('정적: App 이 gateStage 로 화면을 가른다', appSrc.includes('gateStage(') && appSrc.includes("stage === 'auth'"));
+check('정적: 미로그인에는 스캔을 켜지 않는다(enabled: authed)', /useScanner\(\{[\s\S]*enabled:\s*authed/.test(appSrc));
+
 console.log('');
-console.log(`계정·관리자 대시보드 검증: ${pass}/${pass + fails.length} 통과`);
+console.log(`계정·게이트·관리자 대시보드 검증: ${pass}/${pass + fails.length} 통과`);
 if (fails.length) {
   console.log(`실패: ${fails.join(' · ')}`);
   process.exit(1);

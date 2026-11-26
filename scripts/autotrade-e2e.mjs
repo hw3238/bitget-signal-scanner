@@ -15,6 +15,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import './lib/chromium-env.mjs';
+import { installE2EStubs, seedAuthSession } from './lib/auth-seed.mjs';
 
 const PORT = 4186;
 const URL = `http://127.0.0.1:${PORT}/`;
@@ -396,6 +397,10 @@ const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-sh
 
 async function open({ native = true, blockMarket = true, oldApk = false, seedConfig = null, altSignal = false, profileStyle = null } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  // 🔐 회원 전용 게이트(v1.5.8) — 기존 시나리오는 '로그인된 상태'에서 시작한다.
+  await ctx.addInitScript(seedAuthSession);
+  await installE2EStubs(ctx);
+
   await ctx.addInitScript(`(${snapshotScript.toString()})();`);
   // 알트 코인(DOGE) 시그널을 하나 더 심어 '전체 코인' 기본값이 실제 감시 목록에 들어가는지 본다.
   if (altSignal) {

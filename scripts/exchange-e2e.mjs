@@ -14,6 +14,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import './lib/chromium-env.mjs';
+import { installE2EStubs, seedAuthSession } from './lib/auth-seed.mjs';
 
 const PORT = 4179;
 const URL = `http://127.0.0.1:${PORT}/`;
@@ -100,6 +101,10 @@ const run = async () => {
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
   });
+  // 🔐 회원 전용 게이트(v1.5.8) — 기존 시나리오는 '로그인된 상태'에서 시작한다.
+  await context.addInitScript(seedAuthSession);
+  await installE2EStubs(context);
+
   // 거래소 선택값은 **일부러 비워 둔다** — 첫 방문 시나리오.
   await context.addInitScript(() => {
     if (!localStorage.getItem('bgss.settings.v1')) {
@@ -129,6 +134,25 @@ const run = async () => {
       { timeout },
     );
     await page.waitForTimeout(600);
+  };
+  /** 시장에 '진행중' 코인 시그널이 없을 때도 카드 검증이 가능하도록 종료 포함 → 자산 전체로 넓힌다. */
+  const ensureCards = async () => {
+    let count = await page.locator('.scanner-tab .signal-card:not(.skeleton)').count();
+    if (count > 0) return count;
+    const toggle = page.locator('.scanner-tab .ghost-toggle').first();
+    if (((await toggle.textContent()) ?? '').includes('진행중만')) {
+      await toggle.click();
+      await page.waitForTimeout(800);
+      count = await page.locator('.scanner-tab .signal-card:not(.skeleton)').count();
+    }
+    if (count > 0) return count;
+    const all = page.locator('.scanner-tab [data-asset-filter] button[data-asset="all"]');
+    if (await all.count()) {
+      await all.first().click();
+      await page.waitForTimeout(800);
+      count = await page.locator('.scanner-tab .signal-card:not(.skeleton)').count();
+    }
+    return count;
   };
   const chip = () => page.evaluate(() => {
     const el = document.querySelector('[data-exchange-chip]');
@@ -248,6 +272,8 @@ const run = async () => {
 
   /* ---------- 3) 새로고침 = 선택 화면 없이 바로 스캐너 ---------- */
   await page.reload({ waitUntil: 'domcontentloaded' });
+  // 🔐 게이트(v1.5.8) — 저장된 세션 복원이 끝나야 앱이 그려진다(부팅 화면 → 앱).
+  await page.waitForSelector('[data-exchange-chip]', { timeout: 60000 });
   const afterReload = await page.evaluate(() => ({
     gate: !!document.querySelector('[data-exchange-gate]'),
     chip: document.querySelector('[data-exchange-chip]')?.getAttribute('data-exchange-value'),
@@ -284,6 +310,7 @@ const run = async () => {
     `${early.count}건 · ${early.symbols.slice(0, 5).join(',')}`,
   );
   await waitScanner();
+  await ensureCards();
   const afterSwitch = await page.evaluate(() => ({
     stored: localStorage.getItem('cota.exchange.v1'),
     chip: document.querySelector('[data-exchange-chip]')?.getAttribute('data-exchange-value'),
@@ -419,6 +446,10 @@ const run = async () => {
 
   /* ---------- 8) 데스크톱 선택 화면 ---------- */
   const desktop = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'ko-KR', timezoneId: 'Asia/Seoul' });
+  // 🔐 회원 전용 게이트(v1.5.8) — 데스크톱 시나리오도 로그인된 상태에서 시작한다.
+  await desktop.addInitScript(seedAuthSession);
+  await installE2EStubs(desktop);
+
   const dpage = await desktop.newPage();
   dpage.on('console', (m) => {
     if (m.type() === 'error') consoleErrors.push(`[desktop] ${m.text()}`);

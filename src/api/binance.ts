@@ -24,24 +24,78 @@ const SPOT = 'https://data-api.binance.vision';
 /** 계약 스펙(호가·수량 단위)을 받아 둘 마켓 수 — 거래대금 상위 */
 export const SPOT_SPEC_LIMIT = 180;
 
-/** 451·CORS 로 이 출처를 쓸 수 없음 — 다음 출처로 넘어간다. */
-class SourceBlocked extends Error {}
+/**
+ * 출처 기억 — 한 번 '이 기기에서 막힘'을 확인하면 저장해 두고, 다음 실행·거래소 전환에서
+ * **같은 실패를 반복하지 않는다**(CORS 오류 로그·지연 0). 30분 뒤 다시 확인한다(망/VPN 이 바뀔 수 있다).
+ */
+const SOURCE_STORAGE_KEY = 'cota.binance.source.v1';
+const BLOCK_TTL_MS = 30 * 60_000;
+const PREFERRED_TTL_MS = 6 * 60 * 60_000;
 
-let preferred: BinanceSource | null = null;
-let futuresBlocked = false;
+interface SourceMemory {
+  preferred: BinanceSource | null;
+  futuresBlocked: boolean;
+  at: number;
+}
+
+function loadMemory(): SourceMemory {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SOURCE_STORAGE_KEY) ?? 'null') as Partial<SourceMemory> | null;
+    if (!raw || typeof raw !== 'object') return { preferred: null, futuresBlocked: false, at: 0 };
+    const at = Number(raw.at) || 0;
+    const age = Date.now() - at;
+    const preferred =
+      (raw.preferred === 'futures' || raw.preferred === 'spot') && age < PREFERRED_TTL_MS ? raw.preferred : null;
+    return { preferred, futuresBlocked: !!raw.futuresBlocked && age < BLOCK_TTL_MS, at };
+  } catch {
+    return { preferred: null, futuresBlocked: false, at: 0 };
+  }
+}
+
+function saveMemory(): void {
+  try {
+    localStorage.setItem(
+      SOURCE_STORAGE_KEY,
+      JSON.stringify({ preferred, futuresBlocked, at: Date.now() } satisfies SourceMemory),
+    );
+  } catch {
+    /* 저장소를 쓸 수 없는 환경 */
+  }
+}
+
+const memory = loadMemory();
+let preferred: BinanceSource | null = memory.preferred;
+let futuresBlocked = memory.futuresBlocked;
 
 /** 지금 붙어 있는 출처 (아직 확인 전이면 null) */
 export const binanceSource = (): BinanceSource | null => preferred;
+/** 기억까지 지우고 처음부터 다시 확인한다(검증·문제 해결용). */
 export function resetBinanceSource(): void {
   preferred = null;
   futuresBlocked = false;
+  saveMemory();
 }
 
-/** 시도할 출처 순서 — 이미 붙은 곳 → (막히지 않았으면) 선물 → 현물 */
+/**
+ * 시도할 출처 순서 — 붙어 있는 곳을 먼저, 나머지를 뒤에(그 출처가 일시적으로 막히면 넘어간다).
+ *  · 선물이 이 기기에서 막혔으면(futuresBlocked) 현물만 남긴다.
+ */
 export function planSources(state: { preferred: BinanceSource | null; futuresBlocked: boolean }): BinanceSource[] {
-  if (state.preferred) return [state.preferred];
-  return state.futuresBlocked ? ['spot'] : ['futures', 'spot'];
+  const usable: BinanceSource[] = state.futuresBlocked ? ['spot'] : ['futures', 'spot'];
+  if (!state.preferred) return usable;
+  return [state.preferred, ...usable.filter((source) => source !== state.preferred)];
 }
+
+/**
+ * 이 출처를 이 기기에서 쓸 수 없다 — 451(지역 차단)·403·CORS·DNS. 다음 출처로 넘어가고 기억한다.
+ */
+class SourceBlocked extends Error {}
+
+/**
+ * 일시적 한도(418 IP 밴 · 429 레이트리밋) — **출처를 막지 않는다**.
+ * 잠시 쉬었다 다시 보내고, 그래도 안 되면 그때만 다른 출처를 쓴다.
+ */
+class Throttled extends Error {}
 
 /* ------------------------------------------------------------------ *
  * HTTP — 모든 요청은 비트겟과 같은 전역 게이트를 지나 간격이 조절된다.
@@ -54,7 +108,8 @@ function urlOf(source: BinanceSource, path: string): string {
 async function getJson<T>(source: BinanceSource, path: string, attempt = 0): Promise<T> {
   const url = urlOf(source, path);
   await requestGate.acquire();
-  let res: Response;
+  let res: Response | null = null;
+  let netErr: unknown = null;
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 12_000);
@@ -64,40 +119,61 @@ async function getJson<T>(source: BinanceSource, path: string, attempt = 0): Pro
       clearTimeout(timer);
     }
   } catch (err) {
-    if (attempt < 1) {
-      await sleep(340);
-      return getJson<T>(source, path, attempt + 1);
-    }
-    // CORS·네트워크·시간초과 — 이 출처는 쓸 수 없다.
-    throw new SourceBlocked(`${source} 연결 실패: ${err instanceof Error ? err.message : 'network'}`);
+    netErr = err;
   } finally {
     requestGate.release();
+  }
+
+  if (!res || netErr) {
+    // 시간 초과는 일시적일 수 있어 한 번만 다시 보낸다.
+    // CORS·DNS 차단은 몇 번을 보내도 같으므로 재시도하지 않고 곧바로 다른 출처로 넘어간다(로그·지연 최소화).
+    const timedOut = netErr instanceof DOMException && netErr.name === 'AbortError';
+    if (timedOut && attempt < 1) {
+      await sleep(300);
+      return getJson<T>(source, path, attempt + 1);
+    }
+    throw new SourceBlocked(`${source} 연결 실패: ${netErr instanceof Error ? netErr.message : 'network'}`);
   }
 
   if (res.status === 451 || res.status === 403) {
     throw new SourceBlocked(`${source} HTTP ${res.status}`);
   }
-  if (res.status === 429) {
-    requestGate.onThrottle(Number(res.headers.get('retry-after')) * 1000 || 0);
-    if (attempt < 3) {
-      await sleep(600 + attempt * 600);
+  if (res.status === 418 || res.status === 429) {
+    // 418 = IP 자동 차단, 429 = 호출 한도. 요청 게이트를 물러나게 하고 잠시 뒤 다시.
+    const retryAfter = Number(res.headers.get('retry-after')) * 1000 || 0;
+    requestGate.onThrottle(res.status === 418 ? Math.max(retryAfter, 4000) : retryAfter);
+    if (attempt < 2) {
+      await sleep(800 + attempt * 1200);
       return getJson<T>(source, path, attempt + 1);
     }
-    throw new Error('바이낸스 요청 한도 초과(429)');
+    throw new Throttled(`${source} 요청 한도 초과(${res.status})`);
   }
   if (!res.ok) {
     if (res.status >= 500 && attempt < 1) {
       await sleep(320);
       return getJson<T>(source, path, attempt + 1);
     }
+    // 400·404 는 '이 요청'의 문제(없는 심볼 등) — 출처를 막지 않는다.
     throw new Error(`HTTP ${res.status}`);
   }
   requestGate.onSuccess();
-  return (await res.json()) as T;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new Error('응답을 읽지 못했습니다');
+  }
 }
 
-/** 준비된 출처를 차례로 시도하고, 성공한 출처를 기억한다. */
-async function withSource<T>(run: (source: BinanceSource) => Promise<T>): Promise<{ data: T; source: BinanceSource }> {
+/**
+ * 준비된 출처를 차례로 시도하고, 성공한 출처를 기억한다.
+ *  · SourceBlocked(451·403·CORS) → 그 출처를 이 기기에서 못 쓴다고 기억하고 다음 출처로.
+ *  · Throttled(418·429) → 출처를 막지 않고 다음 출처로(둘 다 막히면 그때만 실패).
+ *  · 그 밖의 오류(400·404 등) → 다음 출처를 시도하되 '막힘'으로 기록하지 않는다.
+ */
+async function withSource<T>(
+  run: (source: BinanceSource) => Promise<T>,
+  what = '마켓 데이터',
+): Promise<{ data: T; source: BinanceSource }> {
   const order = planSources({ preferred, futuresBlocked });
   let last: unknown = null;
   for (const source of order) {
@@ -105,13 +181,22 @@ async function withSource<T>(run: (source: BinanceSource) => Promise<T>): Promis
       const data = await run(source);
       preferred = source;
       if (source === 'futures') futuresBlocked = false;
+      saveMemory();
       return { data, source };
     } catch (err) {
       last = err;
-      if (source === 'futures') futuresBlocked = true;
+      if (err instanceof SourceBlocked && source === 'futures') {
+        futuresBlocked = true;
+        saveMemory();
+      }
     }
   }
-  throw last instanceof Error ? last : new Error('바이낸스 마켓 데이터에 연결하지 못했습니다');
+  const reason = last instanceof Error ? last.message : '';
+  throw new Error(
+    reason.includes('HTTP 4') || reason.includes('HTTP 5') || reason.includes('응답')
+      ? `바이낸스 ${what}을 받지 못했습니다 (${reason})`
+      : `바이낸스 ${what}에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.`,
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -298,20 +383,29 @@ const symbolsParam = (symbols: string[]): string => `symbols=${encodeURIComponen
  * 공개 API
  * ------------------------------------------------------------------ */
 
-/** 선물 펀딩비 — 5분 캐시 (여러 스캔에서 재사용) */
-let fundingCache: { at: number; map: Map<string, number> } = { at: 0, map: new Map() };
+/** 선물 펀딩비 — 5분 캐시 (여러 스캔에서 재사용). 실패도 5분 기억해 매 스캔 재시도하지 않는다. */
+let fundingCache: { at: number; map: Map<string, number>; failedAt: number } = { at: 0, map: new Map(), failedAt: 0 };
+
+/** 거래소 전환 — 펀딩비 캐시만 비운다(출처 기억은 기기·망의 성질이라 유지 → 같은 실패를 반복하지 않는다). */
+export function resetBinanceCache(): void {
+  fundingCache = { at: 0, map: new Map(), failedAt: 0 };
+}
 
 export async function fetchBinanceFunding(): Promise<Map<string, number>> {
-  if (Date.now() - fundingCache.at < 5 * 60_000) return fundingCache.map;
+  const now = Date.now();
+  if (now - fundingCache.at < 5 * 60_000) return fundingCache.map;
+  if (now - fundingCache.failedAt < 5 * 60_000) return fundingCache.map;
   try {
     const { data, source } = await withSource((src) => {
+      // 현물 데이터에는 펀딩비가 없다 — 요청 자체를 보내지 않는다(불필요한 실패·로그 방지).
       if (src === 'spot') return Promise.resolve<PremiumIndexLike[]>([]);
       return getJson<PremiumIndexLike[]>('futures', 'premiumIndex');
-    });
+    }, '펀딩비');
     const map = source === 'futures' ? fundingFromPremium(data) : new Map<string, number>();
-    fundingCache = { at: Date.now(), map };
+    fundingCache = { at: Date.now(), map, failedAt: 0 };
     return map;
   } catch {
+    fundingCache = { ...fundingCache, failedAt: Date.now() };
     return fundingCache.map;
   }
 }
@@ -336,7 +430,10 @@ export async function fetchBinanceTickers(symbols?: string[]): Promise<{ tickers
     }
   });
   const rows = Array.isArray(data) ? data : [];
-  return { tickers: tickersFrom24h(rows, funding), source };
+  const tickers = tickersFrom24h(rows, funding);
+  // 티커가 한 건도 없으면 '빈 마켓'으로 스캔을 끝내지 않는다 — 다음 출처·재시도로 넘긴다.
+  if (!tickers.length) throw new Error('바이낸스 티커 응답이 비어 있습니다');
+  return { tickers, source };
 }
 
 /**
@@ -348,20 +445,26 @@ export async function fetchBinanceContracts(
   tickers: Ticker[],
   source: BinanceSource,
 ): Promise<Contract[]> {
-  if (source === 'futures') {
-    const { data } = await withSource((src) =>
-      getJson<{ symbols?: BinanceSymbolLike[] }>(src, 'exchangeInfo'),
-    );
-    return contractsFromInfo(data.symbols ?? [], 'futures');
-  }
-
-  const wanted = topSymbols(tickers);
   const base = tickers.filter((t) => t.symbol.endsWith('USDT')).map((t) => ({
     symbol: t.symbol,
     base: t.symbol.replace(/USDT$/, ''),
     asset: 'crypto' as const,
     isRwa: false,
   }));
+
+  if (source === 'futures') {
+    try {
+      const { data } = await withSource((src) => getJson<{ symbols?: BinanceSymbolLike[] }>(src, 'exchangeInfo'), '계약 정보');
+      const list = contractsFromInfo(data.symbols ?? [], 'futures');
+      // 계약 목록이 비어 오면(빈 데이터) 최소 정보로라도 스캔이 돌게 한다.
+      return list.length ? list : base;
+    } catch {
+      // 계약 스펙을 못 받아도 **스캔 자체를 실패시키지 않는다** — 종목·티커만으로 계속 간다.
+      return base;
+    }
+  }
+
+  const wanted = topSymbols(tickers);
   if (!wanted.length) return base;
   try {
     const { data } = await withSource((src) =>

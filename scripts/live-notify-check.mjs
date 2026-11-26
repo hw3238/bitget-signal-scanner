@@ -10,6 +10,7 @@
 import { chromium } from 'playwright';
 import { readFileSync } from 'node:fs';
 import './lib/chromium-env.mjs';
+import { installE2EStubs, seedAuthSession } from './lib/auth-seed.mjs';
 
 const URL = 'https://hw3238.github.io/bitget-signal-scanner/';
 const OUT = 'docs/screens/17-live-settings-notify.png';
@@ -29,6 +30,10 @@ const context = await browser.newContext({
   locale: 'ko-KR',
   timezoneId: 'Asia/Seoul',
 });
+  // 🔐 회원 전용 게이트(v1.5.8) — 기존 시나리오는 '로그인된 상태'에서 시작한다.
+  await context.addInitScript(seedAuthSession);
+  await installE2EStubs(context);
+
 // 첫 실행 온보딩을 건너뛰도록 프로필을 미리 저장한다.
 await context.addInitScript(() => {
   localStorage.setItem('cota.exchange.v1', 'bitget');

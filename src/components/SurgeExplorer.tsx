@@ -115,7 +115,13 @@ export function SurgeExplorer({ exchange, state, account, autoTrade }: Props) {
       setProgress({ done: 0, total: rows.length });
       try {
         /* ---------- 기준선: BTC 1시간봉 ---------- */
-        btcRef.current = await loadCandles('BTCUSDT', '1H', BARS_1H, force);
+        try {
+          btcRef.current = await loadCandles('BTCUSDT', '1H', BARS_1H, force);
+        } catch {
+          // BTC 기준선을 못 받아도 탐색은 계속한다 — 상대 강세는 자기 수익률만으로 계산되고,
+          // 캐시에 남은 직전 BTC 봉이 있으면 그걸 기준선으로 쓴다(전체 탐색을 오류로 끝내지 않는다).
+          btcRef.current = readCandles(exchange, 'BTCUSDT', '1H', SURGE_TTL['1H']) ?? [];
+        }
         storeRef.current = new Map();
         const list: SurgePick[] = [];
         let done = 0;

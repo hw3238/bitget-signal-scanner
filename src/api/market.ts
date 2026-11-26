@@ -8,12 +8,16 @@
  */
 import type { Candle, Contract, TF, Ticker } from '../engine/types';
 import type { Exchange, MarketSource } from '../lib/exchange';
-import { fetchBinanceCandles, fetchBinanceContracts, fetchBinanceTickers, resetBinanceSource } from './binance';
+import { fetchBinanceCandles, fetchBinanceContracts, fetchBinanceTickers, resetBinanceCache } from './binance';
 import { fetchCandles, fetchContracts, fetchTickers } from './bitget';
 
-/** 거래소 전환 — 다음 스캔이 출처를 다시 확인한다. */
+/**
+ * 거래소 전환 — 펀딩비 캐시만 비운다.
+ *  · 출처 기억(선물/현물)은 **지우지 않는다**: 기기·망의 성질이라 전환할 때마다 다시 실패(451·CORS)하면
+ *    전환마다 오류 로그·지연이 생긴다. 망이 바뀌면 30분 뒤 스스로 다시 확인한다.
+ */
 export function resetMarket(): void {
-  resetBinanceSource();
+  resetBinanceCache();
 }
 
 /** 24h 티커. `symbols` 를 주면 그 종목만(바이낸스) — 비트겟은 항상 전체. */

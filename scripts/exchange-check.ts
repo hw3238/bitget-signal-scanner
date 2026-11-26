@@ -107,6 +107,18 @@ check(
   '선물이 막혔으면 현물만',
   planSources({ preferred: null, futuresBlocked: true }).join() === 'spot',
 );
+check(
+  '붙은 출처가 현물이면 현물 먼저, 선물은 예비로 뒤에',
+  planSources({ preferred: 'spot', futuresBlocked: false }).join() === 'spot,futures',
+);
+check(
+  '붙은 출처가 선물이면 선물 먼저, 현물은 예비로',
+  planSources({ preferred: 'futures', futuresBlocked: false }).join() === 'futures,spot',
+);
+check(
+  '선물 차단 + 붙은 출처 현물이면 현물만',
+  planSources({ preferred: 'spot', futuresBlocked: true }).join() === 'spot',
+);
 
 /* ---------------------------------------------------------------- *
  * 4) 계약 스펙

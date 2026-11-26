@@ -7,7 +7,6 @@ import { AutoTradeTab } from './AutoTradeTab';
 import { AccountCard } from './AccountCard';
 import { AdminDashboard } from './AdminDashboard';
 import type { AccountAuthApi } from '../hooks/useAccountAuth';
-import type { AuthMode } from './AuthSheet';
 import { SurgeExplorer } from './SurgeExplorer';
 import { statusBadge } from '../lib/autotrade';
 import { EXCHANGES, type Exchange } from '../lib/exchange';
@@ -138,7 +137,6 @@ interface Props {
   signals: Signal[];
   /** 🔐 계정 — 로그인 카드·관리자 메뉴 */
   auth: AccountAuthApi;
-  onOpenAuth: (mode: AuthMode) => void;
 }
 
 const TITLES: Record<MenuView, string> = {
@@ -168,7 +166,6 @@ export function MenuTab({
   autoTrade,
   signals,
   auth,
-  onOpenAuth,
 }: Props) {
 
   if (view) {
@@ -221,7 +218,7 @@ export function MenuTab({
         </div>
       </section>
 
-      <AccountCard auth={auth} onOpenAuth={onOpenAuth} variant="menu" />
+      <AccountCard auth={auth} variant="menu" />
 
       {auth.isAdmin && (
         <section className="menu-group" data-admin-group>

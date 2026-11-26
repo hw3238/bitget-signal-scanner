@@ -3,7 +3,7 @@
  *
  * · 앱이 열릴 때 저장된 세션을 복원한다(만료 임박이면 refresh).
  * · 로그인/가입 직후 `cota_profiles` 를 확보하고 `last_seen_at` 을 갱신한다.
- * · 실패해도 앱 사용(비회원 둘러보기)은 막지 않는다 — 계정은 '있으면 좋은' 기능이다.
+ * · 프로필 조회·갱신이 실패해도 세션은 유효하므로 게이트는 열린다(프로필은 다음 접속에 다시 시도).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Exchange } from '../lib/exchange';

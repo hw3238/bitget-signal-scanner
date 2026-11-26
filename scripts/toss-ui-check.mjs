@@ -17,6 +17,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import './lib/chromium-env.mjs';
+import { installE2EStubs, seedAuthSession } from './lib/auth-seed.mjs';
 
 const PORT = 4176;
 const URL = `http://127.0.0.1:${PORT}/`;
@@ -79,6 +80,10 @@ const run = async () => {
     timezoneId: 'Asia/Seoul',
     permissions: ['clipboard-read', 'clipboard-write'],
   });
+  // 🔐 회원 전용 게이트(v1.5.8) — 기존 시나리오는 '로그인된 상태'에서 시작한다.
+  await mobile.addInitScript(seedAuthSession);
+  await installE2EStubs(mobile);
+
   await mobile.addInitScript(() => {
     localStorage.setItem('cota.exchange.v1', 'bitget');
     window.clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
@@ -103,17 +108,50 @@ const run = async () => {
   });
   page.on('pageerror', (e) => pageErrors.push(String(e)));
 
+  /**
+   * 진행중 '코인' 시그널이 하나도 없는 시간대에도 카드 검증을 이어갈 수 있게 필터를 넓힌다.
+   *  ① 카드가 0장이면 '종료 포함'  ② 진행중 카드가 0장이면 자산 '전체'(코인+주식선물)
+   *  스캐너 탭은 다른 탭에 다녀오면 필터가 기본값으로 돌아가므로, 탭 복귀 때마다 다시 부른다.
+   */
+  const relaxPage = async (target, { widen = true } = {}) => {
+    const cardCount = () => target.locator('.scanner-tab .signal-card:not(.skeleton)').count();
+    const openCount = () =>
+      target.evaluate(
+        () =>
+          [...document.querySelectorAll('.scanner-tab .signal-card:not(.skeleton)')].filter((c) =>
+            /현재 수익률/.test(c.querySelector('.roi-cap')?.textContent || ''),
+          ).length,
+      );
+    if ((await cardCount()) === 0) {
+      const toggle = target.locator('.scanner-tab .ghost-toggle').first();
+      if ((await toggle.count()) && ((await toggle.textContent()) ?? '').includes('진행중만')) {
+        await toggle.click();
+        await target.waitForTimeout(800);
+      }
+    }
+    if (!widen) return;
+    if ((await openCount()) === 0) {
+      const all = target.locator('.scanner-tab [data-asset-filter] button[data-asset="all"]');
+      if (await all.count()) {
+        await all.first().click();
+        await target.waitForTimeout(800);
+      }
+    }
+  };
+  const relaxScanner = (opts) => relaxPage(page, opts);
+
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
 
   /* ---------- 1) 첫 실행 = 바로 스캐너 (온보딩·매매 스타일 없음, v1.5.7) ---------- */
-  await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 180000 });
   await page.waitForFunction(
     () => {
-      const b = document.querySelector('.rescan');
+      const b = document.querySelector('.scanner-tab .rescan');
       return !!b && !b.classList.contains('busy');
     },
     { timeout: 180000 },
   );
+  await relaxScanner({ widen: false }); // 첫 화면 검증은 '코인' 필터 그대로 — 카드만 보이게 종료 포함
+  await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 60000 });
   await page.waitForTimeout(1200);
   const firstRun = await page.evaluate(() => ({
     onboarding: !!document.querySelector('.onboarding'),
@@ -196,6 +234,9 @@ const run = async () => {
   check('카드는 코인 종목만', coin.cards > 0 && coin.assets.every((a) => a === '코인'), `${coin.cards}건 · ${coin.assets.join('/')}`);
   check('FX·랏(Lot)·벤티지 UI 0건', !coin.fxText && coin.fxNodes === 0, `텍스트=${coin.fxText} 노드=${coin.fxNodes}`);
   check('퀵 필터 = 비트·이더·솔', coin.quick.length === 3 && /비트/.test(coin.quick[0]) && /이더/.test(coin.quick[1]) && /솔/.test(coin.quick[2]), coin.quick.join(' '));
+
+  // 진행중 '코인' 시그널이 하나도 없는 시간대: 실시간 수익률·추천 배율 검증은 자산 '전체'로 넓혀 확인한다.
+  await relaxScanner();
 
   /* ---------- 4) 카드 · 가격 · COTA 추천 ---------- */
   const card = await page.evaluate(() => {
@@ -493,6 +534,7 @@ const run = async () => {
   /* ---------- 7) 추천 배율은 시그널(손절 폭·품질)마다 다르다 · 스타일 없음 ---------- */
   await page.locator('.bottom-nav button[data-tab="scanner"]').click();
   await page.waitForTimeout(700);
+  await relaxScanner();
   const dynamicLev = await page.evaluate(() => {
     const cards = [...document.querySelectorAll('.scanner-tab .signal-card:not(.skeleton)')];
     const recs = cards.map((c) => clean(c.querySelector('.badge.rec')?.textContent)).filter((t) => /COTA 추천/.test(t));
@@ -546,6 +588,7 @@ const run = async () => {
   /* ---------- 9) 즐겨찾기 · 검색 ---------- */
   await page.locator('.bottom-nav button[data-tab="scanner"]').click();
   await page.waitForTimeout(700);
+  await relaxScanner();
   await page.locator('.scanner-tab .signal-card:not(.skeleton) .fav-btn').first().click();
   await page.waitForTimeout(300);
   await page.locator('.scanner-tab .fav-toggle').click();
@@ -584,6 +627,10 @@ const run = async () => {
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
   });
+  // 🔐 회원 전용 게이트(v1.5.8) — 데스크톱 시나리오도 로그인된 상태에서 시작한다.
+  await desktop.addInitScript(seedAuthSession);
+  await installE2EStubs(desktop);
+
   await desktop.addInitScript(() => {
     localStorage.setItem('cota.exchange.v1', 'bitget');
     window.clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
@@ -595,7 +642,16 @@ const run = async () => {
   });
   dpage.on('pageerror', (e) => pageErrors.push(`[desktop] ${String(e)}`));
   await dpage.goto(URL, { waitUntil: 'domcontentloaded' });
-  await dpage.waitForSelector('.signal-card:not(.skeleton)', { timeout: 180000 });
+  await dpage.waitForSelector('.scanner-tab .rescan', { timeout: 60000 });
+  await dpage.waitForFunction(
+    () => {
+      const b = document.querySelector('.scanner-tab .rescan');
+      return !!b && !b.classList.contains('busy');
+    },
+    { timeout: 180000 },
+  );
+  await relaxPage(dpage);
+  await dpage.waitForSelector('.scanner-tab .signal-card:not(.skeleton)', { timeout: 60000 });
   await dpage.waitForFunction(
     () => {
       const b = document.querySelector('.rescan');
@@ -620,7 +676,9 @@ const run = async () => {
   await desktop.close();
   await browser.close();
 
-  check('콘솔/페이지 에러 0건', consoleErrors.length === 0 && pageErrors.length === 0, JSON.stringify({ consoleErrors, pageErrors }));
+  // 거래소 API 의 429(호출 한도)는 시장 API 쪽 응답이지 앱 오류가 아니다 — 그 리소스 로그만 제외한다.
+  const appErrors = consoleErrors.filter((t) => !/429/.test(t));
+  check('콘솔/페이지 에러 0건(거래소 API 429 제외)', appErrors.length === 0 && pageErrors.length === 0, JSON.stringify({ consoleErrors: appErrors, pageErrors }));
 
   const report = {
     firstRun,

@@ -13,7 +13,7 @@
  *  · **회원가입 직후 재시도**: `cota_connections.user_id` 는 `cota_profiles.id` 를 참조한다.
  *    세션이 프로필 INSERT 보다 먼저 서므로 첫 upsert 가 FK 오류(23503)로 실패할 수 있다 →
  *    실패하면 1.5·3·4.5초 간격으로 최대 3회 다시 보낸다(프로필이 생긴 뒤 성공).
- *  · 로그인하지 않았으면 아무것도 보내지 않는다(비회원 둘러보기).
+ *  · 세션이 없으면(회원 전용 게이트) 아무것도 보내지 않는다.
  *  · API Key/Secret/Passphrase 는 `connectionPayload` 의 화이트리스트 밖이라 절대 나가지 않는다.
  */
 import { useEffect, useRef } from 'react';

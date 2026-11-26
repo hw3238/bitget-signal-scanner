@@ -9,6 +9,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import './lib/chromium-env.mjs';
+import { installE2EStubs, seedAuthSession } from './lib/auth-seed.mjs';
 
 const PORT = 4177;
 const URL = `http://127.0.0.1:${PORT}/`;
@@ -75,6 +76,10 @@ const run = async () => {
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
   });
+  // 🔐 회원 전용 게이트(v1.5.8) — 기존 시나리오는 '로그인된 상태'에서 시작한다.
+  await mobile.addInitScript(seedAuthSession);
+  await installE2EStubs(mobile);
+
   await mobile.addInitScript(() => {
     localStorage.setItem('cota.exchange.v1', 'bitget');
     localStorage.setItem('cota.profile.v1', JSON.stringify({ seed: 5000, style: 'conservative', updatedAt: Date.now() }));
@@ -99,14 +104,29 @@ const run = async () => {
   });
 
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 180000 });
   await page.waitForFunction(
     () => {
-      const b = document.querySelector('.rescan');
+      const b = document.querySelector('.scanner-tab .rescan');
       return !!b && !b.classList.contains('busy');
     },
     { timeout: 180000 },
   );
+  // 진행중 코인 시그널이 없는 시간대에도 카드 검증이 되도록 '종료 포함 → 자산 전체'로 넓힌다.
+  if ((await page.locator('.scanner-tab .signal-card:not(.skeleton)').count()) === 0) {
+    const toggle = page.locator('.scanner-tab .ghost-toggle').first();
+    if (((await toggle.textContent()) ?? '').includes('진행중만')) {
+      await toggle.click();
+      await page.waitForTimeout(800);
+    }
+    if ((await page.locator('.scanner-tab .signal-card:not(.skeleton)').count()) === 0) {
+      const all = page.locator('.scanner-tab [data-asset-filter] button[data-asset="all"]');
+      if (await all.count()) {
+        await all.first().click();
+        await page.waitForTimeout(800);
+      }
+    }
+  }
+  await page.waitForSelector('.scanner-tab .signal-card:not(.skeleton)', { timeout: 60000 });
   await page.waitForTimeout(1000);
 
   const setField = async (label, value) => {
@@ -558,6 +578,21 @@ const run = async () => {
   /* ---------- 11) 기존 기능 회귀 ---------- */
   await page.locator('.bottom-nav button[data-tab="scanner"]').click();
   await page.waitForTimeout(700);
+  // 탭을 옮기면 스캐너 필터(진행중만)가 기본값으로 돌아간다 — 카드가 없으면 종료 포함·자산 전체로 넓힌다.
+  if ((await page.locator('.scanner-tab .signal-card:not(.skeleton)').count()) === 0) {
+    const toggle = page.locator('.scanner-tab .ghost-toggle').first();
+    if (((await toggle.textContent()) ?? '').includes('진행중만')) {
+      await toggle.click();
+      await page.waitForTimeout(800);
+    }
+    if ((await page.locator('.scanner-tab .signal-card:not(.skeleton)').count()) === 0) {
+      const all = page.locator('.scanner-tab [data-asset-filter] button[data-asset="all"]');
+      if (await all.count()) {
+        await all.first().click();
+        await page.waitForTimeout(800);
+      }
+    }
+  }
   const scanner = await page.evaluate(() => ({
     cards: document.querySelectorAll('.scanner-tab .signal-card:not(.skeleton)').length,
     fav: document.querySelectorAll('.scanner-tab .fav-toggle').length,
@@ -590,6 +625,10 @@ const run = async () => {
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
   });
+  // 🔐 회원 전용 게이트(v1.5.8) — 데스크톱 시나리오도 로그인된 상태에서 시작한다.
+  await desktop.addInitScript(seedAuthSession);
+  await installE2EStubs(desktop);
+
   await desktop.addInitScript(() => {
     localStorage.setItem('cota.exchange.v1', 'bitget');
     localStorage.setItem('cota.profile.v1', JSON.stringify({ seed: 1000, style: 'conservative', updatedAt: Date.now() }));
@@ -600,7 +639,30 @@ const run = async () => {
   });
   dpage.on('pageerror', (e) => pageErrors.push(`[desktop] ${e}`));
   await dpage.goto(URL, { waitUntil: 'domcontentloaded' });
-  await dpage.waitForSelector('.signal-card:not(.skeleton)', { timeout: 180000 });
+  await dpage.waitForFunction(
+    () => {
+      const b = document.querySelector('.scanner-tab .rescan');
+      return !!b && !b.classList.contains('busy');
+    },
+    { timeout: 180000 },
+  );
+  // 진행중 코인 시그널이 없는 시간대에도 카드 검증이 되도록 '종료 포함 → 자산 전체'로 넓힌다.
+  if ((await dpage.locator('.scanner-tab .signal-card:not(.skeleton)').count()) === 0) {
+    const toggle = dpage.locator('.scanner-tab .ghost-toggle').first();
+    if (((await toggle.textContent()) ?? '').includes('진행중만')) {
+      await toggle.click();
+      await dpage.waitForTimeout(800);
+    }
+    if ((await dpage.locator('.scanner-tab .signal-card:not(.skeleton)').count()) === 0) {
+      const all = dpage.locator('.scanner-tab [data-asset-filter] button[data-asset="all"]');
+      if (await all.count()) {
+        await all.first().click();
+        await dpage.waitForTimeout(800);
+      }
+    }
+  }
+  await dpage.waitForSelector('.scanner-tab .signal-card:not(.skeleton)', { timeout: 60000 });
+
   await dpage.locator('.top-nav button', { hasText: '메뉴' }).click();
   await dpage.waitForTimeout(600);
   const desk = await dpage.evaluate(() => ({

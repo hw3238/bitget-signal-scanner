@@ -8,7 +8,7 @@ import { ScannerTab } from './components/ScannerTab';
 import { SettingsTab } from './components/SettingsTab';
 import type { MenuView } from './components/MenuTab';
 import { ShareModal } from './components/ShareModal';
-import { AuthSheet, type AuthMode } from './components/AuthSheet';
+import { AuthGate } from './components/AuthGate';
 import logoUrl from './assets/cota-logo.png';
 import { RefreshIcon, SwapIcon } from './components/Icons';
 import type { Contract, Signal } from './engine/types';
@@ -27,6 +27,7 @@ import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from './l
 import { EXCHANGES, loadExchange, saveExchange, type Exchange } from './lib/exchange';
 import { recommendLeverage } from './lib/profile';
 import { planRiskSave } from './lib/settingsSync';
+import { gateStage } from './lib/gate';
 
 type Tab = TabKey;
 
@@ -41,15 +42,6 @@ export default function App() {
     null,
   );
   const [updateDismissed, setUpdateDismissed] = useState(false);
-  /** 🔐 로그인/회원가입 시트 — null 이면 닫힘 */
-  const [authSheet, setAuthSheet] = useState<AuthMode | null>(null);
-  const [authBannerClosed, setAuthBannerClosed] = useState(() => {
-    try {
-      return localStorage.getItem('cota.auth.banner.v1') === '0';
-    } catch {
-      return false;
-    }
-  });
   /** 🔐 COTA 계정 — 저장된 세션 복원 · 로그인/가입 · 관리자 판별 */
   const auth = useAccountAuth(exchange);
   // 상단 배너에서도 앱을 나가지 않고 APK 다운로드 → 설치 화면으로 이어진다.
@@ -64,10 +56,21 @@ export default function App() {
     () => [...new Set(favorites.entries.map((f) => f.signal.symbol))],
     [favorites.entries],
   );
+  /**
+   * 🔒 회원 전용 게이트 — 세션이 없으면 **스캔 자체를 돌리지 않는다**.
+   *    (미로그인 상태의 백그라운드 마켓 API 호출·데이터 노출을 원천 차단)
+   */
+  const authed = !!auth.session;
+  /** 로그인·로그아웃하면 항상 스캐너(첫 화면)부터 — 게이트 너머로 이전 탭이 남지 않게 한다. */
+  useEffect(() => {
+    setTab('scanner');
+    setMenuView(null);
+  }, [authed]);
   const { state, history, swapLog, scan, clearHistory, clearSwapLog } = useScanner({
     refreshSec: settings.refreshSec,
     favoriteSymbols,
     exchange,
+    enabled: authed,
   });
 
   /**
@@ -233,8 +236,30 @@ export default function App() {
     setTab(next);
   }, []);
 
-  /** 첫 방문 — 거래소를 고르기 전에는 선택 화면만 보여준다. */
-  if (!exchange) {
+  /**
+   * 🔒 진입 게이트(v1.5.8) — 화면 순서: 계정 확인 → 회원가입/로그인 → 거래소 선택 → 앱.
+   *  · 미로그인: 어떤 탭·시그널·메뉴·설정 DOM 도 만들지 않고 게이트만 그린다.
+   *  · 세션 복원 중: 가입 화면이 깜빡이지 않도록 부팅 화면만.
+   *  · 로그인 직후 거래소를 아직 고르지 않았다면 거래소 선택 화면으로 이어진다.
+   */
+  const stage = gateStage({ authReady: auth.ready, hasSession: authed, exchange });
+  if (stage === 'booting') {
+    return (
+      <div className="app app-boot" data-auth-boot>
+        <img className="app-boot-logo" src={logoUrl} alt="COTA" width={56} height={56} />
+        <span>계정 확인 중…</span>
+      </div>
+    );
+  }
+  if (stage === 'auth') {
+    return (
+      <div className="app app-gate">
+        <AuthGate auth={auth} />
+      </div>
+    );
+  }
+  /** 로그인했지만 거래소를 고르기 전 — 선택 화면만 보여준다. */
+  if (stage === 'exchange' || !exchange) {
     return (
       <div className="app app-gate">
         <ExchangeGate onPick={chooseExchange} />
@@ -288,12 +313,9 @@ export default function App() {
               type="button"
               className={`auth-chip ${auth.session ? 'on' : ''} ${auth.isAdmin ? 'admin' : ''}`}
               data-auth-chip
-              data-auth-state={auth.session ? 'member' : 'guest'}
-              onClick={() => {
-                if (auth.session) goTab('menu');
-                else setAuthSheet('login');
-              }}
-              aria-label={auth.session ? `${auth.profile?.nickname ?? '내'} 계정 — 메뉴로` : '로그인 · 회원가입'}
+              data-auth-state="member"
+              onClick={() => goTab('menu')}
+              aria-label={`${auth.profile?.nickname ?? '내'} 계정 — 메뉴로`}
             >
               <span className="auth-chip-avatar" aria-hidden>
                 {auth.session ? (auth.profile?.nickname ?? auth.session.user.email).slice(0, 1).toUpperCase() : '👤'}
@@ -315,41 +337,6 @@ export default function App() {
       </header>
 
       <main className="app-main">
-        {tab === 'scanner' && auth.ready && !auth.session && !authBannerClosed && (
-          <div className="account-banner" data-auth-banner>
-            <span className="account-banner-icon" aria-hidden>
-              🔐
-            </span>
-            <div className="account-banner-text">
-              <b>회원가입하고 내 기록을 저장하세요</b>
-              <span>기기를 바꿔도 거래소 연결 내역이 남아요</span>
-            </div>
-            <button
-              type="button"
-              className="account-banner-cta"
-              onClick={() => setAuthSheet('signup')}
-              data-auth-banner-cta
-            >
-              가입
-            </button>
-            <button
-              type="button"
-              className="account-banner-x"
-              aria-label="배너 닫기"
-              data-auth-banner-close
-              onClick={() => {
-                setAuthBannerClosed(true);
-                try {
-                  localStorage.setItem('cota.auth.banner.v1', '0');
-                } catch {
-                  /* 저장소를 쓸 수 없는 환경 */
-                }
-              }}
-            >
-              ✕
-            </button>
-          </div>
-        )}
         {update && !updateDismissed && (
           <div className="update-banner app-wide">
             <div className="update-banner-text">
@@ -435,7 +422,6 @@ export default function App() {
             autoTrade={autoTrade}
             signals={state.signals}
             auth={auth}
-            onOpenAuth={setAuthSheet}
           />
         )}
         {tab === 'history' && (
@@ -468,7 +454,6 @@ export default function App() {
             autoTrade={autoTrade}
             onSaveRisk={saveSettingsRisk}
             auth={auth}
-            onOpenAuth={setAuthSheet}
           />
         )}
       </main>
@@ -491,7 +476,6 @@ export default function App() {
         <ExchangeSheet current={exchange} onPick={chooseExchange} onClose={() => setExchangeSheet(false)} />
       )}
 
-      {authSheet && <AuthSheet mode={authSheet} auth={auth} onClose={() => setAuthSheet(null)} />}
     </div>
   );
 }

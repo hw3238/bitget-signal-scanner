@@ -11,6 +11,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 import './lib/chromium-env.mjs';
+import { installE2EStubs, seedAuthSession } from './lib/auth-seed.mjs';
 
 const PORT = 4173;
 const URL = `http://127.0.0.1:${PORT}/`;
@@ -162,6 +163,10 @@ const run = async () => {
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
   });
+  // 🔐 회원 전용 게이트(v1.5.8) — 기존 시나리오는 '로그인된 상태'에서 시작한다.
+  await mobile.addInitScript(seedAuthSession);
+  await installE2EStubs(mobile);
+
   // 첫 실행 온보딩을 건너뛰도록 투자 프로필을 미리 저장한다.
   await mobile.addInitScript(() => {
     localStorage.setItem('cota.exchange.v1', 'bitget');
@@ -433,6 +438,10 @@ const run = async () => {
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
   });
+  // 🔐 회원 전용 게이트(v1.5.8) — 데스크톱 시나리오도 로그인된 상태에서 시작한다.
+  await desktop.addInitScript(seedAuthSession);
+  await installE2EStubs(desktop);
+
   await desktop.addInitScript(() => {
     localStorage.setItem('cota.exchange.v1', 'bitget');
     localStorage.setItem(

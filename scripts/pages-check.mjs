@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { cpSync, mkdirSync, rmSync } from 'node:fs';
 import { chromium } from 'playwright';
 import './lib/chromium-env.mjs';
+import { installE2EStubs, seedAuthSession } from './lib/auth-seed.mjs';
 
 const ROOT = '.tmp/pagesroot';
 const SUB = 'bitget-signal-scanner';
@@ -35,6 +36,10 @@ const run = async () => {
   }
   const browser = await chromium.launch({ args: ['--no-sandbox'] });
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  // 🔐 회원 전용 게이트(v1.5.8) — 기존 시나리오는 '로그인된 상태'에서 시작한다.
+  await ctx.addInitScript(seedAuthSession);
+  await installE2EStubs(ctx);
+
   await ctx.addInitScript(() => {
     localStorage.setItem('cota.exchange.v1', 'bitget');
     localStorage.setItem(
@@ -51,7 +56,29 @@ const run = async () => {
   page.on('requestfailed', (r) => errors.push(`requestfailed: ${r.url()}`));
 
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('.signal-card:not(.skeleton)', { timeout: 150000 });
+  await page.waitForFunction(
+    () => {
+      const b = document.querySelector('.scanner-tab .rescan');
+      return !!b && !b.classList.contains('busy');
+    },
+    { timeout: 150000 },
+  );
+  // 진행중 코인 시그널이 없는 시간대에도 카드 검증이 되도록 '종료 포함 → 자산 전체'로 넓힌다.
+  if ((await page.locator('.scanner-tab .signal-card:not(.skeleton)').count()) === 0) {
+    const toggle = page.locator('.scanner-tab .ghost-toggle').first();
+    if (((await toggle.textContent()) ?? '').includes('진행중만')) {
+      await toggle.click();
+      await page.waitForTimeout(800);
+    }
+    if ((await page.locator('.scanner-tab .signal-card:not(.skeleton)').count()) === 0) {
+      const all = page.locator('.scanner-tab [data-asset-filter] button[data-asset="all"]');
+      if (await all.count()) {
+        await all.first().click();
+        await page.waitForTimeout(800);
+      }
+    }
+  }
+  await page.waitForSelector('.scanner-tab .signal-card:not(.skeleton)', { timeout: 30000 });
   await page.waitForTimeout(1500);
   const info = await page.evaluate(() => ({
     url: location.pathname,
@@ -72,4 +99,8 @@ run()
     console.error('SUBPATH CHECK FAILED', e);
     process.exitCode = 1;
   })
-  .finally(() => server.kill('SIGTERM'));
+  .finally(() => {
+    server.kill('SIGTERM');
+    // vite preview 자식 프로세스가 이벤트 루프를 붙잡아 종료가 늦어지는 것을 막는다.
+    setTimeout(() => process.exit(process.exitCode ?? 0), 300);
+  });
