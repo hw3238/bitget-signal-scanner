@@ -90,6 +90,9 @@ public class AlertMonitorService extends Service {
     private volatile boolean running;
     private long lastSignalAt;
     private long lastNewsAt;
+    /** 뉴스 피드가 응답하지 않을 때(429·한도 초과) 다음 시도까지 미루는 시각 — 반복 요청으로 한도를 더 태우지 않는다 */
+    private long newsBackoffUntil;
+    private int newsFailStreak;
     /** 티커 캐시 — 한 주기에 한 번만 받는다 */
     private final Map<String, Double> priceCache = new HashMap<>();
     private final Map<String, Double> volumeCache = new HashMap<>();
@@ -187,7 +190,10 @@ public class AlertMonitorService extends Service {
         if (settings.optBoolean("macro", true)) checked += checkMacro(settings);
         if (settings.optBoolean("custom", true)) checked += checkCustomAlerts(settings);
         if (settings.optBoolean("signal", true)) checked += checkSignals(settings);
-        if (settings.optBoolean("news", false) && System.currentTimeMillis() - Math.max(lastNewsAt, AlertStore.lastNewsAt(this)) >= NEWS_INTERVAL_MS) {
+        long now = System.currentTimeMillis();
+        if (settings.optBoolean("news", false)
+                && now >= newsBackoffUntil
+                && now - Math.max(lastNewsAt, AlertStore.lastNewsAt(this)) >= NEWS_INTERVAL_MS) {
             checked += checkNews();
             lastNewsAt = System.currentTimeMillis();
             AlertStore.setLastNewsAt(this, lastNewsAt);
@@ -360,11 +366,13 @@ public class AlertMonitorService extends Service {
         int checked = 0;
         boolean firstRun = !AlertStore.isFired(this, "news:baseline");
         int sent = 0;
+        boolean anyOk = false;
         for (String feed : feeds) {
             try {
                 String url = "https://api.rss2json.com/v1/api.json?rss_url=" + URLEncoder.encode(feed, "UTF-8") + "&count=15";
                 JSONObject body = getObject(url);
                 if (body == null || !"ok".equals(body.optString("status", "ok"))) continue;
+                anyOk = true;
                 JSONArray items = body.optJSONArray("items");
                 if (items == null) continue;
                 String source = feed.contains("blockmedia") ? "블록미디어" : "Cointelegraph";
@@ -393,6 +401,17 @@ public class AlertMonitorService extends Service {
             } catch (Exception ignored) {
                 /* 한 피드가 실패해도 나머지는 계속 */
             }
+        }
+        // 두 번 연속 아무 피드도 못 받았으면 5분 쉰다(rss2json 무료 한도·429 보호)
+        if (!anyOk) {
+            newsFailStreak++;
+            if (newsFailStreak >= 2) {
+                newsBackoffUntil = System.currentTimeMillis() + 5 * 60_000L;
+                newsFailStreak = 0;
+            }
+        } else {
+            newsFailStreak = 0;
+            newsBackoffUntil = 0;
         }
         AlertStore.markFired(this, "news:baseline");
         return checked;
