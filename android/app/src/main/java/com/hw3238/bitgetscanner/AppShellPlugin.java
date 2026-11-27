@@ -196,6 +196,15 @@ public class AppShellPlugin extends Plugin {
         call.resolve(ret);
     }
 
+    /** 로그아웃·미로그인 — 설정은 그대로 두고 감시 서비스만 멈춘다. */
+    @PluginMethod
+    public void alertsStop(PluginCall call) {
+        stopAlertService();
+        JSObject ret = toJsObject(AlertStore.status(getContext()));
+        ret.put("supported", true);
+        call.resolve(ret);
+    }
+
     @PluginMethod
     public void alertStatus(PluginCall call) {
         JSObject ret = toJsObject(AlertStore.status(getContext()));

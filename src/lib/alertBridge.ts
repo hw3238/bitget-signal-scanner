@@ -185,6 +185,17 @@ export async function syncAlertsToNative(
   }
 }
 
+/** 감시 중지 — 설정은 그대로 두고 서비스만 멈춘다(로그아웃·미로그인 상태에서 남의 알림이 울리지 않게) */
+export async function stopNativeAlerts(): Promise<void> {
+  if (!isNativeApp()) return;
+  try {
+    const { AppShellAlertsStop } = await import('./native');
+    await AppShellAlertsStop();
+  } catch {
+    /* 구버전 APK */
+  }
+}
+
 /** 네이티브 서비스 상태 — 구버전 APK 면 null */
 export async function nativeAlertStatus(): Promise<{
   running: boolean;
@@ -261,10 +272,15 @@ export function useAlertCenter({ exchange, tickers, enabled }: AlertCenterInput)
   useEffect(() => {
     saveCoinAlerts(alerts);
   }, [alerts]);
-  // 앱을 열 때 한 번 — 지난 세션의 조건·설정을 네이티브 서비스에 다시 넘긴다(서비스가 새로 살아났을 수 있다)
+  // 로그인 상태가 바뀔 때 — 로그인하면 지난 세션의 조건·설정을 넘겨 서비스를 살리고,
+  // 로그아웃하면 서비스만 멈춘다(회원 전용 게이트와 같은 경계 — 남의 기기에서 이전 사용자 알림이 울리지 않게).
   useEffect(() => {
+    if (!enabled) {
+      void stopNativeAlerts();
+      return;
+    }
     void syncAlertsToNative(alertRef.current, settingsRef.current, mutedRef.current);
-  }, []);
+  }, [enabled]);
   useEffect(() => {
     saveAlertSettings(settings);
     void syncAlertsToNative(alertRef.current, settings, mutedRef.current);

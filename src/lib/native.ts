@@ -76,6 +76,8 @@ interface AppShellPlugin {
   alertStatus(): Promise<AlertServiceStatus>;
   /** 테스트 알림 — 4개 채널(시그널·지정가·지표·뉴스) 중 하나로 폰 상단에 표시 */
   alertTest(options?: { kind?: string }): Promise<{ shown: boolean; channel?: string }>;
+  /** 감시 중지 — 설정(마스터·조건)은 그대로 두고 서비스만 멈춘다(로그아웃 등) */
+  alertsStop(): Promise<AlertServiceStatus>;
 }
 
 export interface AlertServiceStatus {
@@ -590,6 +592,15 @@ export async function AppShellAlertStatus(): Promise<AlertServiceStatus> {
   if (!isNativeApp()) return { running: false, supported: false };
   try {
     return { supported: true, ...(await AppShell.alertStatus()) };
+  } catch (e) {
+    return { running: false, supported: false, error: errText(e) };
+  }
+}
+
+export async function AppShellAlertsStop(): Promise<AlertServiceStatus> {
+  if (!isNativeApp()) return { running: false, supported: false };
+  try {
+    return { supported: true, ...(await AppShell.alertsStop()) };
   } catch (e) {
     return { running: false, supported: false, error: errText(e) };
   }
