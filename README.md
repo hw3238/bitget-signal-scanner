@@ -361,6 +361,7 @@ node scripts/favorites-check.mjs    # 즐겨찾기·검색·더보기·기록
 node scripts/pages-check.mjs        # /bitget-signal-scanner/ 서브패스 배포 경로
 node scripts/live-check.mjs         # 라이브 Pages 검증
 node scripts/live-exchange-check.mjs # 라이브 거래소 선택 → 바이낸스 시그널 → 비트겟 전환 검증 (스크린샷 114~116)
+node scripts/live-innovations-check.mjs # 라이브 DNA·청산 자석·섹터 레이더 검증 (스크린샷 162~165)
 node scripts/live-notify-check.mjs  # 라이브 알림 UI 검증
 ```
 

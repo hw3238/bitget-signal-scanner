@@ -31,7 +31,8 @@
     "bench:strategies": "esbuild scripts/strategy-tournament.ts --bundle --platform=node --format=esm --outfile=.tmp/strategy-tournament.mjs --log-level=error && node .tmp/strategy-tournament.mjs",
     "check:native": "bash scripts/native-check.sh",
     "binance-e2e": "node scripts/binance-e2e.mjs",
-    "propr-e2e": "node scripts/propr-e2e.mjs"
+    "propr-e2e": "node scripts/propr-e2e.mjs",
+    "live-innovations": "node scripts/live-innovations-check.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.3",
