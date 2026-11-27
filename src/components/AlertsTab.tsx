@@ -40,7 +40,8 @@ import {
 } from '../engine/macroCalendar';
 import type { useAlertCenter } from '../lib/alertBridge';
 import { nativeAlertStatus, sendTestPhoneAlert } from '../lib/alertBridge';
-import { isNativeApp } from '../lib/native';
+import { isNativeApp, openExternalUrl } from '../lib/native';
+import { APK_DOWNLOAD_URL } from '../lib/update';
 import { MAJOR_COINS, PRIORITY_COINS } from '../engine/universe';
 
 type Center = ReturnType<typeof useAlertCenter>;
@@ -252,6 +253,9 @@ export function AlertsTab({ exchange, state, center }: Props) {
         {native && service?.supported === false && (
           <div className="alerts-hint warn">
             설치된 앱이 백그라운드 알림을 지원하지 않습니다 — v1.5.8 APK로 업데이트하면 켜집니다.
+            <button type="button" className="ghost-btn" onClick={() => void openExternalUrl(APK_DOWNLOAD_URL)}>
+              APK 받기
+            </button>
           </div>
         )}
         {testNote && <div className="alerts-note">{testNote}</div>}

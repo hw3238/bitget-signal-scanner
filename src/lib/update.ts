@@ -3,6 +3,8 @@
 export const APP_VERSION = '1.5.8';
 /** 핸드폰 알림(네이티브)이 실제로 동작하는 최소 APK 버전 — 웹 기능 버전과 분리해 둔다 */
 export const NOTIFY_MIN_APK = '1.5.0';
+/** 백그라운드 폰 알림(앱을 꺼도 오는 알림)이 동작하는 최소 APK — v1.5.8 */
+export const ALERT_MIN_APK = '1.5.8';
 export const REPO = 'hw3238/bitget-signal-scanner';
 export const PAGES_URL = 'https://hw3238.github.io/bitget-signal-scanner/';
 export const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;

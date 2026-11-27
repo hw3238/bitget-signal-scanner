@@ -24,6 +24,7 @@ import { EXCHANGE_ORDER, EXCHANGES, marketSourceLabel, type Exchange } from '../
 import {
   APP_VERSION,
   APK_DOWNLOAD_URL,
+  ALERT_MIN_APK,
   NOTIFY_MIN_APK,
   checkForUpdate,
   compareVersions,
@@ -530,6 +531,17 @@ export function SettingsTab({
             <div className="update-banner-text">
               <b>핸드폰 알림은 APK v{NOTIFY_MIN_APK}부터</b>
               <span>설치된 앱 v{apkVersion} — 새 APK를 설치하면 알림이 동작합니다.</span>
+            </div>
+            <button className="update-banner-btn" onClick={() => void openExternalUrl(APK_DOWNLOAD_URL)}>
+              APK 받기
+            </button>
+          </div>
+        )}
+        {native && apkVersion && compareVersions(ALERT_MIN_APK, apkVersion) > 0 && (
+          <div className="update-banner">
+            <div className="update-banner-text">
+              <b>앱을 꺼도 오는 알림은 APK v{ALERT_MIN_APK}부터</b>
+              <span>설치된 앱 v{apkVersion} — 업데이트하면 시그널·지정가·경제지표·뉴스가 앱을 닫아도 옵니다.</span>
             </div>
             <button className="update-banner-btn" onClick={() => void openExternalUrl(APK_DOWNLOAD_URL)}>
               APK 받기
