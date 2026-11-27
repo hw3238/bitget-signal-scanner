@@ -40,7 +40,8 @@ import {
 } from '../engine/macroCalendar';
 import type { useAlertCenter } from '../lib/alertBridge';
 import { nativeAlertStatus, sendTestPhoneAlert } from '../lib/alertBridge';
-import { isNativeApp, openExternalUrl } from '../lib/native';
+import { AppShellAlertTest, isNativeApp, openExternalUrl } from '../lib/native';
+import { requestNotificationPermission } from '../lib/notify';
 import { APK_DOWNLOAD_URL } from '../lib/update';
 import { MAJOR_COINS, PRIORITY_COINS } from '../engine/universe';
 
@@ -202,7 +203,12 @@ export function AlertsTab({ exchange, state, center }: Props) {
             aria-label="백그라운드 폰 알림 마스터"
             aria-pressed={settings.master}
             data-alert-master-switch
-            onClick={() => patchSettings({ master: !settings.master })}
+            onClick={() => {
+              const next = !settings.master;
+              patchSettings({ master: next });
+              // 켤 때 Android 13+ 알림 권한을 함께 요청한다(사용자 동작 안이라 권한 창이 뜬다)
+              if (next) void requestNotificationPermission();
+            }}
           >
             <span />
           </button>
@@ -231,9 +237,10 @@ export function AlertsTab({ exchange, state, center }: Props) {
                   type="button"
                   className="alerts-test-btn"
                   onClick={async () => {
+                    // 앱이면 채널별 네이티브 알림(권한 창 포함), 웹이면 브라우저 알림
                     const ok = native
-                      ? (await sendTestPhoneAlert(ch.testKind)) || false
-                      : (await sendTestPhoneAlert(ch.testKind)) || false;
+                      ? (await AppShellAlertTest(ch.testKind)).shown
+                      : await sendTestPhoneAlert(ch.testKind);
                     setTestNote(
                       ok
                         ? `${ch.title} 테스트 알림을 보냈습니다. 폰 상단(알림바)을 확인하세요.`
