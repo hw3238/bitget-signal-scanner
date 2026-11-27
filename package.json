@@ -16,6 +16,8 @@
     "check:surge": "esbuild scripts/surge-check.ts --bundle --platform=node --format=esm --outfile=.tmp/surge-check.mjs --log-level=error && node .tmp/surge-check.mjs",
     "check:propr": "esbuild scripts/propr-check.ts --bundle --platform=node --format=esm --outfile=.tmp/propr-check.mjs --log-level=error && node .tmp/propr-check.mjs",
     "check:realtime": "esbuild scripts/realtime-check.ts --bundle --platform=node --format=esm --outfile=.tmp/realtime-check.mjs --log-level=error && node .tmp/realtime-check.mjs",
+    "check:alerts": "esbuild scripts/alerts-check.ts --bundle --platform=node --format=esm --outfile=.tmp/alerts-check.mjs --log-level=error && node .tmp/alerts-check.mjs",
+    "alerts-e2e": "node scripts/alerts-e2e.mjs",
     "realtime-e2e": "node scripts/realtime-e2e.mjs",
     "check:innovations": "esbuild scripts/innovations-check.ts --bundle --platform=node --format=esm --outfile=.tmp/innovations-check.mjs --log-level=error && node .tmp/innovations-check.mjs",
     "innovations-e2e": "node scripts/innovations-e2e.mjs",

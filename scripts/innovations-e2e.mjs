@@ -174,10 +174,10 @@ const run = async () => {
   }));
   check(
     '메뉴: 도구 14개 + 자동매매 = 15개 · 🧠🧲🌊 카드',
-    hub.rows.length === 14 && hub.auto === 1 && hub.dna === '🧠' && hub.magnet === '🧲' && hub.sector === '🌊',
+    hub.rows.length === 15 && hub.auto === 1 && hub.dna === '🧠' && hub.magnet === '🧲' && hub.sector === '🌊',
     hub.rows.join(','),
   );
-  check('메뉴: 도구 수 15 · 문구', hub.hero === '15' && /15가지 도구/.test(hub.note ?? ''), `${hub.hero} · ${hub.note}`);
+  check('메뉴: 도구 수 16 · 문구', hub.hero === '16' && /16가지 도구/.test(hub.note ?? ''), `${hub.hero} · ${hub.note}`);
   check('메뉴: 청산 자석 설명(스윙·펀딩·OI)', /청산/.test(hub.magnetDesc ?? ''), hub.magnetDesc);
   check('메뉴 허브 390px 오버플로 0건', !(await overflow()));
   await shot('156-menu-innovations');
@@ -389,7 +389,7 @@ const run = async () => {
     overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
     bottomHidden: getComputedStyle(document.querySelector('.bottom-nav')).display === 'none',
   }));
-  check('데스크톱: 메뉴 14도구 + 15 · 오버플로 0건', desk.rows === 14 && desk.hero === '15' && !desk.overflow && desk.bottomHidden, JSON.stringify(desk));
+  check('데스크톱: 메뉴 15도구 + 16 · 오버플로 0건', desk.rows === 15 && desk.hero === '16' && !desk.overflow && desk.bottomHidden, JSON.stringify(desk));
   await dpage.screenshot({ path: `${OUT}/161-menu-innovations-desktop.png` });
 
   await dpage.locator('.menu-row[data-menu="dna"]').click();

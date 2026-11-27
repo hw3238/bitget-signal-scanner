@@ -28,8 +28,11 @@ mkdir -p "$OUT"
   "$SRC/EntryZoneRule.java" \
   "$SRC/PartialTpRule.java" \
   "$SRC/EarlyStopRule.java" \
+  "$SRC/LightSignal.java" \
   "$ROOT/scripts/native/PartialTpRuleTest.java" \
-  "$ROOT/scripts/native/EntryZoneRuleTest.java"
+  "$ROOT/scripts/native/EntryZoneRuleTest.java" \
+  "$ROOT/scripts/native/LightSignalTest.java"
 
 "$JAVA_BIN/java" -Dfile.encoding=UTF-8 -cp "$OUT" com.hw3238.bitgetscanner.PartialTpRuleTest
 "$JAVA_BIN/java" -Dfile.encoding=UTF-8 -cp "$OUT" com.hw3238.bitgetscanner.EntryZoneRuleTest
+"$JAVA_BIN/java" -Dfile.encoding=UTF-8 -cp "$OUT" com.hw3238.bitgetscanner.LightSignalTest

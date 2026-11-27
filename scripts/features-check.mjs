@@ -252,14 +252,14 @@ const run = async () => {
     overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
   }));
   check(
-    '메뉴 허브: 14개 도구(급등 탐색기·Propr·DNA·자석·섹터·고래·뉴스 포함)',
-    hub.rows.length === 14 &&
-      ['surge', 'propr', 'dna', 'magnet', 'sector', 'whale', 'news'].every((k) => hub.rows.includes(k)),
+    '메뉴 허브: 15개 도구(알림 센터 포함)',
+    hub.rows.length === 15 &&
+      ['alerts', 'surge', 'propr', 'dna', 'magnet', 'sector', 'whale', 'news'].every((k) => hub.rows.includes(k)),
     hub.rows.join(', '),
   );
   check(
-    '메뉴 허브: 4개 그룹',
-    hub.groups.length === 4 && hub.groups.join('|') === '실전 레이더|시장|리스크 관리|분석',
+    '메뉴 허브: 4개 그룹(알림·시황 / 실전 레이더 / 리스크·계산기 / 분석·엔진)',
+    hub.groups.length === 4 && hub.groups.join('|') === '알림 · 시황|실전 레이더|리스크 · 계산기|분석 · 엔진',
     hub.groups.join(' / '),
   );
   check('메뉴 허브 390px 오버플로 0건', !hub.overflow, hub.title);
@@ -684,7 +684,7 @@ const run = async () => {
   await dpage.screenshot({ path: `${OUT}/36-menu-desktop.png` });
   check(
     '데스크톱: 메뉴 허브 15도구(자동매매 포함) · 오버플로 0건',
-    desk.rows === 14 && desk.auto === 1 && desk.autoBadge === '꺼짐' && !desk.overflow && desk.bottomHidden,
+    desk.rows === 15 && desk.auto === 1 && desk.autoBadge === '꺼짐' && !desk.overflow && desk.bottomHidden,
     JSON.stringify(desk),
   );
   await desktop.close();

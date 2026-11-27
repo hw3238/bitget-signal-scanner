@@ -155,37 +155,110 @@ public class AppShellPlugin extends Plugin {
         }
     }
 
-    /** 알림바 표시 — 탭하면 앱이 열리도록 PendingIntent 를 연결한다. */
+    /** 알림바 표시 — 탭하면 앱이 열리도록 PendingIntent 를 연결한다.
+     *  v1.5.8: 시그널 알림은 전용 채널(`cota_signal`)로 보내 사용자가 종류별로 소리를 바꿀 수 있게 했다. */
     private void post(String title, String body, int id) {
-        Context context = getContext();
-        Intent intent = new Intent(context, MainActivity.class);
-        intent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        intent.putExtra("bgss.signalNotification", true);
-        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            flags |= PendingIntent.FLAG_IMMUTABLE;
-        }
-        PendingIntent pending = PendingIntent.getActivity(context, id, intent, flags);
+        AlertNotifications.post(getContext(), AlertNotifications.CH_SIGNAL, title, body, id);
+    }
 
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_signal)
-            .setColor(Color.parseColor("#3182F6"))
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setAutoCancel(true)
-            .setWhen(System.currentTimeMillis())
-            .setShowWhen(true)
-            .setContentIntent(pending);
+    /* ------------------------------------------------------------------ *
+     * 🔔 백그라운드 알림 감시 (v1.5.8)
+     * ------------------------------------------------------------------ */
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            // 채널이 없는 버전은 알림 자체에 소리·진동 기본값을 붙인다.
-            builder.setDefaults(NotificationCompat.DEFAULT_ALL);
+    /**
+     * 웹이 넘긴 맞춤 알림·설정·경제지표 일정을 저장하고 서비스를 동기화한다.
+     *  · master/개별 토글이 모두 꺼져 있으면 서비스를 멈춘다(배터리).
+     *  · 하나라도 켜져 있으면 포그라운드 서비스를 시작하고 START_STICKY 로 유지한다.
+     */
+    @PluginMethod
+    public void alertsSync(PluginCall call) {
+        String alerts = call.getString("alerts", null);
+        String settings = call.getString("settings", null);
+        String macro = call.getString("macro", null);
+        try {
+            if (settings != null && !settings.isEmpty()) {
+                AlertStore.saveSettings(getContext(), new org.json.JSONObject(settings));
+            }
+            if (alerts != null) {
+                AlertStore.saveAlerts(getContext(), new org.json.JSONArray(alerts));
+            }
+            if (macro != null) {
+                AlertStore.saveMacroEvents(getContext(), new org.json.JSONArray(macro));
+            }
+        } catch (Exception e) {
+            call.reject("알림 설정을 저장하지 못했습니다: " + errorText(e));
+            return;
         }
-        NotificationManagerCompat.from(context).notify(id, builder.build());
+        if (AlertStore.enabled(getContext())) startAlertService();
+        else stopAlertService();
+        JSObject ret = toJsObject(AlertStore.status(getContext()));
+        ret.put("supported", true);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void alertStatus(PluginCall call) {
+        JSObject ret = toJsObject(AlertStore.status(getContext()));
+        ret.put("supported", true);
+        call.resolve(ret);
+    }
+
+    /** 테스트 알림 — 채널 4종 중 사용자가 고른 것으로 폰 상단에 띄운다. */
+    @PluginMethod
+    public void alertTest(PluginCall call) {
+        String kind = call.getString("kind", "custom");
+        String channel = AlertNotifications.CH_PRICE;
+        String title = "🎯 [테스트] BTC $95,000 도달";
+        String body = "지정가 알림이 폰 상단에 뜨면 정상입니다 · COTA";
+        if ("signal".equals(kind)) {
+            channel = AlertNotifications.CH_SIGNAL;
+            title = "[테스트] BTC 1H 롱 시그널";
+            body = "진입 $61,200 · 목표 $62,400 · 손절 $60,600 — 백그라운드 알림이 정상입니다 · COTA";
+        } else if ("macro".equals(kind)) {
+            channel = AlertNotifications.CH_MACRO;
+            title = "📊 [테스트] 12/04(금) 22:30 NFP 발표";
+            body = "예상 ▲ +90K · 상회→숏 유리 / 하회→롱 유리 · COTA";
+        } else if ("news".equals(kind)) {
+            channel = AlertNotifications.CH_NEWS;
+            title = "📰 [테스트] 🟢 호재 · ETF 순유입";
+            body = "비트코인 현물 ETF에 3일 만에 순유입 · COTA";
+        }
+        try {
+            AlertNotifications.post(getContext(), channel, title, body, (int) (System.currentTimeMillis() % 100000) + 3);
+            JSObject ret = new JSObject();
+            ret.put("shown", true);
+            ret.put("channel", channel);
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("테스트 알림을 보내지 못했습니다: " + errorText(e));
+        }
+    }
+
+    private void startAlertService() {
+        try {
+            Intent intent = new Intent(getContext(), AlertMonitorService.class);
+            intent.setAction(AlertMonitorService.ACTION_START);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ContextCompat.startForegroundService(getContext(), intent);
+            } else {
+                getContext().startService(intent);
+            }
+            AlertStore.setRunning(getContext(), true);
+        } catch (Exception e) {
+            AutoTradeStore.addLog(getContext(), "error", "알림 감시를 시작하지 못했습니다 — " + errorText(e));
+        }
+    }
+
+    private void stopAlertService() {
+        try {
+            Intent intent = new Intent(getContext(), AlertMonitorService.class);
+            intent.setAction(AlertMonitorService.ACTION_STOP);
+            if (AlertStore.running(getContext())) getContext().startService(intent);
+            else getContext().stopService(intent);
+        } catch (Exception ignored) {
+            /* 이미 종료됨 */
+        }
+        AlertStore.setRunning(getContext(), false);
     }
 
     @PluginMethod

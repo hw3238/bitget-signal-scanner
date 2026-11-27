@@ -23,6 +23,7 @@ import { fmtTime } from './lib/format';
 import { isNativeApp, openExternalUrl } from './lib/native';
 import { useApkUpdate } from './lib/useApkUpdate';
 import { useSignalNotifications } from './lib/notify';
+import { useAlertCenter } from './lib/alertBridge';
 import { APK_DOWNLOAD_URL, checkForUpdate, RELEASES_PAGE } from './lib/update';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from './lib/storage';
 import { EXCHANGES, loadExchange, saveExchange, type Exchange } from './lib/exchange';
@@ -140,6 +141,17 @@ export default function App() {
     settings,
   });
 
+  /**
+   * 🎯 맞춤 알림 · 📊 경제지표 센터 상태 — 로그인 후에만 감시한다(회원 전용 게이트와 같은 규칙).
+   *  · 조건·설정은 localStorage + 네이티브 AlertStore 에 함께 저장되고, 앱이 꺼져 있으면
+   *    AlertMonitorService 가 이어서 감시한다.
+   */
+  const alertCenter = useAlertCenter({
+    exchange: exchange ?? 'bitget',
+    tickers: state.tickers,
+    enabled: authed,
+  });
+
   // 새 APK 릴리즈가 있으면 상단 배너로 알린다.
   useEffect(() => {
     let cancelled = false;
@@ -252,6 +264,12 @@ export default function App() {
   /** 📰 시황 탭의 바로가기 → 메뉴의 실시간 코인 뉴스 화면 */
   const openNews = useCallback(() => {
     setMenuView('news');
+    setTab('menu');
+  }, []);
+
+  /** 🎯 설정의 알림 카드 → 메뉴의 맞춤 알림·경제지표 센터 */
+  const openAlerts = useCallback(() => {
+    setMenuView('alerts');
     setTab('menu');
   }, []);
 
@@ -458,6 +476,7 @@ export default function App() {
             propr={propr}
             history={history}
             myTrades={myTrades.entries}
+            alerts={alertCenter}
           />
         )}
         {tab === 'history' && (
@@ -490,6 +509,8 @@ export default function App() {
             autoTrade={autoTrade}
             onSaveRisk={saveSettingsRisk}
             auth={auth}
+            alertCenter={alertCenter}
+            onOpenAlerts={openAlerts}
           />
         )}
       </main>

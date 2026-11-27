@@ -35,6 +35,24 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- 🔔 백그라운드 알림 감시 서비스 (v1.5.8) — 자동매매와 별개로 시그널·지정가·지표·뉴스를 확인 -->
+        <service
+            android:name=".AlertMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- 재부팅·앱 업데이트 뒤 알림 감시를 되살린다 -->
+        <receiver
+            android:name=".AlertBootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -59,4 +77,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 🔔 백그라운드 알림: 재부팅 뒤 감시 재시작 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 </manifest>

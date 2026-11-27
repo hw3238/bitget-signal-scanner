@@ -61,6 +61,36 @@ interface AppShellPlugin {
     eventName: 'autoTradeEvent',
     listener: (data: AutoTradeNativeStatus) => void,
   ): Promise<{ remove: () => Promise<void> }>;
+
+  /* ---------------- 🔔 백그라운드 알림 (v1.5.8+) ---------------- */
+  /** 맞춤 알림·설정·경제지표 일정·시그널 범위를 AlertStore 에 저장하고 감시 서비스를 동기화한다 */
+  alertsSync(options: {
+    alerts: string;
+    settings: string;
+    macro: string;
+    target: string;
+    refreshSec: number;
+    master: boolean;
+  }): Promise<AlertServiceStatus>;
+  /** 백그라운드 감시 서비스 상태 */
+  alertStatus(): Promise<AlertServiceStatus>;
+  /** 테스트 알림 — 4개 채널(시그널·지정가·지표·뉴스) 중 하나로 폰 상단에 표시 */
+  alertTest(options?: { kind?: string }): Promise<{ shown: boolean; channel?: string }>;
+}
+
+export interface AlertServiceStatus {
+  /** 서비스가 살아 있는가 */
+  running: boolean;
+  /** 마지막 점검 시각(ms) */
+  lastCheckAt?: number;
+  /** 이번 주기에 확인한 조건 수 */
+  checked?: number;
+  /** 누적 발송 알림 수 */
+  sent?: number;
+  /** 마지막 오류 */
+  error?: string;
+  /** 설치본이 알림 서비스를 지원하는가 */
+  supported?: boolean;
 }
 
 export interface ApkProgress {
@@ -532,6 +562,45 @@ export async function onAutoTradeEvent(
     return await AppShell.addListener('autoTradeEvent', listener);
   } catch {
     return null;
+  }
+}
+
+/**
+ * 🔔 백그라운드 알림 브리지 (v1.5.8+)
+ *  · 웹에서는 supported:false 로 조용히 끝난다(웹 폴백 감시는 alertBridge 가 맡는다).
+ *  · v1.5.7 이하 APK 는 메서드가 없어 호출이 거절된다 → supported:false.
+ */
+export async function AppShellAlertsSync(payload: {
+  alerts: string;
+  settings: string;
+  macro: string;
+  target: string;
+  refreshSec: number;
+  master: boolean;
+}): Promise<AlertServiceStatus> {
+  if (!isNativeApp()) return { running: false, supported: false };
+  try {
+    return { supported: true, ...(await AppShell.alertsSync(payload)) };
+  } catch (e) {
+    return { running: false, supported: false, error: errText(e) };
+  }
+}
+
+export async function AppShellAlertStatus(): Promise<AlertServiceStatus> {
+  if (!isNativeApp()) return { running: false, supported: false };
+  try {
+    return { supported: true, ...(await AppShell.alertStatus()) };
+  } catch (e) {
+    return { running: false, supported: false, error: errText(e) };
+  }
+}
+
+export async function AppShellAlertTest(kind?: string): Promise<{ shown: boolean; channel?: string }> {
+  if (!isNativeApp()) return { shown: false };
+  try {
+    return await AppShell.alertTest({ kind });
+  } catch {
+    return { shown: false };
   }
 }
 

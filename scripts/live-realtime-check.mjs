@@ -76,8 +76,8 @@ const run = async () => {
     overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
   }));
   check(
-    '라이브 메뉴: 도구 14 + 자동매매 = 15 · 🐋📰 카드',
-    hub.rows.length === 14 && hub.hero === '15' && /15가지 도구/.test(hub.note ?? '') && hub.whale === '🐋' && hub.news === '📰',
+    '라이브 메뉴: 도구 15 + 자동매매 = 16 · 🐋📰 카드',
+    hub.rows.length === 15 && hub.hero === '16' && /16가지 도구/.test(hub.note ?? '') && hub.whale === '🐋' && hub.news === '📰',
     `${hub.rows.length}+1=${hub.hero} · ${hub.whale}${hub.news}`,
   );
   check('라이브 메뉴: 시장 그룹', hub.groups.join('|') === '실전 레이더|시장|리스크 관리|분석', hub.groups.join(' · '));

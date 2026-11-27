@@ -258,16 +258,16 @@ const run = async () => {
   }));
   check(
     '메뉴: 도구 14개 + 자동매매 = 15개',
-    hub.rows.length === 14 && hub.auto === 1,
+    hub.rows.length === 15 && hub.auto === 1,
     `${hub.rows.length}개: ${hub.rows.join(',')}`,
   );
-  check('메뉴: 도구 수 15 · 문구', hub.hero === '15' && /15가지 도구/.test(hub.note ?? ''), `${hub.hero} · ${hub.note}`);
+  check('메뉴: 도구 수 16 · 문구', hub.hero === '16' && /16가지 도구/.test(hub.note ?? ''), `${hub.hero} · ${hub.note}`);
   check(
     '메뉴: 🐋 고래 체결 테이프 · 📰 실시간 코인 뉴스 카드',
     hub.whale === '🐋' && hub.news === '📰' && /4개 피드/.test(hub.newsTag ?? ''),
     `${hub.whale} ${hub.whaleTag} / ${hub.news} ${hub.newsTag}`,
   );
-  check('메뉴: 시장 그룹 신설', hub.groups.includes('시장'), hub.groups.join(' · '));
+  check('메뉴: 알림 · 시황 그룹', hub.groups.includes('알림 · 시황'), hub.groups.join(' · '));
   check('메뉴 허브 390px 오버플로 0건', !(await overflow()));
   await shot('166-menu-realtime');
 

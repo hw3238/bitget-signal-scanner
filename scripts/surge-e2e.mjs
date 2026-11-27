@@ -145,9 +145,9 @@ const run = async () => {
     heroNote: document.querySelector('.menu-hero p')?.textContent?.trim(),
     overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
   }));
-  check('메뉴 허브: 도구 14개 + 자동매매 = 15개', hub.rows.length === 14, hub.rows.join(','));
+  check('메뉴 허브: 도구 15개 + 자동매매 = 16개', hub.rows.length === 15, hub.rows.join(','));
   check('메뉴 허브: 🚀 급등 탐색기 카드', hub.surgeEmoji === '🚀' && /급등 탐색기/.test(hub.surgeTitle ?? ''), `${hub.surgeEmoji} ${hub.surgeTitle}`);
-  check('메뉴 허브: 설명·도구 수 15', /6가지 급등 요건/.test(hub.surgeDesc ?? '') && hub.hero === '15' && /15가지 도구/.test(hub.heroNote ?? ''), `${hub.hero} · ${hub.heroNote}`);
+  check('메뉴 허브: 설명·도구 수 16', /6가지 급등 요건/.test(hub.surgeDesc ?? '') && hub.hero === '16' && /16가지 도구/.test(hub.heroNote ?? ''), `${hub.hero} · ${hub.heroNote}`);
   check('메뉴 허브 390px 오버플로 0건', !hub.overflow);
   await shot('82-menu-hub-surge');
 
@@ -307,7 +307,8 @@ const run = async () => {
   );
   check(
     `교차검증 ${base}: 24h 등락 = 티커`,
-    close(num((first.sub.match(/24h ([+-]?[\d.]+)%/) ?? [])[1]), Number(tk?.change24h) * 100, 0.35),
+    // 화면 스냅숏과 교차검증 호출 사이의 시차(수 분)만큼 24h 등락이 움직인다 — 0.8%p 허용
+    close(num((first.sub.match(/24h ([+-]?[\d.]+)%/) ?? [])[1]), Number(tk?.change24h) * 100, 0.8),
     `${(first.sub.match(/24h ([+-]?[\d.]+)%/) ?? [])[1]} vs ${(Number(tk?.change24h) * 100).toFixed(2)}%`,
   );
   check(

@@ -7,7 +7,7 @@
 | --- | --- |
 | 웹 (GitHub Pages) | <https://hw3238.github.io/bitget-signal-scanner/> |
 | APK 다운로드 | <https://github.com/hw3238/bitget-signal-scanner/releases/latest/download/bitget-crt-scanner.apk> |
-| 현재 버전 | **v1.5.8** (versionCode 13 · 웹 업데이트) |
+| 현재 버전 | **v1.5.8** (versionCode 14 · 백그라운드 폰 알림 APK) |
 
 ## 주요 기능
 
@@ -321,6 +321,25 @@
     최대 낙폭(MDD) · 최장 연승/연패 · 최고 누적 표시(가짜 데이터 없이 기록만 사용)
   - **전략별 성적** — 전략명·건수·승률·누적 R 을 누적 R 순으로. "요즘 어떤 전략이 먹히는지" 바로 확인
   - 같은 캔들이 중복 기록돼도 한 건으로 정리해 승률·곡선이 부풀지 않습니다.
+- **🎯 맞춤 알림 & 📊 경제지표 분석 센터 (v1.5.8 · 메뉴 `알림 · 시황`)**
+  - **앱을 꺼도 폰으로 오는 4종 알림** — 안드로이드 **포그라운드 서비스**(`AlertMonitorService`, 60~120초 주기,
+    `START_STICKY` + 재부팅 리시버)가 WebView 가 꺼진 뒤에도 감시합니다. **자동매매와 완전히 별개**(주문 0건).
+    ① **전략 시그널**(경량 추세 돌파 엔진 `LightSignal` — EMA20/50 · 20봉 돌파 · RSI · 거래량)
+    ② **지정가·지표**(가격 ≥/≤ · 1H RSI 과매수/과매도 · 펀딩비 과열) ③ **경제지표**(발표 30분 전 예상치·롱숏 가이드)
+    ④ **코인 뉴스**(블록미디어·Cointelegraph RSS, 호재·악재만 3분 주기).
+    채널은 `cota_signal` · `cota_price_alert` · `cota_macro` · `cota_news` 4개로 나뉘어 **사용자가 종류별 소리·진동·차단**을
+    Android 설정에서 직접 바꿀 수 있고, 알림을 누르면 앱이 열립니다. 마스터 + 개별 4종 토글, 채널별 `테스트 알림`.
+  - **맞춤 알림 만들기** — 코인(거래대금 순 60종목)·조건(5종)·목표값을 넣으면 즉시 네이티브 `AlertStore` 로 동기화됩니다.
+    같은 조건은 하나만(중복 방지), 오타 방지 검증(현재가 1/10~10배·반대편 방향 거절), 발동 완료 목록에서 **1클릭 재활성화**.
+  - **경제지표 캘린더 · 예상치 분석 · 롱/숏 가이드** — 2026-12 ~ 2027-03 의 **실제 발표 일정**(Fed·BLS·BEA)을 KST 로 담고,
+    각 지표마다 ① 컨센서스·이전치 ② **왜 이 예상치인가**(출처·최근 추세) ③ **상회/부합/하회 시 롱·숏 어느 쪽이 유리한지와 이유**
+    ④ 남은 시간 카운트다운 ⑤ 지표별 30분 전 알림 🔔/🔕 ⑥ 대응 요령을 보여 줍니다.
+    지금 국면(기준금리 3.75~4.00% · 12월 인상 확률 92~98% · 근원 PCE 3.3%)에서는 **물가·고용 상회=숏 / 하회=롱**이 기본 규칙이고,
+    고용 급락(0K 이하)처럼 '경기침체'가 앞서는 예외도 카드에 적어 두었습니다. 예상치는 2026-11-27 컨센서스 기준입니다.
+  - **설정 → 🔔 핸드폰 알림** — 마스터·4종 채널 칩과 `🎯 알림 · 지표 열기` 바로가기.
+- **🔎 메뉴 파인더 (v1.5.8)** — 16도구를 **카테고리 칩(전체·알림·시황·실전 레이더·계산·리스크·분석) + 검색**으로
+  스크롤 없이 찾습니다. 그룹은 `자동매매(최상단) → 알림·시황 → 실전 레이더 → 리스크·계산기 → 분석·엔진` 5개로 정돈했고
+  도구 설명은 한 줄로 줄였습니다.
 - **설정** — 🔔 핸드폰 알림(비트·이더·솔 / 주요 코인 / 전체 종목), ntfy 외부 푸시(`bgss-hw3238-9f4k2m`),
   레버리지 모드·최소 손익비·자동 갱신, **실전 주문 리스크(1·2·3·5·10·20·30·50% / 직접 입력 0.5~50%)**, 앱 버전/업데이트.
 - **앱 안에서 바로 업데이트(v1.4.0)** — 새 APK가 있으면 상단 배너·설정의 `바로 업데이트 (vX.Y.Z)` 버튼이
@@ -343,6 +362,8 @@ npm run build      # tsc + vite build → dist/
 ```bash
 npm run build
 npm run check:stops                 # 손절폭 상한(1H 3.5% / 4H 4.5%) 회귀
+npm run check:alerts                # 맞춤 알림 판정·설정·경제지표 일정/컨센서스 검증
+npm run alerts-e2e                  # 알림 센터·메뉴 파인더 E2E (스크린샷 177~186)
 npm run check:calc                  # 김프·청산가·물타기·사이징·수수료·피어슨·도플갱어·괴리 단위 검증(49건)
 npm run check:cockpit               # 실전 주문 콕핏(수량·증거금·거래소 주문 단위·가격 라벨 배치·리스크 50%) 47건
 npm run check:autotrade             # 자동매매 단위 — 서명(OpenSSL 벡터)·수량·포지션모드·안전장치·리스크 50%·UTA v3 페이로드/파싱 133건
@@ -400,18 +421,23 @@ cd android && ./gradlew assembleDebug   # → app/build/outputs/apk/debug/app-de
 ```
 src/
   components/   SignalCard · CoinLogo · ScannerTab · MarketTab · EngineTab · HistoryTab · SettingsTab · AutoTradeTab
-                MenuTab(허브) · KimchiRadar · KeyMatchRadar · Doppelganger · PositionSurvival
+                MenuTab(허브·파인더) · AlertsTab(맞춤 알림·경제지표) · KimchiRadar · KeyMatchRadar · Doppelganger · PositionSurvival
                 SizingCalc · FeeCalc · ImageCardModal · cardKit · marketBriefCard · survivalCard · doppelCard
                 ShareModal · OnboardingModal · MiniCandles · BottomNav · shareCard(canvas)
   engine/       backtest · strategies · indicators · universe(코인 주력+주식 워치리스트)
+                alerts(맞춤 알림 조건·판정·문구) · macroCalendar(미국 지표 일정·컨센서스·롱숏 가이드)
   hooks/        useScanner · useFavorites
   lib/          format(가격·손익비) · profile(추천 레버리지) · account(연결 계좌 잔고 기준)
                 orderCockpit(수량·증거금·가용 95% 캡) · autotrade(자동매매 규칙·게이트) · bitgetErrors(주문 오류 한글 안내)
                 coinLogo(로고 매니페스트·비트겟 URL)
                 calc(김프·청산가·물타기·사이징·수수료·피어슨·도플갱어·괴리 순수 함수)
-                oiSnapshot(OI 관측 기록) · shareImage(PNG 저장/공유) · notify · storage · update · native
+                oiSnapshot(OI 관측 기록) · shareImage(PNG 저장/공유) · notify · alertBridge(알림 저장·네이티브 동기화·웹 감시)
+                storage · update · native
   api/          bitget(공개 USDT-M 계약·티커·캔들) · publicMarket(펀딩·공포탐욕·환율·업비트·빗썸)
 public/coin-icons/  코인 로고 PNG + manifest.json (scripts/fetch-coin-icons.mjs 생성)
+android/app/src/main/java/com/hw3238/bitgetscanner/
+  AlertMonitorService(백그라운드 4종 감시) · AlertStore(조건/설정/발송이력) · AlertNotifications(채널 4종)
+  LightSignal(경량 돌파 엔진) · AlertBootReceiver(재부팅 재시작) · AutoTradeService(자동매매)
 ```
 
 ## 데이터

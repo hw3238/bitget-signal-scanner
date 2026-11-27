@@ -15,6 +15,7 @@ import {
 import { isNativeApp, nativeAppInfo, openExternalUrl } from '../lib/native';
 import { useApkUpdate } from '../lib/useApkUpdate';
 import { isDirty } from '../lib/settingsSync';
+import type { useAlertCenter } from '../lib/alertBridge';
 import type { AccountAuthApi } from '../hooks/useAccountAuth';
 import { AccountCard } from './AccountCard';
 import { ACCOUNT_UNLINKED_HINT, fmtUsdtBalance, type AccountBase } from '../lib/account';
@@ -118,6 +119,10 @@ interface Props {
   onSaveRisk: (riskPct: number | null) => void;
   /** 🔐 계정 카드 — 설정에서도 바로 가입·로그아웃 */
   auth: AccountAuthApi;
+  /** 🔔 맞춤 알림·경제지표 센터 상태 — 설정에서도 4종 토글을 직접 바꿀 수 있다 */
+  alertCenter: ReturnType<typeof useAlertCenter>;
+  /** 알림 센터 화면으로 이동 */
+  onOpenAlerts: () => void;
 }
 
 export function SettingsTab({
@@ -136,6 +141,8 @@ export function SettingsTab({
   autoTrade,
   onSaveRisk,
   auth,
+  alertCenter,
+  onOpenAlerts,
 }: Props) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<UpdateCheckResult | null>(null);
@@ -640,6 +647,51 @@ export function SettingsTab({
               </button>
             )}
           </div>
+        </div>
+
+        <div className="setting-row compact">
+          <div>
+            <div className="setting-name">백그라운드 알림 센터</div>
+            <div className="setting-desc">
+              지정가·RSI 알림, 경제지표 30분 전 알림, 코인 뉴스 속보를 한 화면에서 켜고 끕니다.
+            </div>
+          </div>
+          <button className="ghost-btn" onClick={onOpenAlerts} data-settings-open-alerts>
+            🎯 알림 · 지표 열기
+          </button>
+        </div>
+
+        <div className="settings-alert-channels" data-settings-alert-channels>
+          {(
+            [
+              { key: 'master', label: '앱을 꺼도 알림', emoji: '🔔' },
+              { key: 'signal', label: '시그널', emoji: '📈' },
+              { key: 'custom', label: '지정가·지표', emoji: '🎯' },
+              { key: 'macro', label: '경제지표', emoji: '📊' },
+              { key: 'news', label: '코인 뉴스', emoji: '📰' },
+            ] as const
+          ).map((ch) => {
+            const on = !!alertCenter.settings[ch.key];
+            const disabled = ch.key !== 'master' && !alertCenter.settings.master;
+            return (
+              <button
+                key={ch.key}
+                type="button"
+                className={`settings-alert-chip ${on && !disabled ? 'on' : ''}`}
+                aria-pressed={on}
+                disabled={disabled}
+                data-settings-alert-channel={ch.key}
+                onClick={() => alertCenter.patchSettings({ [ch.key]: !on } as never)}
+              >
+                <span>{ch.emoji}</span>
+                <b>{ch.label}</b>
+                <i className={`dot ${on && !disabled ? 'on' : ''}`} />
+              </button>
+            );
+          })}
+        </div>
+        <div className="alerts-hint">
+          앱이 꺼져 있어도 받으려면 APK v1.5.8 이상이 필요합니다 · 현재 {apkVersion ? `v${apkVersion}` : '웹'}
         </div>
 
         <div className={`update-status ${testNote ? 'on' : ''}`}>

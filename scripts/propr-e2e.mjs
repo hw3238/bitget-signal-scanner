@@ -144,13 +144,13 @@ const run = async () => {
       overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
     };
   });
-  check('메뉴 허브: 도구 14개 + 자동매매 = 15개', hub.rows.length === 14 && hub.rows.includes('propr'), hub.rows.join(','));
+  check('메뉴 허브: 도구 15개 + 자동매매 = 16개', hub.rows.length === 15 && hub.rows.includes('propr'), hub.rows.join(','));
   check(
     '메뉴 허브: 🏆 Propr 5K 터보 시그널 카드',
     hub.emoji === '🏆' && /Propr 5K 터보 시그널/.test(hub.title ?? '') && /프랍/.test(hub.desc ?? '') && /프랍/.test(hub.tag ?? ''),
     `${hub.emoji} ${hub.title} · ${hub.tag}`,
   );
-  check('메뉴 허브: 도구 수 15', hub.hero === '15' && /15가지 도구/.test(hub.heroNote ?? ''), `${hub.hero} · ${hub.heroNote}`);
+  check('메뉴 허브: 도구 수 16', hub.hero === '16' && /16가지 도구/.test(hub.heroNote ?? ''), `${hub.hero} · ${hub.heroNote}`);
   check('메뉴 허브: 탐지 전에는 시그널 배지를 달지 않는다', hub.badge === null, String(hub.badge));
   check('메뉴 허브 390px 오버플로 0건', !hub.overflow);
   await shot('148-menu-propr');
