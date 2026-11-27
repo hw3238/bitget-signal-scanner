@@ -91,6 +91,14 @@ const run = async () => {
     .waitForFunction(() => document.querySelectorAll('[data-whale-row]').length > 0, { timeout: 130000 })
     .then(() => true)
     .catch(() => false);
+  // 초당 체결 수는 2초마다 갱싱된다 — 순간값 0 에 걸리지 않게 '0보다 커지는 순간'을 기다린다.
+  const rateSeen = await page
+    .waitForFunction(
+      () => /초당 [1-9]/.test(document.querySelector('[data-whale-status]')?.textContent ?? ''),
+      { timeout: 60000 },
+    )
+    .then(() => true)
+    .catch(() => false);
   const tape = await page.evaluate(() => ({
     phase: document.querySelector('[data-whale-phase]')?.getAttribute('data-whale-phase'),
     status: document.querySelector('[data-whale-status]')?.textContent?.replace(/\s+/g, ' ').trim(),
@@ -107,7 +115,7 @@ const run = async () => {
   }));
   const rate = Number((/초당 ([\d.]+)건/.exec(tape.status ?? '') ?? [])[1] ?? 0);
   check('라이브 고래: 실제 스트림 연결', tape.phase === 'live' && /유동성 상위 15종목/.test(tape.status ?? ''), tape.status);
-  check('라이브 고래: 초당 체결 관측 > 0', rate > 0, `초당 ${rate}건`);
+  check('라이브 고래: 초당 체결 관측 > 0', rateSeen && rate > 0, `초당 ${rate}건`);
   check('라이브 고래: 테이프에 체결이 쌓임', waited && tape.rows.length > 0, `${tape.rows.length}줄${tape.empty ? ` · ${tape.empty.slice(0, 40)}` : ''}`);
   check(
     '라이브 고래: 모든 줄이 $50K 이상 · 시각·방향 표기',

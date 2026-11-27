@@ -255,12 +255,13 @@ export function startWhaleFeed(opts: {
     return fresh;
   };
 
+  /** 연결에 딸린 타이머만 정리한다 — 초당 체결 수 계측(rateTimer)은 연결과 무관하게 계속 돈다. */
   const clearTimers = () => {
-    for (const t of [reconnectTimer, heartbeat, staleCheck, rateTimer, restTimer, firstDataTimer]) {
+    for (const t of [reconnectTimer, heartbeat, staleCheck, restTimer, firstDataTimer]) {
       if (t) clearInterval(t as ReturnType<typeof setInterval>);
       if (t) clearTimeout(t as ReturnType<typeof setTimeout>);
     }
-    reconnectTimer = heartbeat = staleCheck = rateTimer = restTimer = firstDataTimer = null;
+    reconnectTimer = heartbeat = staleCheck = restTimer = firstDataTimer = null;
   };
 
   const closeSocket = () => {
@@ -488,6 +489,8 @@ export function startWhaleFeed(opts: {
     stop: () => {
       stopped = true;
       clearTimers();
+      if (rateTimer) clearInterval(rateTimer);
+      rateTimer = null;
       closeSocket();
       // 남은 타이머 정리 후 종료 상태를 알린다.
       status = { ...status, phase: 'stopped', rate: 0 };
