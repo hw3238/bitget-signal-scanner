@@ -388,6 +388,8 @@ export function useScanner({ refreshSec, autoStart = true, favoriteSymbols = [],
             state: s.state,
             r: s.currentR,
             bars: s.barsSince,
+            // 매매 DNA 레버리지 구간 분석용 — 시그널이 실제로 쓴 배율(v1.5.8 웹)
+            leverage: Number.isFinite(s.leverage) && s.leverage > 0 ? s.leverage : existing?.leverage,
             decimals: s.decimals,
           });
         }

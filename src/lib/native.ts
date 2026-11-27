@@ -35,6 +35,12 @@ interface AppShellPlugin {
   bitgetTestConnection(): Promise<BitgetAccount>;
   bitgetGetPositions(): Promise<BitgetPositionsResult>;
   bitgetPlaceOrder(options: PlaceOrderParams & { leverage: number; holdMode?: string }): Promise<BitgetOrderResult>;
+  /**
+   * 과거 포지션(체결) 내역 — **선택 메서드**.
+   * 이 메서드가 없는 APK(현재 배포본 포함)에서는 호출이 거절되고, 웹은 매매일지로 대신 분석한다.
+   * (`src/lib/tradeDnaSource.ts` → `loadRealAccountHistory`)
+   */
+  bitgetPositionHistory?(options: { days?: number }): Promise<{ ok: boolean; rows?: Array<Record<string, unknown>>; error?: string }>;
   /** 보유 포지션 시장가 청산 — posSide/reduceOnly 규칙은 네이티브가 계좌 모드에 맞춰 고른다 */
   bitgetClosePosition(options: {
     symbol: string;
@@ -386,6 +392,32 @@ export async function bitgetTestConnection(): Promise<BitgetAccount | null> {
     return await AppShell.bitgetTestConnection();
   } catch (e) {
     return { ok: false, error: errText(e) };
+  }
+}
+
+/** 과거 포지션 조회 결과 — 브리지가 없는 설치본은 `bridge-missing` 으로 돌아온다. */
+export type BitgetHistoryFetch =
+  | { ok: true; rows: Array<Record<string, unknown>> }
+  | { ok: false; reason: 'bridge-missing' | 'error'; error?: string };
+
+/**
+ * 비트겟 과거 포지션 내역(최근 N일).
+ *  · 이 APK 에 `bitgetPositionHistory` 가 없으면 호출이 거절된다 → `bridge-missing`.
+ *  · 웹에서는 네이티브에 접근할 수 없다 → `bridge-missing`.
+ */
+export async function bitgetHistory(days = 90): Promise<BitgetHistoryFetch> {
+  if (!isNativeApp()) return { ok: false, reason: 'bridge-missing', error: '웹에서는 네이티브 브리지를 쓸 수 없습니다' };
+  try {
+    const res = await AppShell.bitgetPositionHistory?.({ days });
+    if (!res) return { ok: false, reason: 'bridge-missing', error: '브리지 메서드가 없습니다' };
+    if (!res.ok) return { ok: false, reason: 'error', error: res.error ?? '과거 포지션을 불러오지 못했습니다' };
+    return { ok: true, rows: res.rows ?? [] };
+  } catch (e) {
+    const text = errText(e);
+    if (/not implemented|not available|Unable to find/i.test(text)) {
+      return { ok: false, reason: 'bridge-missing', error: text };
+    }
+    return { ok: false, reason: 'error', error: text };
   }
 }
 

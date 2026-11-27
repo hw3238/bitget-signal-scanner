@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Contract, Signal } from '../engine/types';
+import { lossStreakCooldown, type DnaTrade } from '../engine/tradeDna';
 import { accountBaseOf } from '../lib/account';
 import { formatBitgetErrorKo } from '../lib/bitgetErrors';
 import {
@@ -136,6 +137,11 @@ interface UseAutoTradeInput {
    * 비트겟 계좌 주문이 나가는 일을 원천 차단한다.
    */
   paused?: boolean;
+  /**
+   * 연패 쿨다운의 기준 기록 — 매매 DNA 화면과 **같은 매매일지**를 넘긴다.
+   * 설정(`cooldownLosses·cooldownMin`)이 켜져 있을 때만 쓰인다.
+   */
+  cooldownTrades?: DnaTrade[];
 }
 
 export interface QuickOrderResult {
@@ -144,7 +150,7 @@ export interface QuickOrderResult {
   simulated: boolean;
 }
 
-export function useAutoTrade({ signals, contracts, leverageFor, paused = false }: UseAutoTradeInput) {
+export function useAutoTrade({ signals, contracts, leverageFor, paused = false, cooldownTrades = [] }: UseAutoTradeInput) {
   const [config, setConfig] = useState<AutoTradeConfig>(readConfig);
   const [runtime, setRuntime] = useState<AutoRuntime>(readRuntime);
   const [keys, setKeysState] = useState<BitgetKeyState & { supported: boolean }>({
@@ -173,6 +179,21 @@ export function useAutoTrade({ signals, contracts, leverageFor, paused = false }
    * 모의투자 키로 실거래를 고르거나 실거래 키로 모의투자를 고르면 라벨과 다른 주문이 나간다.
    */
   const tradeMode = useMemo(() => resolveTradeMode(config, keys), [config, keys]);
+
+  /**
+   * 🔻 연패 쿨다운(v1.5.8 웹) — 켜져 있으면 마지막 연속 손실 뒤 N분 동안 새 진입 계획을 만들지 않는다.
+   *  · 기준: 매매일지(DNA 화면과 같은 기록). 청산 시각을 모르는 기록은 근거에서 빠진다.
+   *  · tick(5초)을 의존성에 넣어 남은 시간이 흐르면 자동으로 풀린다.
+   */
+  const cooldown = useMemo(() => {
+    if (!(config.cooldownLosses > 0)) return null;
+    void tick;
+    return lossStreakCooldown(
+      cooldownTrades,
+      { losses: config.cooldownLosses, minutes: config.cooldownMin },
+      Date.now(),
+    );
+  }, [config.cooldownLosses, config.cooldownMin, cooldownTrades, tick]);
 
   /**
    * 🔗 v1.5.5 — 모든 시그널·주문 계산의 기준이 되는 **실계좌 잔고**.
@@ -417,6 +438,7 @@ export function useAutoTrade({ signals, contracts, leverageFor, paused = false }
           openPositions,
           openSymbols,
           dailyLocked: daily.locked,
+          cooldown,
           plan,
           now,
           hasKeys: keys.hasKeys || !supported,
@@ -444,6 +466,7 @@ export function useAutoTrade({ signals, contracts, leverageFor, paused = false }
       accountBase.seed,
       config,
       contractBySymbol,
+      cooldown,
       daily.locked,
       keys.hasKeys,
       leverageFor,
@@ -1039,6 +1062,8 @@ export function useAutoTrade({ signals, contracts, leverageFor, paused = false }
     daily,
     openPositions,
     openSymbols,
+    /** 🔻 연패 쿨다운 상태 — DNA 화면·자동매매가 같은 값을 본다 */
+    cooldown,
     tick,
     /** 마지막 잔고 갱신 시각 · 실시간 갱신 켜짐 여부 (v1.5.4) */
     lastRefreshAt,

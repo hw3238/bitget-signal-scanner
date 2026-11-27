@@ -144,6 +144,11 @@ export interface HistoryRecord {
   state: 'open' | 'win' | 'loss';
   r: number;
   bars: number;
+  /**
+   * 시그널이 쓴 배율 — 매매 DNA 의 레버리지 구간 분석 근거(v1.5.8 웹).
+   * 이 필드가 생기기 전 기록에는 없으므로 `undefined` = '배율 미기록'으로 센다.
+   */
+  leverage?: number;
   /** FX·금 고정 소수점 표기용 */
   decimals?: number;
 }

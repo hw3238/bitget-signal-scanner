@@ -145,9 +145,9 @@ const run = async () => {
     heroNote: document.querySelector('.menu-hero p')?.textContent?.trim(),
     overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
   }));
-  check('메뉴 허브: 도구 9개 + 자동매매 = 10개', hub.rows.length === 9, hub.rows.join(','));
+  check('메뉴 허브: 도구 12개 + 자동매매 = 13개', hub.rows.length === 12, hub.rows.join(','));
   check('메뉴 허브: 🚀 급등 탐색기 카드', hub.surgeEmoji === '🚀' && /급등 탐색기/.test(hub.surgeTitle ?? ''), `${hub.surgeEmoji} ${hub.surgeTitle}`);
-  check('메뉴 허브: 설명·도구 수 10', /6가지 급등 요건/.test(hub.surgeDesc ?? '') && hub.hero === '10' && /10가지 도구/.test(hub.heroNote ?? ''), `${hub.hero} · ${hub.heroNote}`);
+  check('메뉴 허브: 설명·도구 수 13', /6가지 급등 요건/.test(hub.surgeDesc ?? '') && hub.hero === '13' && /13가지 도구/.test(hub.heroNote ?? ''), `${hub.hero} · ${hub.heroNote}`);
   check('메뉴 허브 390px 오버플로 0건', !hub.overflow);
   await shot('82-menu-hub-surge');
 

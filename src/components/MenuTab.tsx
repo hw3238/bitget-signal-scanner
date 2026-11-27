@@ -20,17 +20,24 @@ import { Doppelganger } from './Doppelganger';
 import { PositionSurvival } from './PositionSurvival';
 import { SizingCalc } from './SizingCalc';
 import { FeeCalc } from './FeeCalc';
+import { TradeDnaTab } from './TradeDnaTab';
+import { LiquidationMagnet } from './LiquidationMagnet';
+import { SectorRadar } from './SectorRadar';
+import type { HistoryRecord, MyTrade } from '../lib/storage';
 
 export type MenuView =
   | 'auto'
   | 'propr'
   | 'surge'
+  | 'magnet'
+  | 'sector'
   | 'kimchi'
   | 'lag'
   | 'doppel'
   | 'survival'
   | 'sizing'
   | 'fee'
+  | 'dna'
   | 'engine'
   /** 관리자 전용 — role === 'admin' 일 때만 메뉴에 나타난다 */
   | 'admin';
@@ -62,6 +69,22 @@ const GROUPS: Array<{ title: string; items: MenuItem[] }> = [
         title: '급등 탐색기',
         desc: '6가지 급등 요건을 점수화해 출발 직전 코인과 진입·목표·손절을 추천',
         tag: '6요건 · 100점',
+        hot: true,
+      },
+      {
+        key: 'magnet',
+        emoji: '🧲',
+        title: '청산 자석 레이더',
+        desc: '스윙·펀딩·OI로 위·아래 청산 물량 뭉치를 추정 — 스퀴즈가 터질 가격대와 방향',
+        tag: '청산 추정 · 스퀴즈',
+        hot: true,
+      },
+      {
+        key: 'sector',
+        emoji: '🌊',
+        title: '섹터 자금 순환',
+        desc: 'AI·밈·L1·DeFi… 지금 돈이 몰리는 테마 순위와 대장주 · 후발주',
+        tag: '테마 · 순환매',
         hot: true,
       },
       {
@@ -120,6 +143,14 @@ const GROUPS: Array<{ title: string; items: MenuItem[] }> = [
     title: '분석',
     items: [
       {
+        key: 'dna',
+        emoji: '🧠',
+        title: '내 매매 DNA',
+        desc: '내 기록으로 시간대·배율·롱숏·복수매매 습관을 진단하고 뇌동매매를 잡습니다',
+        tag: '습관 진단',
+        hot: true,
+      },
+      {
         key: 'engine',
         emoji: '⚙️',
         title: '전략 엔진',
@@ -155,18 +186,24 @@ interface Props {
     scan: (opts?: { force?: boolean; all?: boolean; tf?: TF }) => void;
     setTf: (tf: TF) => void;
   };
+  /** 🧠 내 매매 DNA — 매매일지(시그널 이력 + 내 진입)와 실계좌 체결 */
+  history: HistoryRecord[];
+  myTrades: MyTrade[];
 }
 
 const TITLES: Record<MenuView, string> = {
   auto: '비트겟 자동매매',
   propr: 'Propr 5K 터보 시그널',
   surge: '급등 탐색기',
+  magnet: '청산 자석 레이더',
+  sector: '섹터 자금 순환',
   kimchi: '김프 & 송금 레이더',
   lag: '키맞추기 레이더',
   doppel: '차트 도플갱어',
   survival: '포지션 생존 성적표',
   sizing: '포지션 사이징',
   fee: '수수료 & 페이백',
+  dna: '내 매매 DNA',
   engine: '전략 엔진',
   admin: '관리자 대시보드',
 };
@@ -186,6 +223,8 @@ export function MenuTab({
   signals,
   auth,
   propr,
+  history,
+  myTrades,
 }: Props) {
   /** 메뉴 배지 — 이번 세션 탐지가 있으면 그 값, 없으면 지난 탐 요약(재진입 직후) */
   const proprOpen = propr.state.hits.length
@@ -215,6 +254,9 @@ export function MenuTab({
         {view === 'surge' && (
           <SurgeExplorer exchange={exchange} state={state} account={account} autoTrade={autoTrade} />
         )}
+        {view === 'magnet' && <LiquidationMagnet exchange={exchange} state={state} />}
+        {view === 'sector' && <SectorRadar exchange={exchange} state={state} onRescan={onRescan} />}
+        {view === 'dna' && <TradeDnaTab history={history} myTrades={myTrades} autoTrade={autoTrade} />}
         {view === 'kimchi' && <KimchiRadar state={state} exchange={exchange} />}
         {view === 'lag' && <KeyMatchRadar exchange={exchange} state={state} />}
         {view === 'doppel' && <Doppelganger exchange={exchange} state={state} />}
@@ -236,10 +278,10 @@ export function MenuTab({
           <div>
             <div className="menu-hero-eyebrow">COTA 트레이더 올인원</div>
             <h2>시장 · 리스크 · 분석</h2>
-            <p>코인 트레이더가 매일 쓰는 10가지 도구를 한 곳에 모았습니다.</p>
+            <p>코인 트레이더가 매일 쓰는 13가지 도구를 한 곳에 모았습니다.</p>
           </div>
           <div className="menu-hero-count">
-            <b>10</b>
+            <b>13</b>
             <span>tools</span>
           </div>
         </div>

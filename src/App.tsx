@@ -28,6 +28,7 @@ import { DEFAULT_SETTINGS, loadSettings, saveSettings, type Settings } from './l
 import { EXCHANGES, loadExchange, saveExchange, type Exchange } from './lib/exchange';
 import { recommendLeverage } from './lib/profile';
 import { planRiskSave } from './lib/settingsSync';
+import { pickJournalTrades, tradesFromJournal } from './lib/tradeDnaSource';
 import { gateStage } from './lib/gate';
 
 type Tab = TabKey;
@@ -98,6 +99,12 @@ export default function App() {
     return map;
   }, [state.contracts]);
 
+  /** 🧠 매매 DNA·연패 쿨다운의 기준 기록 — 내 진입이 있으면 그것, 없으면 시그널 복기(DNA 화면과 동일) */
+  const cooldownTrades = useMemo(
+    () => pickJournalTrades(tradesFromJournal(history, myTrades.entries)).trades,
+    [history, myTrades.entries],
+  );
+
   const autoTrade = useAutoTrade({
     // 자동매매·원클릭 주문은 **비트겟 계좌 전용** — 바이낸스 모드에서는 시그널을 감시 대상에서 뺀다.
     // (바이낸스 시그널로 비트겟 주문이 나가는 사고를 원천 차단)
@@ -109,6 +116,7 @@ export default function App() {
       settings.leverageMode === 'auto'
         ? recommendLeverage(signal, equity, contractBySymbol.get(signal.symbol)?.maxLever).leverage
         : settings.leverage,
+    cooldownTrades,
   });
 
   /**
@@ -440,6 +448,8 @@ export default function App() {
             signals={state.signals}
             auth={auth}
             propr={propr}
+            history={history}
+            myTrades={myTrades.entries}
           />
         )}
         {tab === 'history' && (

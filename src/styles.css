@@ -8944,3 +8944,1075 @@ textarea {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+
+/* =========================================================================
+   🧠 매매 DNA · 🧲 청산 자석 · 🌊 섹터 레이더 (v1.5.8 웹)
+   ========================================================================= */
+
+/* ---------- 🧠 내 매매 DNA ---------- */
+
+.dna-headline {
+  margin-top: 12px;
+  padding: 11px 13px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #eef5ff 0%, #f7fbff 100%);
+  color: var(--blue-2);
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  line-height: 1.45;
+}
+
+.dna-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.dna-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border-radius: 14px;
+  background: var(--card-2);
+  min-width: 0;
+}
+
+.dna-kpi span {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--sub);
+}
+
+.dna-kpi b {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dna-kpi em {
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.segmented.dna-source {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.segmented.dna-source button {
+  flex: 1;
+}
+
+.dna-facts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dna-fact {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  background: var(--card-2);
+  border-left: 3px solid var(--line);
+}
+
+.dna-fact.bad {
+  border-left-color: var(--up);
+  background: var(--up-soft);
+}
+
+.dna-fact.warn {
+  border-left-color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.dna-fact.good {
+  border-left-color: var(--green);
+  background: var(--green-soft);
+}
+
+.dna-fact-metric {
+  flex: 0 0 auto;
+  min-width: 46px;
+  font-size: 11.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  padding-top: 1px;
+}
+
+.dna-fact div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dna-fact b {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.2px;
+  line-height: 1.35;
+}
+
+.dna-fact span:not(.dna-fact-metric) {
+  font-size: 10.5px;
+  color: var(--ink-2);
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+.dna-heat,
+.dna-lev {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.dna-heat-row,
+.dna-lev-row {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 8px;
+}
+
+.dna-lev-row {
+  grid-template-columns: 76px minmax(0, 1fr) 54px;
+}
+
+.dna-heat-label,
+.dna-lev-label {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.dna-lev-label i {
+  font-style: normal;
+  font-size: 9px;
+  color: var(--sub);
+  font-weight: 700;
+  margin-left: 3px;
+}
+
+.dna-bar,
+.dna-lev-bar {
+  height: 9px;
+  border-radius: 999px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+.dna-bar span,
+.dna-lev-bar span,
+.dna-side-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--blue);
+  transition: width 0.2s ease;
+}
+
+.dna-bar span.up,
+.dna-lev-bar span.up,
+.dna-side-bar span.up {
+  background: var(--up);
+}
+
+.dna-lev-bar span.down,
+.dna-side-bar span.down {
+  background: var(--down);
+}
+
+.dna-heat-value {
+  font-size: 11.5px;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.dna-heat-sub,
+.dna-lev-sub {
+  grid-column: 2 / span 2;
+  font-size: 9.5px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+  margin-top: -5px;
+}
+
+.dna-lev-row b {
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.dna-caption {
+  margin-top: 10px;
+  line-height: 1.5;
+}
+
+.dna-revenge-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dna-revenge-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border-radius: 14px;
+  background: var(--card-2);
+  min-width: 0;
+}
+
+.dna-revenge-grid span {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--sub);
+}
+
+.dna-revenge-grid b {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.4px;
+}
+
+.dna-revenge-grid em {
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dna-revenge-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dna-revenge-list li {
+  display: grid;
+  grid-template-columns: 48px 30px 54px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  font-size: 10.5px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.dna-revenge-list b {
+  font-size: 11px;
+  color: var(--ink-2);
+  font-weight: 800;
+}
+
+.dna-revenge-list span:last-child {
+  text-align: right;
+}
+
+.dna-cooldown {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.dna-cooldown.on {
+  border-color: rgba(49, 130, 246, 0.35);
+  background: var(--blue-soft);
+}
+
+.dna-cooldown-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dna-cooldown-copy b {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.dna-cooldown-copy span {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.dna-cooldown-copy em {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--green);
+}
+
+.dna-cooldown-copy em.down {
+  color: var(--up);
+}
+
+.dna-side-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dna-side-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 11px;
+  border-radius: 14px;
+  background: var(--card-2);
+  min-width: 0;
+}
+
+.dna-side-card.long {
+  background: var(--long-soft);
+}
+
+.dna-side-card.short {
+  background: var(--short-soft);
+}
+
+.dna-side-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.dna-side-card b {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dna-side-bar {
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  overflow: hidden;
+}
+
+.dna-side-card em {
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.dna-hold {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.dna-hold > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+}
+
+.dna-hold span {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--sub);
+}
+
+.dna-hold b {
+  font-size: 13.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.dna-hold em {
+  font-style: normal;
+  font-size: 9px;
+  color: var(--sub);
+}
+
+/* ---------- 🧲 청산 자석 레이더 ---------- */
+
+.magnet-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.magnet-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border-radius: 14px;
+  background: var(--card-2);
+  min-width: 0;
+}
+
+.magnet-kpi span {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--sub);
+}
+
+.magnet-kpi b {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.magnet-kpi em {
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.magnet-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px;
+  margin-top: 10px;
+  border: 1px solid transparent;
+  transition: border-color 0.15s ease;
+}
+
+.magnet-card.up {
+  border-color: rgba(240, 68, 82, 0.16);
+}
+
+.magnet-card.down {
+  border-color: rgba(49, 130, 246, 0.16);
+}
+
+.magnet-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.magnet-rank {
+  flex: 0 0 auto;
+  width: 20px;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.magnet-name {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.magnet-name b {
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+}
+
+.magnet-name span {
+  font-size: 10px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.magnet-bias {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--card-2);
+  color: var(--ink-2);
+}
+
+.magnet-bias.up {
+  background: var(--up-soft);
+  color: var(--up);
+}
+
+.magnet-bias.down {
+  background: var(--down-soft);
+  color: var(--down);
+}
+
+.magnet-gauges {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.magnet-gauge {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 8px;
+}
+
+.magnet-gauge-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.magnet-gauge-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+.magnet-gauge-track span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.magnet-gauge.up .magnet-gauge-track span {
+  background: linear-gradient(90deg, #ff8a95, var(--up));
+}
+
+.magnet-gauge.down .magnet-gauge-track span {
+  background: linear-gradient(90deg, #8fbaff, var(--down));
+}
+
+.magnet-gauge b {
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.magnet-gauge em {
+  grid-column: 2 / span 2;
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+  margin-top: -4px;
+}
+
+.magnet-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.magnet-chips span {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+  background: var(--card-2);
+  border-radius: 8px;
+  padding: 4px 7px;
+  font-variant-numeric: tabular-nums;
+}
+
+.magnet-chips span.up {
+  color: var(--up);
+  background: var(--up-soft);
+}
+
+.magnet-chips span.down {
+  color: var(--down);
+  background: var(--down-soft);
+}
+
+.magnet-note {
+  margin: 10px 0 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.magnet-detail {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.magnet-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.magnet-levels-head,
+.magnet-levels-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.magnet-levels-head span {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--sub);
+}
+
+.magnet-levels-row span:first-child {
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.magnet-levels-row span {
+  text-align: right;
+}
+
+.magnet-levels-row span:nth-child(2),
+.magnet-levels-row span:nth-child(3) {
+  text-align: right;
+}
+
+.magnet-clusters {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.magnet-clusters b {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.magnet-clusters > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) 56px 56px minmax(0, 0.8fr);
+  gap: 6px;
+  font-size: 9.5px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.magnet-clusters > div span:first-child {
+  font-weight: 800;
+}
+
+.magnet-warnings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.magnet-warnings li {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--amber);
+  background: var(--amber-soft);
+  border-radius: 10px;
+  padding: 7px 9px;
+}
+
+/* ---------- 🌊 섹터 자금 순환 레이더 ---------- */
+
+.sec-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sec-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border-radius: 14px;
+  background: var(--card-2);
+  min-width: 0;
+}
+
+.sec-kpi span {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--sub);
+}
+
+.sec-kpi b {
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sec-kpi em {
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sec-hints {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.sec-hint {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 46px 52px;
+  gap: 7px 8px;
+  align-items: center;
+  padding: 9px 10px;
+  border-radius: 12px;
+  background: var(--card-2);
+  font-size: 10px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.sec-hint-sector {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--blue-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sec-hint b {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.sec-hint em {
+  grid-column: 1 / -1;
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sec-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.sec-item {
+  border-radius: 14px;
+  background: var(--card-2);
+  overflow: hidden;
+}
+
+.sec-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 58px 62px 66px;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 11px 10px;
+  text-align: left;
+}
+
+.sec-rank {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.sec-rank.r1 {
+  color: var(--blue);
+}
+
+.sec-name {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sec-name b {
+  font-size: 11.8px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sec-name span {
+  font-size: 9px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sec-change {
+  font-size: 11.5px;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sec-momentum {
+  font-size: 9px;
+  font-weight: 800;
+  text-align: center;
+  padding: 3px 0;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--sub);
+  white-space: nowrap;
+}
+
+.sec-momentum.in {
+  color: var(--up);
+  background: var(--up-soft);
+}
+
+.sec-momentum.out {
+  color: var(--down);
+  background: var(--down-soft);
+}
+
+.sec-score {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sec-score-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.sec-score-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--blue);
+}
+
+.sec-score b {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  min-width: 20px;
+  text-align: right;
+}
+
+.sec-detail {
+  padding: 0 10px 12px;
+  border-top: 1px dashed var(--line);
+  margin: 0 10px;
+  padding-top: 10px;
+}
+
+.sec-detail-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.sec-detail-head b {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.sec-detail-head span {
+  font-size: 9.5px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.sec-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sec-pair-col h4 {
+  margin: 0 0 5px;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.sec-coin {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 56px minmax(0, 1.1fr);
+  gap: 6px;
+  align-items: center;
+  padding: 8px 9px;
+  border-radius: 10px;
+  background: #fff;
+  margin-bottom: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sec-coin-role {
+  font-size: 8.5px;
+  font-weight: 800;
+  color: #fff;
+  background: var(--sub);
+  border-radius: 6px;
+  padding: 3px 0;
+  text-align: center;
+}
+
+.sec-coin.leader .sec-coin-role {
+  background: var(--up);
+}
+
+.sec-coin.lag .sec-coin-role {
+  background: var(--blue);
+}
+
+.sec-coin b {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.sec-coin-change {
+  font-size: 11px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.sec-coin-meta {
+  font-size: 9px;
+  color: var(--sub);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sec-detail-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.sec-detail-foot span {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--ink-2);
+  background: #fff;
+  border-radius: 7px;
+  padding: 4px 7px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 700px) {
+  .sec-pair {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .dna-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 380px) {
+  .sec-row {
+    grid-template-columns: 14px minmax(0, 1fr) 52px 56px 56px;
+    gap: 4px;
+  }
+
+  .magnet-gauge {
+    grid-template-columns: 64px minmax(0, 1fr) 26px;
+  }
+
+  .sec-coin {
+    grid-template-columns: 30px minmax(0, 1fr) 50px;
+  }
+
+  .sec-coin-meta {
+    display: none;
+  }
+}

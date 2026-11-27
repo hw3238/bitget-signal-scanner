@@ -62,6 +62,14 @@ export interface AutoTradeConfig {
   earlyStop: boolean;
   /** 목표가 50% 또는 +1.0R 도달 시 보유의 50% 분할 익제 (v1.5.6 · 기본 ON) */
   partialTp: boolean;
+  /**
+   * 연패 쿨다운 — 매매일지에 기록된 **연속 손실 N회** 뒤 M분 동안 새 진입을 만들지 않는다(v1.5.8 웹).
+   *  · 0 = 끔(기본). DNA 화면의 토글이 이 값을 켜고 끈다.
+   *  · 판정은 `lossStreakCooldown`(engine/tradeDna) — DNA 화면과 **같은 계산**을 쓴다.
+   */
+  cooldownLosses: number;
+  /** 쿨다운 시간(분) — 기본 60 */
+  cooldownMin: number;
 }
 
 /** 메이저 4종 — 'majors' 범위에서 허용하는 종목 */
@@ -85,6 +93,9 @@ export const DEFAULTS: AutoTradeConfig = {
   entryTtlMin: 240,
   earlyStop: true,
   partialTp: true,
+  // 연패 쿨다운은 기본 꺼짐 — DNA 화면에서 켜면 2연패 후 60분 멈춘다.
+  cooldownLosses: 0,
+  cooldownMin: 60,
 };
 
 /** 레버리지 상한 '0' = 상한 없음(유동) — 청산 안전마진·거래소 최대 배율만 지킨다 */
@@ -103,6 +114,10 @@ export const LIMITS = {
   maxLeverage: [1, 100] as const,
   intervalSec: [30, 600] as const,
   entryTtlMin: [5, 1440] as const,
+  /** 연패 쿨다운 — 0 = 끔, 1~5연패 */
+  cooldownLosses: [0, 5] as const,
+  /** 쿨다운 시간 — 10~720분 */
+  cooldownMin: [10, 720] as const,
 };
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
@@ -134,6 +149,8 @@ export function normalizeConfig(raw: Partial<AutoTradeConfig> | null | undefined
     entryTtlMin: num(src.entryTtlMin, DEFAULTS.entryTtlMin),
     earlyStop: src.earlyStop !== false,
     partialTp: src.partialTp !== false,
+    cooldownLosses: num(src.cooldownLosses, DEFAULTS.cooldownLosses),
+    cooldownMin: num(src.cooldownMin, DEFAULTS.cooldownMin),
   };
   return {
     ...merged,
@@ -153,6 +170,8 @@ export function normalizeConfig(raw: Partial<AutoTradeConfig> | null | undefined
         : Math.round(clamp(merged.maxLeverage, LIMITS.maxLeverage[0], LIMITS.maxLeverage[1])),
     intervalSec: Math.round(clamp(merged.intervalSec, LIMITS.intervalSec[0], LIMITS.intervalSec[1])),
     entryTtlMin: Math.round(clamp(merged.entryTtlMin, LIMITS.entryTtlMin[0], LIMITS.entryTtlMin[1])),
+    cooldownLosses: Math.round(clamp(merged.cooldownLosses, LIMITS.cooldownLosses[0], LIMITS.cooldownLosses[1])),
+    cooldownMin: Math.round(clamp(merged.cooldownMin, LIMITS.cooldownMin[0], LIMITS.cooldownMin[1])),
   };
 }
 
@@ -442,6 +461,7 @@ export type EntryVerdict =
   | 'same-symbol'
   | 'max-positions'
   | 'daily-locked'
+  | 'cooldown'
   | 'stale'
   | 'plan'
   | 'leverage';
@@ -463,6 +483,8 @@ export interface EntryContext {
   openSymbols?: string[];
   /** 오늘 손실 한도 잠금 여부 */
   dailyLocked: boolean;
+  /** 연패 쿨다운 — 이 시각까지 새 진입 금지(없으면 null) */
+  cooldown?: { until: number; streak: number } | null;
   /** 자동 진입용 주문 계획 (수량·최소주문 확인) */
   plan: OrderPlan | null;
   now: number;
@@ -546,6 +568,14 @@ export function evaluateEntry(ctx: EntryContext): EntryDecision {
       allowed: false,
       code: 'daily-locked',
       reason: `1일 손실 한도 −${config.dailyLossPct}%에 도달해 오늘은 진입하지 않습니다.`,
+    };
+  }
+  if (!manual && ctx.cooldown && ctx.now < ctx.cooldown.until) {
+    const mins = Math.max(1, Math.ceil((ctx.cooldown.until - ctx.now) / 60_000));
+    return {
+      allowed: false,
+      code: 'cooldown',
+      reason: `${ctx.cooldown.streak}연패 쿨다운 — ${mins}분 뒤에 다시 봅니다(매매일지 기준).`,
     };
   }
   if (!manual && signalAgeMin(signal, ctx.now) > config.entryTtlMin) {
