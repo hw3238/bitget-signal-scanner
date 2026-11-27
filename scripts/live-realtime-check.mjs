@@ -27,7 +27,8 @@ async function bitgetLast(symbol) {
   try {
     const res = await fetch(`https://api.bitget.com/api/v2/mix/market/ticker?productType=USDT-FUTURES&symbol=${symbol}`);
     const body = await res.json();
-    return Number(body?.data?.[0]?.last);
+    // 비트겟 ticker 응답은 `lastPr`(최근 체결가)를 쓴다.
+    return Number(body?.data?.[0]?.lastPr ?? body?.data?.[0]?.last);
   } catch {
     return NaN;
   }
