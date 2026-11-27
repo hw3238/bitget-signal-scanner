@@ -65,7 +65,7 @@ const run = async () => {
       rows: document.querySelectorAll('.menu-row').length,
     };
   });
-  check('라이브 메뉴: 🏆 Propr 카드 · 도구 13', hub.emoji === '🏆' && /Propr 5K 터보/.test(hub.title ?? '') && hub.hero === '13' && hub.rows === 12, `${hub.title} · ${hub.rows}+자동매매=${hub.hero}`);
+  check('라이브 메뉴: 🏆 Propr 카드 · 도구 15', hub.emoji === '🏆' && /Propr 5K 터보/.test(hub.title ?? '') && hub.hero === '15' && hub.rows === 14, `${hub.title} · ${hub.rows}+자동매매=${hub.hero}`);
   await page.screenshot({ path: `${OUT}/154-live-menu-propr.png` });
 
   await page.locator('.menu-row[data-menu="propr"]').click();

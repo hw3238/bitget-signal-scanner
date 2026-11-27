@@ -2,7 +2,7 @@
  * 🧠🧲🌊 매매 DNA · 청산 자석 · 섹터 순환 레이더 E2E 검증
  *   실행: npm run build && npm run innovations-e2e
  *
- *  1) 메뉴 허브: 도구 12개 + 자동매매 = 13개 · 세 카드(🧠🧲🌊) · 390px 오버플로 0건
+ *  1) 메뉴 허브: 도구 14개 + 자동매매 = 15개 · 세 카드(🧠🧲🌊) · 390px 오버플로 0건
  *  2) 🧠 매매 DNA: 심어 둔 매매일지(8건)로 승률·누적 R·시간대·배율·복수매매를 **직접 재계산해 비교**
  *     · 쿨다운 토글 → 자동매매 설정에 저장 · 데모 모드(DEMO 표기) · 기록 0건 안내
  *  3) 🧲 청산 자석: 카드 현재가 = 비트겟 실시간 티커 · 점수 0~100 · 상방 청산가 > 현재가 > 하방 청산가
@@ -173,11 +173,11 @@ const run = async () => {
     auto: document.querySelectorAll('.menu-auto').length,
   }));
   check(
-    '메뉴: 도구 12개 + 자동매매 = 13개 · 🧠🧲🌊 카드',
-    hub.rows.length === 12 && hub.auto === 1 && hub.dna === '🧠' && hub.magnet === '🧲' && hub.sector === '🌊',
+    '메뉴: 도구 14개 + 자동매매 = 15개 · 🧠🧲🌊 카드',
+    hub.rows.length === 14 && hub.auto === 1 && hub.dna === '🧠' && hub.magnet === '🧲' && hub.sector === '🌊',
     hub.rows.join(','),
   );
-  check('메뉴: 도구 수 13 · 문구', hub.hero === '13' && /13가지 도구/.test(hub.note ?? ''), `${hub.hero} · ${hub.note}`);
+  check('메뉴: 도구 수 15 · 문구', hub.hero === '15' && /15가지 도구/.test(hub.note ?? ''), `${hub.hero} · ${hub.note}`);
   check('메뉴: 청산 자석 설명(스윙·펀딩·OI)', /청산/.test(hub.magnetDesc ?? ''), hub.magnetDesc);
   check('메뉴 허브 390px 오버플로 0건', !(await overflow()));
   await shot('156-menu-innovations');
@@ -389,7 +389,7 @@ const run = async () => {
     overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
     bottomHidden: getComputedStyle(document.querySelector('.bottom-nav')).display === 'none',
   }));
-  check('데스크톱: 메뉴 12도구 + 13 · 오버플로 0건', desk.rows === 12 && desk.hero === '13' && !desk.overflow && desk.bottomHidden, JSON.stringify(desk));
+  check('데스크톱: 메뉴 14도구 + 15 · 오버플로 0건', desk.rows === 14 && desk.hero === '15' && !desk.overflow && desk.bottomHidden, JSON.stringify(desk));
   await dpage.screenshot({ path: `${OUT}/161-menu-innovations-desktop.png` });
 
   await dpage.locator('.menu-row[data-menu="dna"]').click();

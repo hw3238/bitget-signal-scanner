@@ -63,8 +63,8 @@ const run = async () => {
     overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
   }));
   check(
-    '라이브 메뉴: 도구 12 + 자동매매 = 13 · 🧠🧲🌊 카드',
-    hub.rows.length === 12 && hub.hero === '13' && hub.emojis.join('') === '🧠🧲🌊' && !hub.overflow,
+    '라이브 메뉴: 도구 14 + 자동매매 = 15 · 🧠🧲🌊 카드',
+    hub.rows.length === 14 && hub.hero === '15' && hub.emojis.join('') === '🧠🧲🌊' && !hub.overflow,
     `${hub.rows.length}+1=${hub.hero} · ${hub.emojis.join('')}`,
   );
   await page.screenshot({ path: `${OUT}/162-live-menu-innovations.png` });

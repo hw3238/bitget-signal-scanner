@@ -249,6 +249,12 @@ export default function App() {
     setTab('menu');
   }, []);
 
+  /** 📰 시황 탭의 바로가기 → 메뉴의 실시간 코인 뉴스 화면 */
+  const openNews = useCallback(() => {
+    setMenuView('news');
+    setTab('menu');
+  }, []);
+
   /** 하단·상단 탭 이동 — 메뉴 탭을 누르면 항상 허브부터(하위 화면에 갇히지 않게) */
   const goTab = useCallback((next: TabKey) => {
     if (next === 'menu') setMenuView(null);
@@ -431,7 +437,9 @@ export default function App() {
             quickOrderSymbol={autoTrade.busy?.startsWith('order:') ? autoTrade.busy.slice(6) : null}
           />
         )}
-        {tab === 'market' && <MarketTab state={state} exchange={exchange} onRescan={() => void scan(true)} />}
+        {tab === 'market' && (
+          <MarketTab state={state} exchange={exchange} onRescan={() => void scan(true)} onOpenNews={openNews} />
+        )}
         {tab === 'menu' && (
           <MenuTab
             exchange={exchange}

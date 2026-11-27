@@ -14,6 +14,8 @@ interface Props {
   /** 현재 거래소 — 바이낸스 모드에는 주식선물 탭과 비트겟 펀딩 조회를 쓰지 않는다 */
   exchange: Exchange;
   onRescan: () => void;
+  /** 📰 실시간 코인 뉴스 화면으로 바로가기(메뉴 하위 화면) */
+  onOpenNews?: () => void;
 }
 
 type Tab = 'crypto' | 'stock';
@@ -31,7 +33,7 @@ interface Row extends Ticker {
 
 const SQUEEZE_RATE = 0.05; // 8시간 0.05% (연 54.75%) 이상을 과열로 본다
 
-export function MarketTab({ state, exchange, onRescan }: Props) {
+export function MarketTab({ state, exchange, onRescan, onOpenNews }: Props) {
   const [tab, setTab] = useState<Tab>('crypto');
   const bitget = exchange === 'bitget';
 
@@ -233,6 +235,17 @@ export function MarketTab({ state, exchange, onRescan }: Props) {
             </button>
           </div>
         </div>
+
+        {onOpenNews && (
+          <button type="button" className="news-shortcut-row" onClick={onOpenNews} data-open-news>
+            <span className="news-shortcut-emoji">📰</span>
+            <span className="news-shortcut-copy">
+              <b>실시간 코인 뉴스 보기</b>
+              <span>블록미디어 · Cointelegraph · CoinDesk를 60초마다 · 호재·악재 자동 배지</span>
+            </span>
+            <span className="news-shortcut-arrow">›</span>
+          </button>
+        )}
 
         <div className="stat-grid">
           <div className="stat">

@@ -264,7 +264,7 @@ const menu = await page.evaluate(() => ({
   hero: clean(document.querySelector('.menu-hero-count b')?.textContent),
   tools: document.querySelectorAll('.menu-row').length,
 }));
-check(menu.surge && /급등 탐색기/.test(menu.label) && menu.tools === 12 && menu.hero === '13', '라이브 메뉴: 🚀 급등 탐색기(도구 13)', `${menu.label} · ${menu.tools}+자동매매=${menu.hero}`);
+check(menu.surge && /급등 탐색기/.test(menu.label) && menu.tools === 14 && menu.hero === '15', '라이브 메뉴: 🚀 급등 탐색기(도구 15)', `${menu.label} · ${menu.tools}+자동매매=${menu.hero}`);
 
 await page.locator('.menu-row[data-menu="surge"]').click();
 await page.waitForSelector('.surge-card', { timeout: 240000 });

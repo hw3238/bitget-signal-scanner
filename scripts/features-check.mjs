@@ -251,8 +251,17 @@ const run = async () => {
     groups: [...document.querySelectorAll('.menu-group-title')].map((g) => g.textContent?.trim()),
     overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
   }));
-  check('메뉴 허브: 12개 도구(급등 탐색기·Propr·DNA·자석·섹터 포함)', hub.rows.length === 12 && hub.rows.includes('surge') && hub.rows.includes('propr') && hub.rows.includes('dna') && hub.rows.includes('magnet') && hub.rows.includes('sector'), hub.rows.join(', '));
-  check('메뉴 허브: 3개 그룹', hub.groups.length === 3 && hub.groups.join('|') === '실전 레이더|리스크 관리|분석', hub.groups.join(' / '));
+  check(
+    '메뉴 허브: 14개 도구(급등 탐색기·Propr·DNA·자석·섹터·고래·뉴스 포함)',
+    hub.rows.length === 14 &&
+      ['surge', 'propr', 'dna', 'magnet', 'sector', 'whale', 'news'].every((k) => hub.rows.includes(k)),
+    hub.rows.join(', '),
+  );
+  check(
+    '메뉴 허브: 4개 그룹',
+    hub.groups.length === 4 && hub.groups.join('|') === '실전 레이더|시장|리스크 관리|분석',
+    hub.groups.join(' / '),
+  );
   check('메뉴 허브 390px 오버플로 0건', !hub.overflow, hub.title);
   await top('25-menu-hub');
 
@@ -674,8 +683,8 @@ const run = async () => {
   }));
   await dpage.screenshot({ path: `${OUT}/36-menu-desktop.png` });
   check(
-    '데스크톱: 메뉴 허브 13도구(자동매매 포함) · 오버플로 0건',
-    desk.rows === 12 && desk.auto === 1 && desk.autoBadge === '꺼짐' && !desk.overflow && desk.bottomHidden,
+    '데스크톱: 메뉴 허브 15도구(자동매매 포함) · 오버플로 0건',
+    desk.rows === 14 && desk.auto === 1 && desk.autoBadge === '꺼짐' && !desk.overflow && desk.bottomHidden,
     JSON.stringify(desk),
   );
   await desktop.close();

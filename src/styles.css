@@ -10016,3 +10016,640 @@ textarea {
     display: none;
   }
 }
+
+/* =========================================================================
+   🐋 고래 체결 테이프 · 📰 실시간 코인 뉴스 (2026-11-27)
+   · 토스 스타일 유지: 흰 카드 · 여백 · 숫자는 tabular-nums
+   · 매수(롱) = 빨강(--up) · 매도(숏) = 파랑(--down)
+   ========================================================================= */
+
+/* ---------- 고래 체결 테이프 ---------- */
+.tool-badge.live {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.whale-tab .summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.whale-ratio {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--card-2);
+  border-radius: 14px;
+  padding: 11px 12px;
+}
+
+.whale-ratio-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.whale-ratio-head b {
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  margin-left: 3px;
+}
+
+.whale-ratio-buy b {
+  color: var(--up);
+}
+
+.whale-ratio-sell b {
+  color: var(--blue-2);
+}
+
+.whale-ratio-sell {
+  text-align: right;
+}
+
+.whale-ratio-pct {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.whale-ratio-bar {
+  position: relative;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--down-soft);
+  overflow: hidden;
+}
+
+.whale-ratio-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--up);
+  border-radius: 999px;
+  transition: width 0.45s ease;
+}
+
+.whale-ratio-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+
+.whale-top {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.whale-top-row {
+  display: grid;
+  grid-template-columns: 14px 22px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  padding: 3px 0;
+}
+
+.whale-top-rank {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--sub);
+  text-align: center;
+}
+
+.whale-top-row b {
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+}
+
+.whale-top-net {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.whale-top-net.up {
+  color: var(--up);
+}
+
+.whale-top-net.down {
+  color: var(--blue-2);
+}
+
+.whale-top-total {
+  font-size: 10.5px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+  min-width: 46px;
+  text-align: right;
+}
+
+.segmented.whale-filters {
+  display: flex;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.segmented.whale-filters button {
+  flex: 1 1 0;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.whale-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.segmented.whale-sides {
+  flex: 0 0 auto;
+}
+
+.whale-search {
+  flex: 1 1 90px;
+  min-width: 90px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 10px;
+  font-size: 12px;
+  color: var(--ink);
+  background: #fff;
+}
+
+.whale-search:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+
+.whale-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.whale-list-head,
+.whale-row {
+  display: grid;
+  grid-template-columns: 54px minmax(58px, 1fr) 38px 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.whale-list-head {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--sub);
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--line-soft);
+  text-align: right;
+}
+
+.whale-list-head span:first-child,
+.whale-list-head span:nth-child(2) {
+  text-align: left;
+}
+
+.whale-row {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.whale-row:last-child {
+  border-bottom: 0;
+}
+
+.whale-row.huge {
+  background: linear-gradient(90deg, rgba(240, 68, 82, 0.07), rgba(240, 68, 82, 0));
+  border-radius: 10px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.whale-row.sell.huge {
+  background: linear-gradient(90deg, rgba(49, 130, 246, 0.08), rgba(49, 130, 246, 0));
+}
+
+.whale-time {
+  font-size: 10.5px;
+  color: var(--sub);
+  letter-spacing: -0.2px;
+}
+
+.whale-coin {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.whale-coin b {
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+}
+
+.whale-fills {
+  font-style: normal;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--sub);
+  background: var(--line-soft);
+  border-radius: 5px;
+  padding: 1px 4px;
+}
+
+.whale-side {
+  font-size: 10.5px;
+  font-weight: 800;
+  border-radius: 6px;
+  padding: 2px 0;
+  text-align: center;
+}
+
+.whale-side.buy {
+  color: var(--up);
+  background: var(--up-soft);
+}
+
+.whale-side.sell {
+  color: var(--blue-2);
+  background: var(--down-soft);
+}
+
+.whale-usd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.whale-row.buy .whale-usd {
+  color: var(--up);
+}
+
+.whale-row.sell .whale-usd {
+  color: var(--blue-2);
+}
+
+.whale-huge {
+  font-style: normal;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 800;
+  color: #fff;
+  background: var(--ink);
+  border-radius: 5px;
+  padding: 1px 4px;
+}
+
+.whale-price {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.whale-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 10px;
+  text-align: center;
+}
+
+.whale-empty b {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+}
+
+.whale-empty span {
+  font-size: 11.5px;
+  color: var(--sub);
+  line-height: 1.5;
+}
+
+.whale-empty .ghost-btn {
+  margin-top: 4px;
+}
+
+.whale-warn {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: var(--amber);
+  background: var(--amber-soft);
+  border-radius: 10px;
+  padding: 8px 10px;
+  line-height: 1.45;
+}
+
+/* ---------- 실시간 코인 뉴스 ---------- */
+.news-tab .summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.news-feeds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.news-feed {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+  background: var(--card-2);
+  border-radius: 999px;
+  padding: 4px 9px;
+}
+
+.news-feed i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+.news-feed.off {
+  color: var(--sub);
+}
+
+.news-feed.off i {
+  background: var(--amber);
+}
+
+.news-feed em {
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 800;
+  color: var(--amber);
+}
+
+.news-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  background: var(--amber-soft);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+
+.news-banner b {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+}
+
+.news-banner span {
+  font-size: 11.5px;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+.news-banner.slim {
+  padding: 9px 12px;
+  background: var(--card-2);
+}
+
+.news-banner.slim span {
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.segmented.news-filters {
+  display: flex;
+  width: 100%;
+}
+
+.segmented.news-filters button {
+  flex: 1 1 0;
+  text-align: center;
+  font-size: 11.5px;
+  padding: 7px 4px;
+}
+
+.news-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.news-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: var(--card);
+  border-radius: 16px;
+  padding: 12px 14px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.news-item:active {
+  transform: scale(0.995);
+  box-shadow: var(--shadow);
+}
+
+.news-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--sub);
+}
+
+.news-source {
+  font-size: 10px;
+  font-weight: 800;
+  border-radius: 6px;
+  padding: 2px 6px;
+  background: var(--blue-soft);
+  color: var(--blue-2);
+}
+
+.news-source.en {
+  background: var(--line-soft);
+  color: var(--ink-2);
+}
+
+.news-age {
+  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.news-time {
+  font-variant-numeric: tabular-nums;
+}
+
+.news-tone {
+  font-size: 9.5px;
+  font-weight: 800;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.news-tone.good {
+  background: var(--up-soft);
+  color: var(--up);
+}
+
+.news-tone.bad {
+  background: var(--down-soft);
+  color: var(--blue-2);
+}
+
+.news-tone.macro {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.news-title {
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  line-height: 1.42;
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.news-summary {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.news-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 1px;
+}
+
+.news-tag {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 6px;
+  padding: 2px 6px;
+  background: var(--line-soft);
+  color: var(--ink-2);
+}
+
+.news-tag.coin {
+  background: var(--blue-soft);
+  color: var(--blue-2);
+  font-weight: 800;
+}
+
+/* 시황 탭의 뉴스 바로가기 */
+.news-shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  text-align: left;
+  background: var(--card-2);
+  border-radius: 14px;
+  padding: 10px 12px;
+  margin-top: 12px;
+}
+
+.news-shortcut-emoji {
+  font-size: 18px;
+  flex: 0 0 auto;
+}
+
+.news-shortcut-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.news-shortcut-copy b {
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+  color: var(--ink);
+}
+
+.news-shortcut-copy span {
+  font-size: 10.5px;
+  color: var(--sub);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.news-shortcut-arrow {
+  color: var(--sub);
+  font-size: 16px;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 380px) {
+  .whale-list-head,
+  .whale-row {
+    grid-template-columns: 48px minmax(48px, 1fr) 34px 58px minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .whale-time {
+    font-size: 10px;
+  }
+
+  .whale-price {
+    font-size: 10.5px;
+  }
+
+  .news-time {
+    display: none;
+  }
+}

@@ -23,12 +23,16 @@ import { FeeCalc } from './FeeCalc';
 import { TradeDnaTab } from './TradeDnaTab';
 import { LiquidationMagnet } from './LiquidationMagnet';
 import { SectorRadar } from './SectorRadar';
+import { WhaleTapeTab } from './WhaleTapeTab';
+import { NewsTab } from './NewsTab';
 import type { HistoryRecord, MyTrade } from '../lib/storage';
 
 export type MenuView =
   | 'auto'
   | 'propr'
   | 'surge'
+  | 'whale'
+  | 'news'
   | 'magnet'
   | 'sector'
   | 'kimchi'
@@ -55,6 +59,14 @@ const GROUPS: Array<{ title: string; items: MenuItem[] }> = [
   {
     title: '실전 레이더',
     items: [
+      {
+        key: 'whale',
+        emoji: '🐋',
+        title: '고래 체결 테이프',
+        desc: '비트겟·바이낸스 유동성 상위 15종목의 실시간 체결 중 큰 금액만 — 순매수 비율과 코인별 쏠림까지',
+        tag: '실시간 체결',
+        hot: true,
+      },
       {
         key: 'propr',
         emoji: '🏆',
@@ -109,6 +121,19 @@ const GROUPS: Array<{ title: string; items: MenuItem[] }> = [
         title: '차트 도플갱어',
         desc: '지금 차트와 가장 닮은 과거 구간 TOP 3와 그 이후 흐름',
         tag: '패턴 매칭',
+        hot: true,
+      },
+    ],
+  },
+  {
+    title: '시장',
+    items: [
+      {
+        key: 'news',
+        emoji: '📰',
+        title: '실시간 코인 뉴스',
+        desc: '블록미디어·블록체인투데이·Cointelegraph·CoinDesk를 60초마다 — 코인·호재·악재·거시 키워드 자동 배지',
+        tag: '4개 피드 · 60초',
         hot: true,
       },
     ],
@@ -195,6 +220,8 @@ const TITLES: Record<MenuView, string> = {
   auto: '비트겟 자동매매',
   propr: 'Propr 5K 터보 시그널',
   surge: '급등 탐색기',
+  whale: '고래 체결 테이프',
+  news: '실시간 코인 뉴스',
   magnet: '청산 자석 레이더',
   sector: '섹터 자금 순환',
   kimchi: '김프 & 송금 레이더',
@@ -254,6 +281,8 @@ export function MenuTab({
         {view === 'surge' && (
           <SurgeExplorer exchange={exchange} state={state} account={account} autoTrade={autoTrade} />
         )}
+        {view === 'whale' && <WhaleTapeTab exchange={exchange} state={state} />}
+        {view === 'news' && <NewsTab />}
         {view === 'magnet' && <LiquidationMagnet exchange={exchange} state={state} />}
         {view === 'sector' && <SectorRadar exchange={exchange} state={state} onRescan={onRescan} />}
         {view === 'dna' && <TradeDnaTab history={history} myTrades={myTrades} autoTrade={autoTrade} />}
@@ -278,10 +307,10 @@ export function MenuTab({
           <div>
             <div className="menu-hero-eyebrow">COTA 트레이더 올인원</div>
             <h2>시장 · 리스크 · 분석</h2>
-            <p>코인 트레이더가 매일 쓰는 13가지 도구를 한 곳에 모았습니다.</p>
+            <p>코인 트레이더가 매일 쓰는 15가지 도구를 한 곳에 모았습니다.</p>
           </div>
           <div className="menu-hero-count">
-            <b>13</b>
+            <b>15</b>
             <span>tools</span>
           </div>
         </div>
