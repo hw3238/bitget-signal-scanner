@@ -360,7 +360,7 @@ npm run auth-e2e                    # 회원 전용 게이트 E2E — 미로그�
 npm run binance-e2e                 # 바이낸스 모드 E2E — 선택/전환·시황·급등·장애 주입(폴백·재시도)에서 오류 0 (스크린샷 141~145)
 npm run check:innovations           # 매매 DNA(시간대·배율·복수매매·쿨다운)·청산 자석·섹터 순환 단위 + 실 API 스모크(80건)
 npm run innovations-e2e             # DNA·청산 자석·섹터 레이더 E2E — 기록 재계산·쿨다운 토글·청산가 단조성·섹터 순위 (스크린샷 156~161)
-npm run check:realtime              # 고래 체결 테이프·실시간 뉴스 단위 — 2초 묶음·필터·순매수·거래소 파서·RSS 태깅 + 실 API 스모크(79건)
+npm run check:realtime              # 고래 체결 테이프·실시간 뉴스 단위 — 2초 묶음·필터·순매수·거래소 파서·RSS 태깅 + 실 API 스모크(82건)
 npm run realtime-e2e                # 고래 테이프·뉴스 E2E — WS/피드 모킹 · 합침/필터/순매수 · 부분·전면 실패 → 다시 시도 (스크린샷 166~172)
 node scripts/features-check.mjs     # 메뉴 14도구·김프·생존·사이징·수수료·도플갱어·키맞추기·시황 카드 E2E (스크린샷 25~36)
 node scripts/toss-ui-check.mjs      # 5탭·코인 집중·한글화·가격·온보딩·COTA 추천·실전 주문 콕핏·공유카드 (스크린샷 45)
