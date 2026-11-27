@@ -424,7 +424,7 @@ export function AlertsTab({ exchange, state, center }: Props) {
             data-macro-alert-toggle
           >
             <span />
-            <b>30분 전 알림</b>
+            <b>{settings.master && settings.macro ? '🔔 30분 전 알림 켜짐' : '🔕 30분 전 알림 꺼짐'}</b>
           </button>
         </div>
 

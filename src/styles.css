@@ -10709,14 +10709,9 @@ textarea {
 
 .menu-chips {
   display: flex;
+  flex-wrap: wrap; /* 5개 칩이 두 줄로 — 가로 스크롤 없이 모두 보이게 */
   gap: 6px;
-  overflow-x: auto;
   padding-bottom: 2px;
-  scrollbar-width: none;
-}
-
-.menu-chips::-webkit-scrollbar {
-  display: none;
 }
 
 .menu-chip {
@@ -11185,8 +11180,7 @@ textarea {
 }
 
 .segmented.macro-filter {
-  overflow-x: auto;
-  scrollbar-width: none;
+  flex-wrap: wrap;
 }
 
 .segmented.macro-filter button {
