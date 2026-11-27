@@ -22,6 +22,8 @@ import {
 } from '../src/engine/whaleTape';
 import {
   BINANCE_WHALE_STREAMS,
+  binanceStreamOffset,
+  STABLE_BASES,
   baseOf,
   fetchBinanceRecentAggTrades,
   fetchBitgetRecentFills,
@@ -167,6 +169,19 @@ const tickers: Ticker[] = [
 const picked = pickWhaleSymbols(contracts, tickers);
 check('종목 선정: 코인만·거래대금 순', picked.join(',') === 'BTCUSDT,ETHUSDT,SOLUSDT,SUIUSDT', picked.join(','));
 check('종목 선정: 주식선물 제외', !picked.includes('NVDAUSDT') && !picked.includes('XAUUSDT'));
+const withStable: Contract[] = [...contracts, mkContract('USDCUSDT', 'crypto'), mkContract('FDUSDUSDT', 'crypto')];
+const stableTickers = [
+  ...tickers,
+  { symbol: 'USDCUSDT', last: 1, change24h: 0, quoteVolume: 5_000_000_000, fundingRate: 0, high24h: 0, low24h: 0 },
+  { symbol: 'FDUSDUSDT', last: 1, change24h: 0, quoteVolume: 4_000_000_000, fundingRate: 0, high24h: 0, low24h: 0 },
+];
+const pickedStable = pickWhaleSymbols(withStable, stableTickers);
+check(
+  '종목 선정: 스테이블코인 쌍 제외(거래대금 1위여도)',
+  !pickedStable.includes('USDCUSDT') && !pickedStable.includes('FDUSDUSDT') && pickedStable[0] === 'BTCUSDT',
+  pickedStable.join(','),
+);
+check('스테이블코인 목록', STABLE_BASES.has('USDC') && STABLE_BASES.has('FDUSD') && !STABLE_BASES.has('BTC'));
 const many = Array.from({ length: 40 }, (_, i) => mkContract(`C${i}USDT`, 'crypto'));
 const manyTickers = many.map((c, i) => ({
   symbol: c.symbol,
@@ -180,6 +195,11 @@ const manyTickers = many.map((c, i) => ({
 check('종목 선정: 15개 상한', pickWhaleSymbols(many, manyTickers).length === 15);
 check('종목 선정: 스캔 전에는 기본 목록', eq(pickWhaleSymbols([], []), FALLBACK_WHALE_SYMBOLS));
 check('기본 목록에 대표 코인 포함', ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'SUIUSDT'].every((s) => FALLBACK_WHALE_SYMBOLS.includes(s)));
+check(
+  '바이낸스 현물 판정 시 선물 스트림 건너뛰기',
+  binanceStreamOffset('spot') === 1 && binanceStreamOffset('futures') === 0 && binanceStreamOffset(null) === 0,
+  `${binanceStreamOffset('spot')}/${binanceStreamOffset('futures')}/${binanceStreamOffset(null)}`,
+);
 check(
   '바이낸스 스트림 폴백 순서(선물 → 거래소 → 데이터 전용)',
   BINANCE_WHALE_STREAMS[0].url.startsWith('wss://fstream.binance.com') &&

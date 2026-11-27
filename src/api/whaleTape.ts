@@ -14,6 +14,7 @@
 import type { Contract, Ticker } from '../engine/types';
 import type { WhaleSide, WhaleTrade } from '../engine/whaleTape';
 import type { Exchange } from '../lib/exchange';
+import { binanceSource, type BinanceSource } from './binance';
 import { mapLimit } from './publicMarket';
 
 const BG = 'https://api.bitget.com';
@@ -39,6 +40,12 @@ export const FALLBACK_WHALE_SYMBOLS = [
 
 export const WHALE_SYMBOL_LIMIT = 15;
 
+/**
+ * 고래 테이프에서 빼는 기반자산 — 스테이블코인·법정화폐 쌍은 $1 근처에서만 움직여
+ * 거래대금이 커도 '고래 체결'로 볼 의미가 없다(바이낸스 현물 거래대금 상위가 전부 여기였다).
+ */
+export const STABLE_BASES = new Set(['USDC', 'FDUSD', 'TUSD', 'BUSD', 'DAI', 'USDP', 'USDE', 'PYUSD', 'USD1', 'EUR']);
+
 export function baseOf(symbol: string): string {
   return symbol.replace(/(USDT|USDC|BUSD|USD)$/i, '');
 }
@@ -48,7 +55,9 @@ export function baseOf(symbol: string): string {
  * (비트겟의 주식선물·금 선물은 고래 테이프 대상이 아니다)
  */
 export function pickWhaleSymbols(contracts: Contract[], tickers: Ticker[], limit = WHALE_SYMBOL_LIMIT): string[] {
-  const crypto = contracts.filter((c) => c.asset === 'crypto' && /USDT$/i.test(c.symbol));
+  const crypto = contracts.filter(
+    (c) => c.asset === 'crypto' && /USDT$/i.test(c.symbol) && !STABLE_BASES.has(baseOf(c.symbol).toUpperCase()),
+  );
   if (crypto.length === 0) return FALLBACK_WHALE_SYMBOLS.slice(0, limit);
   const volume = new Map(tickers.map((t) => [t.symbol, t.quoteVolume]));
   const ranked = crypto
@@ -148,10 +157,20 @@ export async function fetchBitgetRecentFills(symbol: string, limit = 100): Promi
 /** 바이낸스 선물 REST 가 막힌 IP(451·403)에서는 현물 공식 데이터 API 로 내려간다 */
 let binanceRestFuturesBlocked = false;
 
+/** 스캐너가 이미 '현물'로 판정했으면 선물 호출을 아예 하지 않는다(콘솔 CORS 오류·대기 제거). */
+function skipBinanceFutures(): boolean {
+  if (binanceRestFuturesBlocked) return true;
+  try {
+    return binanceSource() === 'spot';
+  } catch {
+    return false;
+  }
+}
+
 export async function fetchBinanceRecentAggTrades(symbol: string, limit = 100): Promise<WhaleTrade[]> {
   const parse = (rows: RawBinanceAgg[]) =>
     rows.map((row) => parseBinanceAggTrade(row, symbol)).filter((t): t is WhaleTrade => !!t);
-  if (!binanceRestFuturesBlocked) {
+  if (!skipBinanceFutures()) {
     try {
       const rows = await getJson<RawBinanceAgg[]>(
         `https://fapi.binance.com/fapi/v1/aggTrades?symbol=${encodeURIComponent(symbol)}&limit=${limit}`,
@@ -193,6 +212,14 @@ export interface WhaleFeedHandle {
   stop: () => void;
 }
 
+/**
+ * 스캐너가 이미 '바이낸스 현물 데이터'로 판정한 환경(451·CORS)에서는 선물 스트림을 건너뛰고
+ * 현물 스트림부터 시도한다 — 8초 무응답 대기와 콘솔 오류를 줄인다.
+ */
+export function binanceStreamOffset(preferred: BinanceSource | null): number {
+  return preferred === 'spot' ? 1 : 0;
+}
+
 export const BINANCE_WHALE_STREAMS: Array<{ url: string; label: string }> = [
   { url: 'wss://fstream.binance.com/stream?streams=', label: '바이낸스 선물 실시간' },
   { url: 'wss://stream.binance.com:9443/stream?streams=', label: '바이낸스 현물 실시간' },
@@ -223,7 +250,7 @@ export function startWhaleFeed(opts: {
   let rateTimer: ReturnType<typeof setInterval> | null = null;
   let restTimer: ReturnType<typeof setInterval> | null = null;
   let firstDataTimer: ReturnType<typeof setTimeout> | null = null;
-  let streamIndex = 0;
+  let streamIndex = exchange === 'binance' ? binanceStreamOffset(binanceSource()) : 0;
   let lastMessageAt = 0;
   let rateCounts = 0;
   const seen = new Set<string>();
